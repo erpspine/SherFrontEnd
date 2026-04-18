@@ -38,7 +38,8 @@ const defaultCompanyForm = {
   default_vat: "18",
 };
 
-const BACKEND_ORIGIN = "http://127.0.0.1:8000";
+const BACKEND_ORIGIN =
+  import.meta.env.VITE_BACKEND_ORIGIN || window.location.origin;
 
 const normalizeCurrencyCode = (value) => {
   const code = String(value || "")

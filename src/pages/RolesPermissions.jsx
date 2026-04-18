@@ -25,9 +25,23 @@ function formatModuleName(module) {
   return module.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+function toTitleCase(value) {
+  return value
+    .split(" ")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
 function formatActionName(perm) {
   const parts = perm.split(".");
-  return parts.slice(1).join(".").replace(/_/g, " ");
+  const action = parts.slice(1).join(" ").replace(/[_-]+/g, " ").trim();
+  return toTitleCase(action || "Access");
+}
+
+function formatPermissionLabel(perm) {
+  const [module] = perm.split(".");
+  return `${formatModuleName(module)} - ${formatActionName(perm)}`;
 }
 
 export default function RolesPermissions() {
@@ -206,12 +220,12 @@ export default function RolesPermissions() {
                         className="border-b border-slate-800/40 hover:bg-slate-800/20 transition-colors"
                       >
                         <td className="py-3 px-6">
-                          <span className="text-sm text-slate-300 font-mono">
+                          <div className="text-sm text-slate-200 font-medium">
+                            {formatPermissionLabel(perm)}
+                          </div>
+                          <div className="text-xs text-slate-500 font-mono mt-0.5">
                             {perm}
-                          </span>
-                          <span className="ml-2 text-xs text-slate-600 capitalize">
-                            {formatActionName(perm)}
-                          </span>
+                          </div>
                         </td>
                         {roles.map((role) => {
                           const hasPermission = permSet[role.name]?.has(perm);
