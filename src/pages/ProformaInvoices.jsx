@@ -19,7 +19,7 @@ import { apiFetch } from "../utils/api";
 
 const statusConfig = {
   Draft: {
-    color: "bg-slate-500/20 text-slate-400 border-slate-500/30",
+    color: "bg-slate-500/20 text-slate-600 border-slate-500/30",
     icon: Clock,
   },
   Sent: {
@@ -230,8 +230,8 @@ export default function ProformaInvoices() {
         title: "PDF Failed",
         text: error.message || "Failed to download PDF.",
         icon: "error",
-        background: "#0f172a",
-        color: "#e2e8f0",
+        background: "#ffffff",
+        color: "#111827",
       });
     } finally {
       setDownloadingPiId(null);
@@ -254,8 +254,8 @@ export default function ProformaInvoices() {
         title: "Load Failed",
         text: error.message || "Unable to fetch PI details.",
         icon: "error",
-        background: "#0f172a",
-        color: "#e2e8f0",
+        background: "#ffffff",
+        color: "#111827",
       });
     } finally {
       setIsViewLoading(false);
@@ -287,21 +287,21 @@ export default function ProformaInvoices() {
       )}
 
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-        <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-xl p-4">
+        <div className="bg-slate-900/50 border border-slate-800/50 rounded-xl p-4">
           <p className="text-slate-400 text-sm">Total PI Value</p>
           <p className="text-xl font-bold text-white mt-1">
             {formatCurrency(stats.totalAmount)}
           </p>
           <p className="text-xs text-slate-500 mt-1">{stats.total} invoices</p>
         </div>
-        <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-xl p-4">
+        <div className="bg-slate-900/50 border border-slate-800/50 rounded-xl p-4">
           <p className="text-slate-400 text-sm">Converted</p>
           <p className="text-2xl font-bold text-purple-400 mt-1">
             {stats.converted}
           </p>
           <p className="text-xs text-slate-500 mt-1">from quotations</p>
         </div>
-        <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-xl p-4">
+        <div className="bg-slate-900/50 border border-slate-800/50 rounded-xl p-4">
           <p className="text-slate-400 text-sm">Average PI</p>
           <p className="text-xl font-bold text-amber-400 mt-1">
             {formatCurrency(stats.total ? stats.totalAmount / stats.total : 0)}
@@ -310,16 +310,16 @@ export default function ProformaInvoices() {
         </div>
       </div>
 
-      <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-2xl p-4">
-        <div className="flex flex-col sm:flex-row gap-4">
+      <div className="bg-slate-900/50 border border-slate-800/50 rounded-2xl p-4">
+        <div className="flex flex-col sm:flex-row gap-3">
           <div className="flex-1 flex items-center gap-3 bg-slate-800/50 rounded-xl px-4 py-2.5 border border-slate-700/50 focus-within:border-amber-500/50 transition-colors">
-            <Search className="w-5 h-5 text-slate-500" />
+            <Search className="w-4 h-4 text-slate-500" />
             <input
               type="text"
               placeholder="Search by PI #, quote ref, client..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="bg-transparent border-none outline-none text-sm text-slate-300 placeholder-slate-500 w-full"
+              className="w-full bg-transparent outline-none text-sm text-slate-300 placeholder-slate-500"
             />
           </div>
           <div className="flex flex-wrap gap-2">
@@ -330,7 +330,7 @@ export default function ProformaInvoices() {
                 className={`px-3 py-2 rounded-xl text-sm font-medium transition-all ${
                   statusFilter === status
                     ? "bg-amber-500 text-white"
-                    : "bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700"
+                    : "bg-slate-800 text-slate-400 hover:text-white"
                 }`}
               >
                 {status}
@@ -340,7 +340,7 @@ export default function ProformaInvoices() {
         </div>
       </div>
 
-      <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-2xl overflow-hidden">
+      <div className="bg-slate-900/50 border border-slate-800/50 rounded-2xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
@@ -358,7 +358,7 @@ export default function ProformaInvoices() {
                 ].map((h) => (
                   <th
                     key={h}
-                    className="text-left py-4 px-4 text-sm font-semibold text-slate-400 whitespace-nowrap"
+                    className="text-left py-3 px-4 text-xs font-semibold text-slate-400 uppercase tracking-wider whitespace-nowrap"
                   >
                     {h}
                   </th>
@@ -371,7 +371,7 @@ export default function ProformaInvoices() {
                 return (
                   <tr
                     key={pi.id}
-                    className="border-b border-slate-800/50 hover:bg-slate-800/20 transition-colors"
+                    className="border-b border-slate-800/40 hover:bg-slate-800/30 transition-colors"
                   >
                     <td className="py-4 px-4">
                       <div className="flex items-center gap-2">
@@ -383,7 +383,7 @@ export default function ProformaInvoices() {
                         </span>
                       </div>
                     </td>
-                    <td className="py-4 px-4 text-sm text-amber-400">
+                    <td className="py-4 px-4 text-sm text-amber-300">
                       {pi.quoteRef}
                     </td>
                     <td className="py-4 px-4 text-sm text-slate-300 whitespace-nowrap">
@@ -424,7 +424,7 @@ export default function ProformaInvoices() {
                         <button
                           onClick={() => handleViewPI(pi)}
                           disabled={isViewLoading}
-                          className="p-1.5 text-slate-400 hover:text-amber-400 hover:bg-amber-500/10 rounded-lg transition-colors"
+                          className="p-1.5 text-slate-300 hover:text-amber-300 hover:bg-slate-800 rounded-lg transition-colors"
                           title="View"
                         >
                           <Eye className="w-4 h-4" />
@@ -432,7 +432,7 @@ export default function ProformaInvoices() {
                         <button
                           onClick={() => handleDownloadPdf(pi)}
                           disabled={downloadingPiId === pi.id}
-                          className="p-1.5 text-slate-400 hover:text-green-400 hover:bg-green-500/10 rounded-lg transition-colors"
+                          className="p-1.5 text-slate-300 hover:text-green-300 hover:bg-slate-800 rounded-lg transition-colors"
                           title={
                             downloadingPiId === pi.id
                               ? "Downloading..."
@@ -464,8 +464,8 @@ export default function ProformaInvoices() {
             </div>
           )}
         </div>
-        <div className="px-6 py-4 border-t border-slate-800/50 flex items-center justify-between">
-          <p className="text-sm text-slate-400">
+        <div className="px-6 py-4 border-t border-slate-800 flex items-center justify-between">
+          <p className="text-sm text-slate-500">
             Showing {filtered.length} of {allPIs.length} invoices
           </p>
           <p className="text-sm font-semibold text-white">
@@ -479,7 +479,7 @@ export default function ProformaInvoices() {
 
       {viewPI && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-2xl">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-2xl shadow-xl">
             <div className="flex items-center justify-between p-6 border-b border-slate-800">
               <div>
                 <h2 className="text-xl font-bold text-white">{viewPI.piNo}</h2>
@@ -513,11 +513,15 @@ export default function ProformaInvoices() {
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-slate-400">Invoice Date</span>
-                <span className="text-white">{formatDate(viewPI.date)}</span>
+                <span className="text-slate-300">
+                  {formatDate(viewPI.date)}
+                </span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-slate-400">Due Date</span>
-                <span className="text-white">{formatDate(viewPI.dueDate)}</span>
+                <span className="text-slate-300">
+                  {formatDate(viewPI.dueDate)}
+                </span>
               </div>
               <div className="border-t border-slate-800 pt-4 space-y-2">
                 <div className="flex justify-between text-sm">

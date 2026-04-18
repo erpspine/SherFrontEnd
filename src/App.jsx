@@ -21,6 +21,7 @@ import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
 import Leads from "./pages/Leads";
 import Users from "./pages/Users";
+import RolesPermissions from "./pages/RolesPermissions";
 import { isAuthenticated } from "./utils/auth";
 
 function LoginRoute() {
@@ -47,6 +48,7 @@ function ProtectedRoutes() {
         <Route path="/invoices" element={<Invoices />} />
         <Route path="/payments" element={<Payments />} />
         <Route path="/users" element={<Users />} />
+        <Route path="/roles-permissions" element={<RolesPermissions />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

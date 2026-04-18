@@ -38,6 +38,41 @@ const defaultCompanyForm = {
   default_vat: "18",
 };
 
+const BACKEND_ORIGIN = "http://127.0.0.1:8000";
+
+const normalizeCurrencyCode = (value) => {
+  const code = String(value || "")
+    .trim()
+    .toUpperCase();
+
+  if (code === "TZ") return "TZS";
+  if (code === "US") return "USD";
+  if (code === "TZS" || code === "USD") return code;
+  return "TZS";
+};
+
+const normalizeCompanySettings = (settings = {}) => ({
+  company_name: settings.company_name || settings.companyName || "",
+  company_email: settings.company_email || settings.companyEmail || "",
+  company_phone: settings.company_phone || settings.companyPhone || "",
+  company_address: settings.company_address || settings.companyAddress || "",
+  tax_registration_number:
+    settings.tax_registration_number || settings.taxRegistrationNumber || "",
+  default_currency: normalizeCurrencyCode(
+    settings.default_currency || settings.defaultCurrency || "TZS",
+  ),
+  default_vat: String(settings.default_vat || settings.defaultVat || "18"),
+});
+
+const resolveLogoUrl = (settings = {}) => {
+  const candidate = settings.logo_url || settings.logoUrl || "";
+  if (!candidate) return null;
+  if (candidate.startsWith("http://") || candidate.startsWith("https://")) {
+    return candidate;
+  }
+  return `${BACKEND_ORIGIN}${candidate.startsWith("/") ? "" : "/"}${candidate}`;
+};
+
 export default function Settings() {
   const [activeTab, setActiveTab] = useState("profile");
   const [showPassword, setShowPassword] = useState(false);
@@ -67,17 +102,9 @@ export default function Settings() {
       const data = await response.json();
       if (!response.ok)
         throw new Error(data?.message || "Failed to load company settings.");
-      const s = data.settings || {};
-      setCompanyForm({
-        company_name: s.company_name || "",
-        company_email: s.company_email || "",
-        company_phone: s.company_phone || "",
-        company_address: s.company_address || "",
-        tax_registration_number: s.tax_registration_number || "",
-        default_currency: s.default_currency || "TZS",
-        default_vat: s.default_vat || "18",
-      });
-      if (s.logo_url) setCompanyLogoPreview(s.logo_url);
+      const s = data.settings || data.data || {};
+      setCompanyForm(normalizeCompanySettings(s));
+      setCompanyLogoPreview(resolveLogoUrl(s));
     } catch (err) {
       setCompanyError(err.message || "Failed to load company settings.");
     } finally {
@@ -99,26 +126,26 @@ export default function Settings() {
     setCompanyError("");
     setCompanySuccess("");
     try {
-      let body;
-      if (companyLogoFile) {
-        body = new FormData();
-        Object.entries(companyForm).forEach(([k, v]) => body.append(k, v));
-        body.append("logo", companyLogoFile);
-        body.append("_method", "PUT");
-        const response = await apiFetch("/settings/company", {
-          method: "POST",
-          body,
-        });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data?.message || "Failed to save.");
+      const body = new FormData();
+      Object.entries(companyForm).forEach(([k, v]) => body.append(k, v ?? ""));
+      if (companyLogoFile) body.append("logo", companyLogoFile);
+      body.append("_method", "PUT");
+
+      const response = await apiFetch("/settings/company", {
+        method: "POST",
+        body,
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data?.message || "Failed to save.");
+
+      const saved = data.settings || data.data || null;
+      if (saved) {
+        setCompanyForm(normalizeCompanySettings(saved));
+        setCompanyLogoPreview(resolveLogoUrl(saved));
       } else {
-        const response = await apiFetch("/settings/company", {
-          method: "PUT",
-          body: companyForm,
-        });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data?.message || "Failed to save.");
+        await loadCompanySettings();
       }
+
       setCompanyLogoFile(null);
       setCompanySuccess("Company settings saved successfully.");
       await Swal.fire({

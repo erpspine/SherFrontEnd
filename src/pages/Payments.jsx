@@ -222,8 +222,8 @@ export default function Payments() {
                       #{payment.id}
                     </td>
                     <td className="py-3 px-4">
-                      <div className="flex items-center gap-2 text-sm text-white">
-                        <FileText className="w-4 h-4 text-indigo-400" />
+                      <div className="flex items-center gap-2 text-sm text-slate-700 font-medium">
+                        <FileText className="w-4 h-4 text-indigo-500" />
                         {payment.invoiceNo}
                       </div>
                     </td>

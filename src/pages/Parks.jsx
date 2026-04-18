@@ -34,6 +34,8 @@ const createConcessionRateState = (parkId = "") => ({
   rate: "",
 });
 
+const rateTypeOptions = ["resident", "non_resident", "citizen"];
+
 const createTransportRateState = () => ({
   particular: "",
   rate: "",
@@ -69,19 +71,45 @@ const normalizeParkRate = (rate) => ({
   id: rate.id,
   park_id: Number(rate.park_id ?? rate.parkId ?? 0),
   park_name: rate.park_name || rate.parkName || "",
-  type: rate.type || "resident",
+  type: String(rate.type || "resident")
+    .replace(/-/g, "_")
+    .toLowerCase(),
   category: rate.category || "adult",
   rate: Number(rate.rate ?? 0),
+  created_at: rate.created_at || rate.createdAt || null,
+  updated_at: rate.updated_at || rate.updatedAt || null,
 });
 
 const normalizeConcessionRate = (rate) => ({
   id: rate.id,
   park_id: Number(rate.park_id ?? rate.parkId ?? 0),
   park_name: rate.park_name || rate.parkName || "",
-  type: rate.type || "resident",
+  type: String(rate.type || "resident")
+    .replace(/-/g, "_")
+    .toLowerCase(),
   category: rate.category || "adult",
   rate: Number(rate.rate ?? 0),
 });
+
+const buildParksFromRates = (rates) => {
+  const uniqueParks = new Map();
+
+  rates.forEach((rate) => {
+    if (!rate.park_id) return;
+    if (!uniqueParks.has(rate.park_id)) {
+      uniqueParks.set(rate.park_id, {
+        id: rate.park_id,
+        name: rate.park_name || `Park ${rate.park_id}`,
+        region: "",
+        status: "Active",
+      });
+    }
+  });
+
+  return Array.from(uniqueParks.values());
+};
+
+const formatRateType = (value) => value.replace(/_/g, " ");
 
 const normalizeTransportRate = (rate) => ({
   id: rate.id,
@@ -222,7 +250,10 @@ export default function Parks() {
         throw new Error(payload?.message || "Unable to fetch park rates.");
       }
 
-      setParkFeeRates(extractList(payload).map(normalizeParkRate));
+      const list = Array.isArray(payload?.parkRates)
+        ? payload.parkRates
+        : extractList(payload);
+      setParkFeeRates(list.map(normalizeParkRate));
     } catch (error) {
       setRateError(error.message || "Failed to load park rates.");
     } finally {
@@ -232,6 +263,7 @@ export default function Parks() {
 
   useEffect(() => {
     loadParkRates(selectedRateParkId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedRateParkId]);
 
   const loadConcessionRates = async (parkId = "all") => {
@@ -477,7 +509,7 @@ export default function Parks() {
       !newRate.park_id ||
       !newRate.type ||
       !newRate.category ||
-      !newRate.rate
+      newRate.rate === ""
     ) {
       setRateError("Please fill park_id, type, category, and rate.");
       return;
@@ -636,7 +668,7 @@ export default function Parks() {
       !newConcessionRate.park_id ||
       !newConcessionRate.type ||
       !newConcessionRate.category ||
-      !newConcessionRate.rate
+      newConcessionRate.rate === ""
     ) {
       setConcessionError("Please fill park_id, type, category, and rate.");
       return;
@@ -1153,7 +1185,7 @@ export default function Parks() {
                       "Unknown Park"}
                   </td>
                   <td className="py-4 px-6 text-sm text-slate-300">
-                    {row.type}
+                    {formatRateType(row.type)}
                   </td>
                   <td className="py-4 px-6 text-sm text-slate-300">
                     {row.category}
@@ -1205,7 +1237,7 @@ export default function Parks() {
               Concession Rates
             </h2>
             <p className="text-sm text-slate-400 mt-1">
-              Rates for resident and non-resident categories.
+              Rates for resident, non resident, and citizen categories.
             </p>
           </div>
           <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
@@ -1268,7 +1300,7 @@ export default function Parks() {
                       "Unknown Park"}
                   </td>
                   <td className="py-4 px-6 text-sm text-slate-300">
-                    {row.type}
+                    {formatRateType(row.type)}
                   </td>
                   <td className="py-4 px-6 text-sm text-slate-300">
                     {row.category}
@@ -1582,8 +1614,11 @@ export default function Parks() {
                     }
                     className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-amber-500"
                   >
-                    <option value="resident">resident</option>
-                    <option value="non-resident">non-resident</option>
+                    {rateTypeOptions.map((type) => (
+                      <option key={type} value={type}>
+                        {formatRateType(type)}
+                      </option>
+                    ))}
                   </select>
                 </div>
 
@@ -1722,8 +1757,11 @@ export default function Parks() {
                     }
                     className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-amber-500"
                   >
-                    <option value="resident">resident</option>
-                    <option value="non-resident">non-resident</option>
+                    {rateTypeOptions.map((type) => (
+                      <option key={type} value={type}>
+                        {formatRateType(type)}
+                      </option>
+                    ))}
                   </select>
                 </div>
 

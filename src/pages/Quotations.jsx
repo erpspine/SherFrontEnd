@@ -19,6 +19,7 @@ import { useNavigate } from "react-router-dom";
 import Datepicker from "react-tailwindcss-datepicker";
 import Swal from "sweetalert2";
 import { apiFetch } from "../utils/api";
+import Select from "react-select";
 
 const statusConfig = {
   Draft: {
@@ -452,6 +453,19 @@ export default function Quotations() {
       const selectedQuotation = normalizeQuotation(
         extractSingle(payload, "quotation"),
       );
+
+      const itemTypesToLoad = Array.from(
+        new Set(
+          (selectedQuotation.daySections || [])
+            .flatMap((section) => section.items || [])
+            .map((item) => item.item)
+            .filter((type) =>
+              ["Transport", "Park Fees", "Concession Fees"].includes(type),
+            ),
+        ),
+      );
+
+      await Promise.all(itemTypesToLoad.map((type) => loadRatesForType(type)));
 
       setEditingId(selectedQuotation.id);
       setForm({
@@ -1038,26 +1052,39 @@ export default function Quotations() {
 
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-7xl max-h-[92vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-6 border-b border-slate-800">
+          <div
+            className="rounded-2xl w-full max-w-7xl flex flex-col"
+            style={{
+              background: "linear-gradient(135deg,#fffdf5,#fffbef)",
+              border: "1px solid rgba(201,162,54,0.3)",
+              maxHeight: "92vh",
+            }}
+          >
+            {/* Sticky header */}
+            <div
+              className="flex items-center justify-between p-6 flex-shrink-0"
+              style={{ borderBottom: "1px solid rgba(201,162,54,0.25)" }}
+            >
               <div>
-                <h2 className="text-xl font-bold text-white">
+                <h2 className="text-xl font-bold" style={{ color: "#1e293b" }}>
                   {editingId ? "Edit Quotation" : "New Quotation"}
                 </h2>
-                <p className="text-sm text-slate-400 mt-1">
+                <p className="text-sm mt-1" style={{ color: "#64748b" }}>
                   Build quotation line items dynamically and totals will update
                   automatically.
                 </p>
               </div>
               <button
                 onClick={() => setIsModalOpen(false)}
-                className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg"
+                className="p-2 rounded-lg hover:bg-slate-100 transition-colors"
+                style={{ color: "#64748b" }}
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-6 space-y-6">
+            {/* Scrollable body */}
+            <div className="overflow-y-auto flex-1 p-6 space-y-6">
               {errorMessage && (
                 <div className="bg-red-500/10 border border-red-500/30 text-red-300 rounded-xl px-4 py-3 text-sm">
                   {errorMessage}
@@ -1222,7 +1249,7 @@ export default function Quotations() {
                       <div className="overflow-x-auto">
                         <table className="w-full min-w-[980px]">
                           <thead>
-                            <tr className="border-b border-slate-800 bg-slate-900/40">
+                            <tr className="border-b border-slate-800">
                               {[
                                 "Item",
                                 "Description",
@@ -1234,7 +1261,7 @@ export default function Quotations() {
                               ].map((header) => (
                                 <th
                                   key={header}
-                                  className="text-left px-3 py-3 text-xs font-semibold text-slate-400 whitespace-nowrap"
+                                  className="text-left py-4 px-6 text-sm font-semibold text-slate-400 whitespace-nowrap"
                                 >
                                   {header}
                                 </th>
@@ -1245,7 +1272,7 @@ export default function Quotations() {
                             {section.items.map((item, itemIndex) => (
                               <tr
                                 key={itemIndex}
-                                className="border-b border-slate-800/50 align-top"
+                                className="border-b border-slate-800/50 align-middle"
                               >
                                 <td className="px-3 py-3">
                                   <select
@@ -1257,17 +1284,51 @@ export default function Quotations() {
                                         "item",
                                         event.target.value,
                                       );
-                                      loadRatesForType(event.target.value);
+                                      if (event.target.value !== "Others") {
+                                        loadRatesForType(event.target.value);
+                                      }
                                     }}
                                     className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
                                   >
                                     <option value="">Select item...</option>
+                                    {item.item &&
+                                      ![
+                                        "Transport",
+                                        "Park Fees",
+                                        "Concession Fees",
+                                        "Others",
+                                      ].includes(item.item) && (
+                                        <option value={item.item}>
+                                          {item.item}
+                                        </option>
+                                      )}
                                     <option value="Transport">Transport</option>
                                     <option value="Park Fees">Park Fees</option>
                                     <option value="Concession Fees">
                                       Concession Fees
                                     </option>
+                                    <option value="Others">Others</option>
                                   </select>
+                                  {item.item === "Others" && (
+                                    <input
+                                      type="text"
+                                      value={item.customItem || ""}
+                                      onChange={(e) =>
+                                        updateDayItem(
+                                          sectionIndex,
+                                          itemIndex,
+                                          "customItem",
+                                          e.target.value,
+                                        )
+                                      }
+                                      placeholder="Specify item..."
+                                      className="mt-1.5 w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-amber-500"
+                                      style={{
+                                        background: "#ffffff",
+                                        color: "#1f2937",
+                                      }}
+                                    />
+                                  )}
                                 </td>
                                 <td className="px-3 py-3 min-w-[260px]">
                                   <input
@@ -1317,62 +1378,179 @@ export default function Quotations() {
                                     className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
                                   />
                                 </td>
-                                <td className="px-3 py-3 min-w-[200px]">
-                                  {getRatesForItem(item.item).length > 0 && (
-                                    <select
-                                      defaultValue=""
-                                      onChange={(event) => {
-                                        const selected = getRatesForItem(
-                                          item.item,
-                                        ).find(
-                                          (r) =>
-                                            String(r.id) === event.target.value,
-                                        );
-                                        if (!selected) return;
+                                <td className="px-3 py-3 min-w-[260px]">
+                                  {getRatesForItem(item.item).length > 0 ? (
+                                    (() => {
+                                      const rateOptions = getRatesForItem(
+                                        item.item,
+                                      ).map((r) => ({
+                                        value: r.id,
+                                        label: getRateOptionLabel(item.item, r),
+                                        rate: r.rate,
+                                        desc: getRateDescription(item.item, r),
+                                      }));
+
+                                      const currentRate = Number(
+                                        item.rate || 0,
+                                      );
+                                      const exactMatch = rateOptions.find(
+                                        (opt) =>
+                                          Number(opt.rate || 0) ===
+                                            currentRate &&
+                                          (!item.description ||
+                                            opt.desc === item.description),
+                                      );
+                                      const rateOnlyMatch = rateOptions.find(
+                                        (opt) =>
+                                          Number(opt.rate || 0) === currentRate,
+                                      );
+
+                                      const fallbackSelected =
+                                        item.rate !== "" &&
+                                        !Number.isNaN(currentRate)
+                                          ? {
+                                              value: `saved-${sectionIndex}-${itemIndex}`,
+                                              label: `${
+                                                item.description || "Saved rate"
+                                              } - USD ${currentRate.toLocaleString()}`,
+                                              rate: String(item.rate),
+                                              desc: item.description || "",
+                                            }
+                                          : null;
+
+                                      const selectedOption =
+                                        exactMatch ||
+                                        rateOnlyMatch ||
+                                        fallbackSelected;
+
+                                      const optionsWithFallback =
+                                        selectedOption &&
+                                        !rateOptions.some(
+                                          (opt) =>
+                                            String(opt.value) ===
+                                            String(selectedOption.value),
+                                        )
+                                          ? [selectedOption, ...rateOptions]
+                                          : rateOptions;
+
+                                      return (
+                                        <div className="flex items-center gap-2">
+                                          <div className="flex-1">
+                                            <Select
+                                              placeholder="Search rate..."
+                                              isClearable
+                                              menuPortalTarget={
+                                                typeof document !== "undefined"
+                                                  ? document.body
+                                                  : null
+                                              }
+                                              menuPosition="fixed"
+                                              menuPlacement="auto"
+                                              maxMenuHeight={280}
+                                              options={optionsWithFallback}
+                                              value={selectedOption || null}
+                                              onChange={(selected) => {
+                                                if (!selected) {
+                                                  updateDayItem(
+                                                    sectionIndex,
+                                                    itemIndex,
+                                                    "rate",
+                                                    "",
+                                                  );
+                                                  return;
+                                                }
+                                                updateDayItem(
+                                                  sectionIndex,
+                                                  itemIndex,
+                                                  "rate",
+                                                  String(selected.rate),
+                                                );
+                                                if (!item.description)
+                                                  updateDayItem(
+                                                    sectionIndex,
+                                                    itemIndex,
+                                                    "description",
+                                                    selected.desc,
+                                                  );
+                                              }}
+                                              styles={{
+                                                control: (base) => ({
+                                                  ...base,
+                                                  background: "#fff",
+                                                  borderColor: "#cbd5e1",
+                                                  minHeight: "36px",
+                                                  fontSize: "0.875rem",
+                                                }),
+                                                menu: (base) => ({
+                                                  ...base,
+                                                  background: "#fff",
+                                                  zIndex: 9999,
+                                                }),
+                                                menuPortal: (base) => ({
+                                                  ...base,
+                                                  zIndex: 9999,
+                                                }),
+                                                option: (base, state) => ({
+                                                  ...base,
+                                                  background: state.isFocused
+                                                    ? "#fef9ec"
+                                                    : "#fff",
+                                                  color: "#1f2937",
+                                                  fontSize: "0.875rem",
+                                                }),
+                                                singleValue: (base) => ({
+                                                  ...base,
+                                                  color: "#1f2937",
+                                                }),
+                                              }}
+                                              className=""
+                                            />
+                                          </div>
+                                          <input
+                                            type="number"
+                                            min="0"
+                                            value={item.rate}
+                                            onChange={(event) =>
+                                              updateDayItem(
+                                                sectionIndex,
+                                                itemIndex,
+                                                "rate",
+                                                event.target.value,
+                                              )
+                                            }
+                                            className="w-24 bg-slate-800 border border-slate-700 rounded-lg px-2 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
+                                          />
+                                        </div>
+                                      );
+                                    })()
+                                  ) : (
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      value={item.rate}
+                                      onChange={(event) =>
                                         updateDayItem(
                                           sectionIndex,
                                           itemIndex,
                                           "rate",
-                                          String(selected.rate),
-                                        );
-                                        if (!item.description)
-                                          updateDayItem(
-                                            sectionIndex,
-                                            itemIndex,
-                                            "description",
-                                            getRateDescription(
-                                              item.item,
-                                              selected,
-                                            ),
-                                          );
-                                      }}
-                                      className="w-full bg-slate-700/60 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-slate-200 mb-1.5 focus:outline-none focus:border-amber-500"
-                                    >
-                                      <option value="">Pick rate…</option>
-                                      {getRatesForItem(item.item).map((r) => (
-                                        <option key={r.id} value={r.id}>
-                                          {getRateOptionLabel(item.item, r)}
-                                        </option>
-                                      ))}
-                                    </select>
+                                          event.target.value,
+                                        )
+                                      }
+                                      placeholder="Enter rate"
+                                      className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
+                                    />
                                   )}
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    value={item.rate}
-                                    onChange={(event) =>
-                                      updateDayItem(
-                                        sectionIndex,
-                                        itemIndex,
-                                        "rate",
-                                        event.target.value,
-                                      )
-                                    }
-                                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
-                                  />
                                 </td>
                                 <td className="px-3 py-3">
-                                  <div className="min-w-[120px] bg-blue-500/10 border border-blue-500/20 rounded-lg px-3 py-2 text-sm font-semibold text-white">
+                                  <div
+                                    className="min-w-[120px] rounded-lg px-3 py-2 text-sm font-semibold"
+                                    style={{
+                                      background:
+                                        "linear-gradient(135deg, rgba(201,162,54,0.22), rgba(201,162,54,0.35))",
+                                      border: "1px solid rgba(139,105,20,0.35)",
+                                      color: "#1e293b",
+                                    }}
+                                  >
                                     {formatCurrency(calculateItemTotal(item))}
                                   </div>
                                 </td>
@@ -1393,10 +1571,18 @@ export default function Quotations() {
                         </table>
                       </div>
 
-                      <div className="p-3 border-t border-slate-800 bg-slate-900/40">
+                      <div
+                        className="p-3 border-t border-slate-200"
+                        style={{ background: "rgba(255,251,239,0.9)" }}
+                      >
                         <button
                           onClick={() => addDayItem(sectionIndex)}
-                          className="px-3 py-2 text-sm bg-slate-800 text-slate-200 rounded-lg hover:bg-slate-700 transition-colors"
+                          className="px-3 py-2 text-sm rounded-lg hover:opacity-90 transition-opacity font-medium"
+                          style={{
+                            background:
+                              "linear-gradient(to right,#3BAA6E,#267A4F)",
+                            color: "#ffffff",
+                          }}
                         >
                           + Add Cost Line
                         </button>
@@ -1407,62 +1593,91 @@ export default function Quotations() {
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6 items-start">
-                <div className="bg-slate-800/40 border border-slate-700/50 rounded-2xl p-4">
-                  <h4 className="text-white font-semibold mb-2">
+                <div
+                  className="rounded-2xl p-4"
+                  style={{
+                    background: "rgba(255,251,239,0.7)",
+                    border: "1px solid rgba(201,162,54,0.2)",
+                  }}
+                >
+                  <h4
+                    className="font-semibold mb-2"
+                    style={{ color: "#1e293b" }}
+                  >
                     Calculation Logic
                   </h4>
-                  <p className="text-sm text-slate-400">
+                  <p className="text-sm" style={{ color: "#64748b" }}>
                     Each row total is calculated as Qty x Rate. Subtotal is the
                     sum of all rows across all days.
                   </p>
                 </div>
-
-                <div className="bg-slate-950/60 border border-slate-800 rounded-2xl p-5 space-y-4">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-slate-400">Subtotal</span>
-                    <span className="text-white font-semibold">
-                      {formatCurrency(subtotal)}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-slate-400">Tax (18%)</span>
-                    <span className="text-white font-semibold">
-                      {formatCurrency(tax)}
-                    </span>
-                  </div>
-                  <div className="pt-4 border-t border-slate-800 flex items-center justify-between">
-                    <span className="text-base font-semibold text-white">
-                      Grand Total
-                    </span>
-                    <span className="text-2xl font-bold text-amber-400">
-                      {formatCurrency(grandTotal)}
-                    </span>
-                  </div>
-                </div>
               </div>
             </div>
 
-            <div className="p-6 pt-0 flex justify-end gap-3">
-              <button
-                onClick={() => setIsModalOpen(false)}
-                className="px-6 py-2.5 bg-slate-800 text-slate-300 rounded-xl hover:bg-slate-700"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => handleSaveQuotation("Draft")}
-                disabled={isSaving}
-                className="px-6 py-2.5 bg-slate-700 text-slate-300 rounded-xl hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                {isSaving ? "Saving..." : "Save Draft"}
-              </button>
-              <button
-                onClick={() => handleSaveQuotation("Sent")}
-                disabled={isSaving}
-                className="px-6 py-2.5 bg-gradient-to-r from-amber-400 to-amber-600 text-white rounded-xl hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                {isSaving ? "Saving..." : "Create & Send"}
-              </button>
+            {/* Sticky footer — totals + action buttons always visible */}
+            <div
+              className="flex-shrink-0 px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-4"
+              style={{
+                borderTop: "2px solid rgba(201,162,54,0.3)",
+                background: "linear-gradient(135deg,#fffbef,#fff7e0)",
+              }}
+            >
+              {/* Totals */}
+              <div className="flex items-center gap-6 text-sm flex-wrap">
+                <div className="flex items-center gap-2">
+                  <span style={{ color: "#64748b" }}>Subtotal:</span>
+                  <span className="font-semibold" style={{ color: "#1e293b" }}>
+                    {formatCurrency(subtotal)}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span style={{ color: "#64748b" }}>Tax (18%):</span>
+                  <span className="font-semibold" style={{ color: "#1e293b" }}>
+                    {formatCurrency(tax)}
+                  </span>
+                </div>
+                <div
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl"
+                  style={{
+                    background: "linear-gradient(to right,#C9A236,#8B6914)",
+                  }}
+                >
+                  <span className="font-semibold text-white text-sm">
+                    Grand Total:
+                  </span>
+                  <span className="text-lg font-bold text-white">
+                    {formatCurrency(grandTotal)}
+                  </span>
+                </div>
+              </div>
+              {/* Action buttons */}
+              <div className="flex gap-3 flex-shrink-0">
+                <button
+                  onClick={() => setIsModalOpen(false)}
+                  className="px-6 py-2.5 rounded-xl font-medium border border-slate-300 hover:bg-slate-100 transition-colors"
+                  style={{ background: "#f1f5f9", color: "#334155" }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => handleSaveQuotation("Draft")}
+                  disabled={isSaving}
+                  className="px-6 py-2.5 rounded-xl hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed font-medium"
+                  style={{
+                    background: "linear-gradient(to right,#E31B24,#B01218)",
+                    color: "#ffffff",
+                  }}
+                >
+                  {isSaving ? "Saving..." : "Save Draft"}
+                </button>
+                <button
+                  onClick={() => handleSaveQuotation("Sent")}
+                  disabled={isSaving}
+                  className="px-6 py-2.5 bg-gradient-to-r from-amber-400 to-amber-600 text-white rounded-xl hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {isSaving ? "Saving..." : "Create & Send"}
+                </button>
+              </div>
             </div>
           </div>
         </div>

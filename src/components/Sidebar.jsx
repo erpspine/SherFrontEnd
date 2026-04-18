@@ -15,6 +15,7 @@ import {
   Building2,
   TrendingUp,
   Trees,
+  ShieldCheck,
 } from "lucide-react";
 import { clearAuthSession, getAuthUser } from "../utils/auth";
 import { apiFetch } from "../utils/api";
@@ -48,6 +49,11 @@ const menuGroups = [
     label: "System",
     items: [
       { path: "/users", icon: Users, label: "Users" },
+      {
+        path: "/roles-permissions",
+        icon: ShieldCheck,
+        label: "Roles & Permissions",
+      },
       { path: "/settings", icon: Settings, label: "Settings" },
     ],
   },
@@ -82,7 +88,7 @@ export default function Sidebar({ isOpen, toggleSidebar }) {
       {/* Mobile Overlay */}
       {isOpen && (
         <div
-          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
+          className="fixed inset-0 bg-slate-900/25 z-40 lg:hidden"
           onClick={toggleSidebar}
         />
       )}
@@ -91,29 +97,30 @@ export default function Sidebar({ isOpen, toggleSidebar }) {
       <aside
         className={`
         fixed top-0 left-0 z-50 h-full w-72 
-        bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950
-        border-r border-slate-800/50
+        bg-gradient-to-b from-white via-slate-50 to-slate-100
+        border-r border-slate-200
         transform transition-transform duration-300 ease-in-out
         lg:translate-x-0 flex flex-col
         ${isOpen ? "translate-x-0" : "-translate-x-full"}
       `}
       >
         {/* Logo */}
-        <div className="h-20 flex items-center justify-between px-6 border-b border-slate-800/50 flex-shrink-0">
+        <div className="h-20 flex items-center justify-between px-6 border-b border-slate-200 flex-shrink-0">
           <Link to="/" className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-amber-400 to-amber-600 rounded-xl flex items-center justify-center shadow-lg shadow-amber-500/25">
-              <Car className="w-5 h-5 text-white" />
-            </div>
             <div>
-              <h1 className="text-xl font-bold text-white">Sher ERP</h1>
+              <img
+                src="/sher-logo.png"
+                alt="Sher ERP"
+                className="h-10 w-auto object-contain"
+              />
               <p className="text-xs text-slate-500">Vehicle Leasing</p>
             </div>
           </Link>
           <button
             onClick={toggleSidebar}
-            className="lg:hidden p-2 hover:bg-slate-800 rounded-lg transition-colors"
+            className="lg:hidden p-2 hover:bg-slate-100 rounded-lg transition-colors"
           >
-            <X className="w-5 h-5 text-slate-400" />
+            <X className="w-5 h-5 text-slate-500" />
           </button>
         </div>
 
@@ -135,20 +142,20 @@ export default function Sidebar({ isOpen, toggleSidebar }) {
                       group relative overflow-hidden
                       ${
                         isActive
-                          ? "bg-gradient-to-r from-amber-400/20 to-amber-600/20 text-white"
-                          : "text-slate-400 hover:text-white hover:bg-slate-800/50"
+                          ? "bg-gradient-to-r from-sher-gold/20 to-sher-gold-light/30 text-slate-900"
+                          : "text-slate-600 hover:text-slate-900 hover:bg-white"
                       }
                     `}
                   >
                     {isActive && (
-                      <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-amber-400 to-amber-600 rounded-r" />
+                      <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-sher-gold to-sher-gold-dark rounded-r" />
                     )}
                     <item.icon
-                      className={`w-5 h-5 transition-colors ${isActive ? "text-amber-400" : "group-hover:text-amber-400"}`}
+                      className={`w-5 h-5 transition-colors ${isActive ? "text-sher-gold-dark" : "group-hover:text-sher-teal"}`}
                     />
                     <span className="font-medium">{item.label}</span>
                     {isActive && (
-                      <ChevronRight className="w-4 h-4 ml-auto text-amber-400" />
+                      <ChevronRight className="w-4 h-4 ml-auto text-sher-gold-dark" />
                     )}
                   </Link>
                 );
@@ -158,25 +165,38 @@ export default function Sidebar({ isOpen, toggleSidebar }) {
         </nav>
 
         {/* User Profile */}
-        <div className="p-4 border-t border-slate-800/50 flex-shrink-0">
-          <div className="flex items-center gap-3 p-3 rounded-xl bg-slate-800/50">
-            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center text-white font-semibold">
+        <div className="p-4 border-t border-slate-200 flex-shrink-0">
+          <div
+            className="flex items-center gap-3 p-3 rounded-xl border shadow-sm"
+            style={{
+              background: "linear-gradient(135deg, #ffffff, #f8fafc)",
+              borderColor: "#cbd5e1",
+              boxShadow: "0 6px 16px rgba(15, 23, 42, 0.08)",
+            }}
+          >
+            <div
+              className="w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold"
+              style={{
+                background: "linear-gradient(135deg, #1D4E5F, #0D2E38)",
+              }}
+            >
               {userInitials}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-white truncate">
+              <p className="text-sm font-semibold text-slate-900 truncate">
                 {userName}
               </p>
-              <p className="text-xs text-slate-500 truncate">{userEmail}</p>
+              <p className="text-xs text-slate-600 truncate">{userEmail}</p>
             </div>
-            <button
-              onClick={handleLogout}
-              className="p-2 text-slate-400 hover:text-amber-400 hover:bg-slate-700 rounded-lg transition-colors"
-              title="Logout"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
           </div>
+          <button
+            onClick={handleLogout}
+            className="mt-3 w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl border border-red-200 bg-red-50 text-red-700 font-medium hover:bg-red-100 hover:text-red-800 transition-colors"
+            title="Logout"
+          >
+            <LogOut className="w-4 h-4" />
+            Logout
+          </button>
         </div>
       </aside>
     </>

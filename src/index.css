@@ -10,8 +10,10 @@
 
 body {
   font-family: 'Inter', system-ui, sans-serif;
-  background-color: #0f172a;
-  color: #e2e8f0;
+  background: radial-gradient(circle at top right, rgba(201, 162, 54, 0.18), transparent 42%),
+    radial-gradient(circle at bottom left, rgba(29, 78, 95, 0.1), transparent 38%),
+    linear-gradient(160deg, #fcf8ef 0%, #f8f2e4 55%, #f4efe6 100%);
+  color: #1f2937;
 }
 
 /* Custom Scrollbar */
@@ -21,16 +23,124 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: #1e293b;
+  background: #e5e7eb;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #475569;
+  background: #c9a236;
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #d97706;
+  background: #8b6914;
+}
+
+.sher-btn-primary {
+  background-image: linear-gradient(to right, #c9a236, #8b6914);
+  color: #ffffff;
+}
+
+.sher-card {
+  background: rgba(255, 250, 238, 0.92);
+  border: 1px solid rgba(139, 105, 20, 0.22);
+}
+
+/* Force page content surfaces to light mode while preserving auth screens. */
+.content-light [class~="bg-slate-900/50"],
+.content-light [class~="bg-slate-900/60"],
+.content-light [class~="bg-slate-900/70"],
+.content-light [class~="bg-slate-900"],
+.content-light [class~="bg-slate-950/60"],
+.content-light [class~="bg-slate-950/50"],
+.content-light [class~="bg-slate-950/40"],
+.content-light [class~="bg-slate-950"],
+.content-light [class~="bg-slate-800/50"],
+.content-light [class~="bg-slate-800/60"],
+.content-light [class~="bg-slate-800/40"],
+.content-light [class~="bg-slate-800/30"],
+.content-light [class~="bg-slate-800/20"],
+.content-light [class~="bg-slate-800"] {
+  background: linear-gradient(140deg, rgba(255, 251, 239, 0.95), rgba(255, 246, 224, 0.9)) !important;
+}
+
+.content-light [class~="border-slate-800/50"],
+.content-light [class~="border-slate-800/40"],
+.content-light [class~="border-slate-800"],
+.content-light [class~="border-slate-700/50"],
+.content-light [class~="border-slate-700/60"],
+.content-light [class~="border-slate-700"] {
+  border-color: rgba(139, 105, 20, 0.22) !important;
+}
+
+/* Only override text-white on purely textual elements (headings, paragraphs, spans),
+   NOT on buttons, badges, or anything with a colored background. */
+.content-light h1[class~="text-white"],
+.content-light h2[class~="text-white"],
+.content-light h3[class~="text-white"],
+.content-light h4[class~="text-white"],
+.content-light p[class~="text-white"],
+.content-light span[class~="text-white"]:not([class*="bg-"]) {
+  color: #1f2937 !important;
+}
+
+/* Table cell text that uses text-white needs dark color on light bg */
+.content-light td[class~="text-white"],
+.content-light th[class~="text-white"] {
+  color: #1f2937 !important;
+}
+
+/* Input and select fields with text-white become unreadable on cream bg */
+.content-light input[class~="text-white"],
+.content-light select[class~="text-white"],
+.content-light textarea[class~="text-white"] {
+  color: #1f2937 !important;
+}
+
+.content-light [class~="text-slate-300"] {
+  color: #334155 !important;
+}
+
+.content-light [class~="text-slate-400"] {
+  color: #475569 !important;
+}
+
+.content-light [class~="bg-transparent"] {
+  background-color: transparent !important;
+}
+
+/* Fix placeholder text — prevent it turning black on light backgrounds */
+.content-light ::placeholder,
+::placeholder {
+  color: #9ca3af !important;
+  opacity: 1;
+}
+
+/* Fix select dropdowns and their options — browser renders options in OS dark mode as dark */
+.content-light select,
+.content-light select option,
+select option {
+  background-color: #ffffff !important;
+  color: #1f2937 !important;
+}
+
+.content-light select {
+  color: #1f2937 !important;
+}
+
+/* Custom dropdown menus (div/ul based) inside content-light */
+.content-light [class~="bg-slate-900/95"],
+.content-light [class~="bg-slate-900/90"],
+.content-light [class~="bg-slate-800/95"],
+.content-light [class~="bg-slate-800/90"] {
+  background: #ffffff !important;
+}
+
+/* Text inside those dropdown menus */
+.content-light [class~="bg-slate-900/95"] *,
+.content-light [class~="bg-slate-900/90"] *,
+.content-light [class~="bg-slate-800/95"] *,
+.content-light [class~="bg-slate-800/90"] * {
+  color: #1f2937 !important;
 }
 
 /* Animations */

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeft, ArrowRight, Car, Mail } from "lucide-react";
+import { ArrowLeft, ArrowRight, Mail } from "lucide-react";
 import { apiFetch } from "../utils/api";
 
 export default function ForgotPassword() {
@@ -46,23 +46,24 @@ export default function ForgotPassword() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center p-6">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100 flex items-center justify-center p-6">
       <div className="w-full max-w-md">
         <div className="flex items-center gap-3 mb-8 justify-center">
-          <div className="w-12 h-12 bg-gradient-to-br from-amber-400 to-amber-600 rounded-xl flex items-center justify-center shadow-lg shadow-amber-500/25">
-            <Car className="w-7 h-7 text-white" />
-          </div>
           <div>
-            <h1 className="text-2xl font-bold text-white">Sher ERP</h1>
+            <img
+              src="/sher-logo.png"
+              alt="Sher ERP"
+              className="h-10 w-auto object-contain"
+            />
             <p className="text-xs text-slate-500">Password reset</p>
           </div>
         </div>
 
-        <div className="bg-slate-900/70 border border-slate-800 rounded-3xl p-8 shadow-2xl shadow-black/30">
-          <h2 className="text-3xl font-bold text-white mb-2">
+        <div className="bg-white/90 border border-slate-200 rounded-3xl p-8 shadow-xl shadow-slate-300/30">
+          <h2 className="text-3xl font-bold text-slate-900 mb-2">
             Forgot password
           </h2>
-          <p className="text-slate-400 mb-6">
+          <p className="text-slate-600 mb-6">
             Enter your email to request a reset token.
           </p>
 
@@ -79,12 +80,12 @@ export default function ForgotPassword() {
                 {resetToken && (
                   <div className="space-y-2">
                     <p className="text-emerald-200">Reset token</p>
-                    <div className="bg-slate-950/70 border border-slate-800 rounded-lg px-3 py-2 font-mono text-xs break-all text-slate-200">
+                    <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 font-mono text-xs break-all text-slate-700">
                       {resetToken}
                     </div>
                     <Link
                       to={`/reset-password?email=${encodeURIComponent(email.trim())}&token=${encodeURIComponent(resetToken)}`}
-                      className="inline-flex items-center gap-2 text-amber-300 hover:text-amber-200"
+                      className="inline-flex items-center gap-2 text-sher-gold-dark hover:text-sher-gold"
                     >
                       Continue to reset password
                       <ArrowRight className="w-4 h-4" />
@@ -95,7 +96,7 @@ export default function ForgotPassword() {
             )}
 
             <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">
+              <label className="block text-sm font-medium text-slate-700 mb-2">
                 Email Address
               </label>
               <div className="relative">
@@ -108,7 +109,7 @@ export default function ForgotPassword() {
                   onChange={(event) => setEmail(event.target.value)}
                   placeholder="user@example.com"
                   required
-                  className="w-full bg-slate-900/50 border border-slate-800 rounded-xl pl-12 pr-4 py-3.5 text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-all"
+                  className="w-full bg-white border border-slate-200 rounded-xl pl-12 pr-4 py-3.5 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-sher-gold focus:ring-1 focus:ring-sher-gold transition-all"
                 />
               </div>
             </div>
@@ -116,7 +117,7 @@ export default function ForgotPassword() {
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-amber-400 to-amber-600 text-white py-3.5 rounded-xl font-semibold hover:opacity-90 transition-all shadow-lg shadow-amber-500/25 disabled:opacity-70 disabled:cursor-not-allowed"
+              className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-sher-gold to-sher-gold-dark text-white py-3.5 rounded-xl font-semibold hover:opacity-90 transition-all shadow-lg shadow-sher-gold/25 disabled:opacity-70 disabled:cursor-not-allowed"
             >
               {isLoading ? (
                 <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -129,10 +130,10 @@ export default function ForgotPassword() {
             </button>
           </form>
 
-          <div className="mt-6 pt-6 border-t border-slate-800">
+          <div className="mt-6 pt-6 border-t border-slate-200">
             <Link
               to="/login"
-              className="inline-flex items-center gap-2 text-slate-400 hover:text-white transition-colors"
+              className="inline-flex items-center gap-2 text-slate-500 hover:text-slate-900 transition-colors"
             >
               <ArrowLeft className="w-4 h-4" />
               Back to login
