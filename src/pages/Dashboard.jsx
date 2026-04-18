@@ -35,17 +35,33 @@ const formatCurrency = (value) => `USD ${Number(value || 0).toLocaleString()}`;
 const statusColor = (status) => {
   switch (status) {
     case "Approved":
-      return "bg-green-500/20 text-green-400 border-green-500/30";
+      return "bg-green-100 text-green-700 border-green-200";
     case "Sent":
-      return "bg-blue-500/20 text-blue-400 border-blue-500/30";
+      return "bg-sky-100 text-sky-700 border-sky-200";
     case "Draft":
-      return "bg-slate-500/20 text-slate-400 border-slate-500/30";
+      return "bg-slate-100 text-slate-700 border-slate-200";
     case "Rejected":
-      return "bg-red-500/20 text-red-400 border-red-500/30";
+      return "bg-red-100 text-red-700 border-red-200";
     case "Converted":
-      return "bg-purple-500/20 text-purple-400 border-purple-500/30";
+      return "bg-emerald-100 text-emerald-700 border-emerald-200";
     default:
-      return "bg-slate-500/20 text-slate-400 border-slate-500/30";
+      return "bg-slate-100 text-slate-700 border-slate-200";
+  }
+};
+
+const allocationStatusColor = (status) => {
+  switch ((status || "").toLowerCase()) {
+    case "assigned":
+      return "bg-sky-100 text-sky-700 border-sky-200";
+    case "confirmed":
+      return "bg-emerald-100 text-emerald-700 border-emerald-200";
+    case "completed":
+      return "bg-indigo-100 text-indigo-700 border-indigo-200";
+    case "cancelled":
+    case "canceled":
+      return "bg-rose-100 text-rose-700 border-rose-200";
+    default:
+      return "bg-slate-100 text-slate-700 border-slate-200";
   }
 };
 
@@ -239,8 +255,8 @@ const normalizeDashboardResponse = (data) => {
       label: item?.label || "Unknown",
       count: Number(item?.count || 0),
       color: item?.color || "from-slate-500 to-slate-600",
-      bg: item?.bg || "bg-slate-500/10",
-      text: item?.text || "text-slate-400",
+      bg: item?.bg || "bg-slate-100",
+      text: item?.text || "text-slate-700",
     })),
   };
 };
@@ -528,8 +544,8 @@ export default function Dashboard() {
         subtitle: "vehicles registered",
         icon: Car,
         color: "from-amber-400 to-amber-600",
-        bgColor: "bg-blue-500/10",
-        textColor: "text-blue-400",
+        bgColor: "bg-amber-100",
+        textColor: "text-amber-700",
       },
       {
         title: "Active Leases",
@@ -537,17 +553,17 @@ export default function Dashboard() {
         subtitle: "currently on lease",
         icon: ClipboardList,
         color: "from-green-500 to-emerald-500",
-        bgColor: "bg-green-500/10",
-        textColor: "text-green-400",
+        bgColor: "bg-emerald-100",
+        textColor: "text-emerald-700",
       },
       {
         title: "Monthly Revenue",
         value: formatCurrency(dashboard.stats.monthlyRevenue),
         subtitle: "this month",
         icon: DollarSign,
-        color: "from-purple-500 to-pink-500",
-        bgColor: "bg-purple-500/10",
-        textColor: "text-purple-400",
+        color: "from-cyan-500 to-teal-500",
+        bgColor: "bg-cyan-100",
+        textColor: "text-cyan-700",
       },
       {
         title: "Open Quotations",
@@ -555,8 +571,8 @@ export default function Dashboard() {
         subtitle: "draft/sent/approved",
         icon: FileText,
         color: "from-amber-500 to-orange-500",
-        bgColor: "bg-amber-500/10",
-        textColor: "text-amber-400",
+        bgColor: "bg-orange-100",
+        textColor: "text-orange-700",
       },
     ],
     [dashboard.stats],
@@ -638,6 +654,52 @@ export default function Dashboard() {
     [calendarAllocations, selectedDateKey],
   );
 
+  const upcomingAllocations = useMemo(() => {
+    const now = new Date();
+
+    return allocations
+      .map((allocation) => {
+        const lead =
+          allocation.lead || leadsById.get(Number(allocation.leadId));
+        if (!lead) return null;
+
+        const vehicle =
+          allocation.vehicle || vehiclesById.get(Number(allocation.vehicleId));
+        const driver =
+          allocation.driver || usersById.get(Number(allocation.driverId));
+
+        const startDate = new Date(lead.startDate || "");
+        const endDate = new Date(lead.endDate || "");
+
+        return {
+          allocation,
+          lead,
+          vehicle,
+          driver,
+          startDate,
+          endDate,
+        };
+      })
+      .filter(Boolean)
+      .filter((item) => {
+        if (Number.isNaN(item.endDate.getTime())) return true;
+        return (
+          item.endDate >=
+          new Date(now.getFullYear(), now.getMonth(), now.getDate())
+        );
+      })
+      .sort((a, b) => {
+        const aTime = Number.isNaN(a.startDate.getTime())
+          ? Number.POSITIVE_INFINITY
+          : a.startDate.getTime();
+        const bTime = Number.isNaN(b.startDate.getTime())
+          ? Number.POSITIVE_INFINITY
+          : b.startDate.getTime();
+        return aTime - bTime;
+      })
+      .slice(0, 6);
+  }, [allocations, leadsById, usersById, vehiclesById]);
+
   useEffect(() => {
     const monthPrefix = `${calendarYear}-${String(calendarMonth + 1).padStart(2, "0")}-`;
     const selectedIsInMonth = selectedDateKey?.startsWith(monthPrefix);
@@ -662,24 +724,66 @@ export default function Dashboard() {
     [calendarYear, calendarMonth],
   );
 
+  const totalRevenue = dashboard.revenueData.reduce(
+    (sum, point) => sum + Number(point.revenue || 0),
+    0,
+  );
+
+  const utilizationRate = dashboard.stats.totalFleet
+    ? Math.round(
+        (dashboard.stats.activeLeases / dashboard.stats.totalFleet) * 100,
+      )
+    : 0;
+
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-white">Sher ERP Dashboard</h1>
-          <p className="text-slate-400 mt-1">
-            Live fleet, quotation, PI and lead activity overview.
-          </p>
+    <div className="space-y-6 md:space-y-7">
+      <section className="relative overflow-hidden rounded-3xl border border-amber-300/40 bg-[linear-gradient(135deg,rgba(255,248,231,0.95),rgba(233,247,244,0.96))] px-5 py-6 sm:px-7 sm:py-7 shadow-[0_18px_60px_rgba(129,91,0,0.12)]">
+        <div className="absolute -top-28 -right-16 h-64 w-64 rounded-full bg-amber-300/20 blur-3xl" />
+        <div className="absolute -bottom-24 left-0 h-56 w-56 rounded-full bg-cyan-300/20 blur-3xl" />
+        <div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p className="inline-flex items-center rounded-full border border-amber-300/50 bg-white/70 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-amber-700">
+              Operations Snapshot
+            </p>
+            <h1 className="mt-3 text-2xl font-bold text-slate-800 sm:text-3xl">
+              Sher ERP Dashboard
+            </h1>
+            <p className="mt-2 max-w-2xl text-sm text-slate-600 sm:text-base">
+              Live visibility across fleet operations, safari allocations,
+              revenue flow, and quotation momentum.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <div className="rounded-2xl border border-white/70 bg-white/75 px-4 py-3">
+              <p className="text-[11px] uppercase tracking-wide text-slate-500">
+                Fleet Utilization
+              </p>
+              <p className="mt-1 text-xl font-semibold text-slate-800">
+                {utilizationRate}%
+              </p>
+            </div>
+            <div className="rounded-2xl border border-white/70 bg-white/75 px-4 py-3">
+              <p className="text-[11px] uppercase tracking-wide text-slate-500">
+                6-Month Revenue
+              </p>
+              <p className="mt-1 text-xl font-semibold text-slate-800">
+                {formatCurrency(totalRevenue)}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-white/70 bg-white/75 px-4 py-3 col-span-2 sm:col-span-1">
+              <p className="text-[11px] uppercase tracking-wide text-slate-500">
+                Open Quotations
+              </p>
+              <p className="mt-1 text-xl font-semibold text-slate-800">
+                {dashboard.stats.openQuotations}
+              </p>
+            </div>
+          </div>
         </div>
-        <div className="flex items-center gap-3">
-          <button className="px-4 py-2.5 bg-gradient-to-r from-amber-400 to-amber-600 text-white rounded-xl font-medium text-sm hover:opacity-90 transition-opacity shadow-lg shadow-amber-500/25">
-            Download Report
-          </button>
-        </div>
-      </div>
+      </section>
 
       {errorMessage && (
-        <div className="bg-red-500/10 border border-red-500/30 text-red-300 rounded-xl px-4 py-3 text-sm">
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {errorMessage}
         </div>
       )}
@@ -688,23 +792,26 @@ export default function Dashboard() {
         {statsCards.map((stat) => (
           <div
             key={stat.title}
-            className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-2xl p-6 hover:border-slate-700/50 transition-all duration-300 group"
+            className="group relative overflow-hidden rounded-2xl border border-slate-200/70 bg-white/85 p-6 shadow-[0_14px_30px_rgba(15,23,42,0.07)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_20px_35px_rgba(15,23,42,0.12)]"
           >
+            <div className="absolute -right-12 -top-12 h-24 w-24 rounded-full bg-slate-100/90" />
             <div className="flex items-start justify-between">
-              <div className={`p-3 rounded-xl ${stat.bgColor}`}>
+              <div className={`relative p-3 rounded-xl ${stat.bgColor}`}>
                 <stat.icon className={`w-6 h-6 ${stat.textColor}`} />
               </div>
-              <div className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium bg-green-500/10 text-green-400">
+              <div className="flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700">
                 <ArrowUpRight className="w-3 h-3" />
                 Live
               </div>
             </div>
             <div className="mt-4">
-              <h3 className="text-3xl font-bold text-white">{stat.value}</h3>
-              <p className="text-slate-400 text-sm mt-1">{stat.title}</p>
-              <p className="text-slate-500 text-xs mt-1">{stat.subtitle}</p>
+              <h3 className="text-3xl font-bold text-slate-800">
+                {stat.value}
+              </h3>
+              <p className="mt-1 text-sm text-slate-600">{stat.title}</p>
+              <p className="mt-1 text-xs text-slate-500">{stat.subtitle}</p>
             </div>
-            <div className="mt-4 h-1 bg-slate-800 rounded-full overflow-hidden">
+            <div className="mt-4 h-1 overflow-hidden rounded-full bg-slate-100">
               <div
                 className={`h-full bg-gradient-to-r ${stat.color} rounded-full transition-all duration-1000 group-hover:w-full`}
                 style={{ width: "75%" }}
@@ -715,25 +822,27 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-2xl p-6">
+        <div className="lg:col-span-2 rounded-2xl border border-slate-200/70 bg-white/85 p-6 shadow-[0_14px_30px_rgba(15,23,42,0.07)]">
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h3 className="text-lg font-semibold text-white">PI Revenue</h3>
-              <p className="text-sm text-slate-400">Last 6 months in USD</p>
+              <h3 className="text-lg font-semibold text-slate-800">
+                PI Revenue
+              </h3>
+              <p className="text-sm text-slate-500">Last 6 months in USD</p>
             </div>
-            <button className="p-2 hover:bg-slate-800 rounded-lg transition-colors">
-              <MoreVertical className="w-5 h-5 text-slate-400" />
+            <button className="rounded-lg border border-slate-200 p-2 transition-colors hover:bg-slate-50">
+              <MoreVertical className="w-5 h-5 text-slate-500" />
             </button>
           </div>
           <ResponsiveContainer width="100%" height={300}>
             <AreaChart data={dashboard.revenueData}>
               <defs>
                 <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#c9a236" stopOpacity={0.35} />
+                  <stop offset="5%" stopColor="#0f766e" stopOpacity={0.35} />
                   <stop offset="95%" stopColor="#c9a236" stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
               <XAxis dataKey="name" stroke="#64748b" fontSize={12} />
               <YAxis
                 stroke="#64748b"
@@ -742,17 +851,17 @@ export default function Dashboard() {
               />
               <Tooltip
                 contentStyle={{
-                  backgroundColor: "#1e293b",
-                  border: "1px solid #334155",
+                  backgroundColor: "#ffffff",
+                  border: "1px solid #e2e8f0",
                   borderRadius: "12px",
-                  color: "#fff",
+                  color: "#0f172a",
                 }}
                 formatter={(value) => [formatCurrency(value), "Revenue"]}
               />
               <Area
                 type="monotone"
                 dataKey="revenue"
-                stroke="#c9a236"
+                stroke="#0f766e"
                 strokeWidth={3}
                 fillOpacity={1}
                 fill="url(#colorRevenue)"
@@ -761,10 +870,10 @@ export default function Dashboard() {
           </ResponsiveContainer>
         </div>
 
-        <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-2xl p-6">
+        <div className="rounded-2xl border border-slate-200/70 bg-white/85 p-6 shadow-[0_14px_30px_rgba(15,23,42,0.07)]">
           <div className="mb-6">
-            <h3 className="text-lg font-semibold text-white">Fleet Mix</h3>
-            <p className="text-sm text-slate-400">Distribution by make</p>
+            <h3 className="text-lg font-semibold text-slate-800">Fleet Mix</h3>
+            <p className="text-sm text-slate-500">Distribution by make</p>
           </div>
           <ResponsiveContainer width="100%" height={200}>
             <PieChart>
@@ -783,10 +892,10 @@ export default function Dashboard() {
               </Pie>
               <Tooltip
                 contentStyle={{
-                  backgroundColor: "#1e293b",
-                  border: "1px solid #334155",
+                  backgroundColor: "#ffffff",
+                  border: "1px solid #e2e8f0",
                   borderRadius: "12px",
-                  color: "#fff",
+                  color: "#0f172a",
                 }}
               />
             </PieChart>
@@ -798,8 +907,8 @@ export default function Dashboard() {
                   className="w-3 h-3 rounded-full"
                   style={{ backgroundColor: item.color }}
                 />
-                <span className="text-sm text-slate-400">{item.name}</span>
-                <span className="text-sm text-white font-medium ml-auto">
+                <span className="text-sm text-slate-600">{item.name}</span>
+                <span className="ml-auto text-sm font-medium text-slate-800">
                   {item.value}
                 </span>
               </div>
@@ -809,32 +918,32 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-2xl p-6">
+        <div className="rounded-2xl border border-slate-200/70 bg-white/85 p-6 shadow-[0_14px_30px_rgba(15,23,42,0.07)]">
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h3 className="text-lg font-semibold text-white">
+              <h3 className="text-lg font-semibold text-slate-800">
                 Lead Activity
               </h3>
-              <p className="text-sm text-slate-400">
+              <p className="text-sm text-slate-500">
                 Leads created in last 7 days
               </p>
             </div>
-            <div className="flex items-center gap-2 text-green-400 text-sm">
+            <div className="flex items-center gap-2 text-emerald-700 text-sm">
               <TrendingUp className="w-4 h-4" />
               <span>Live</span>
             </div>
           </div>
           <ResponsiveContainer width="100%" height={250}>
             <BarChart data={dashboard.leadActivity}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
               <XAxis dataKey="name" stroke="#64748b" fontSize={12} />
               <YAxis stroke="#64748b" fontSize={12} allowDecimals={false} />
               <Tooltip
                 contentStyle={{
-                  backgroundColor: "#1e293b",
-                  border: "1px solid #334155",
+                  backgroundColor: "#ffffff",
+                  border: "1px solid #e2e8f0",
                   borderRadius: "12px",
-                  color: "#fff",
+                  color: "#0f172a",
                 }}
                 formatter={(value) => [value, "Leads"]}
               />
@@ -843,17 +952,17 @@ export default function Dashboard() {
           </ResponsiveContainer>
         </div>
 
-        <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-2xl p-6">
+        <div className="rounded-2xl border border-slate-200/70 bg-white/85 p-6 shadow-[0_14px_30px_rgba(15,23,42,0.07)]">
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h3 className="text-lg font-semibold text-white">
+              <h3 className="text-lg font-semibold text-slate-800">
                 Recent Quotations
               </h3>
-              <p className="text-sm text-slate-400">Latest quote activity</p>
+              <p className="text-sm text-slate-500">Latest quote activity</p>
             </div>
             <Link
               to="/quotations"
-              className="text-amber-400 text-sm font-medium hover:text-amber-300 transition-colors"
+              className="text-amber-700 text-sm font-medium transition-colors hover:text-amber-800"
             >
               View All
             </Link>
@@ -862,13 +971,13 @@ export default function Dashboard() {
             {dashboard.recentQuotations.map((quotation) => (
               <div
                 key={quotation.id}
-                className="flex items-center gap-3 p-3 rounded-xl hover:bg-slate-800/50 transition-colors"
+                className="flex items-center gap-3 rounded-xl border border-transparent p-3 transition-colors hover:border-slate-200 hover:bg-slate-50"
               >
                 <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center shrink-0">
                   <ClipboardList className="w-4 h-4 text-white" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-white truncate">
+                  <p className="text-sm font-medium text-slate-800 truncate">
                     {quotation.quoteNo}
                   </p>
                   <p className="text-xs text-slate-500 truncate">
@@ -876,7 +985,7 @@ export default function Dashboard() {
                   </p>
                 </div>
                 <div className="text-right shrink-0">
-                  <p className="text-sm font-semibold text-white">
+                  <p className="text-sm font-semibold text-slate-800">
                     {quotation.amount}
                   </p>
                   <span
@@ -888,7 +997,7 @@ export default function Dashboard() {
               </div>
             ))}
             {!dashboard.recentQuotations.length && (
-              <div className="text-sm text-slate-500 py-6 text-center">
+              <div className="py-6 text-center text-sm text-slate-500">
                 No recent quotations.
               </div>
             )}
@@ -896,19 +1005,19 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-2xl p-6">
+      <div className="rounded-2xl border border-slate-200/70 bg-white/85 p-6 shadow-[0_14px_30px_rgba(15,23,42,0.07)]">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h3 className="text-lg font-semibold text-white">
+            <h3 className="text-lg font-semibold text-slate-800">
               Fleet Availability
             </h3>
-            <p className="text-sm text-slate-400">
+            <p className="text-sm text-slate-500">
               Current status of all vehicles
             </p>
           </div>
           <Link
             to="/vehicles"
-            className="px-4 py-2 bg-slate-800 text-white rounded-xl text-sm font-medium hover:bg-slate-700 transition-colors"
+            className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
           >
             Manage Fleet
           </Link>
@@ -917,11 +1026,11 @@ export default function Dashboard() {
           {dashboard.fleetAvailability.map((item) => (
             <div
               key={item.label}
-              className={`p-4 rounded-xl ${item.bg} border border-slate-700/50`}
+              className={`p-4 rounded-xl ${item.bg} border border-slate-200/70`}
             >
               <p className={`text-3xl font-bold ${item.text}`}>{item.count}</p>
-              <p className="text-sm text-slate-400 mt-1">{item.label}</p>
-              <div className="mt-3 h-1 bg-slate-800 rounded-full overflow-hidden">
+              <p className="mt-1 text-sm text-slate-600">{item.label}</p>
+              <div className="mt-3 h-1 overflow-hidden rounded-full bg-slate-200">
                 <div
                   className={`h-full bg-gradient-to-r ${item.color} rounded-full`}
                   style={{
@@ -934,15 +1043,15 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-2xl p-6">
+      <div className="rounded-2xl border border-slate-200/70 bg-white/85 p-6 shadow-[0_14px_30px_rgba(15,23,42,0.07)]">
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-2">
-            <CalendarIcon className="w-5 h-5 text-amber-400" />
+            <CalendarIcon className="w-5 h-5 text-amber-600" />
             <div>
-              <h3 className="text-lg font-semibold text-white">
+              <h3 className="text-lg font-semibold text-slate-800">
                 Vehicle Allocations Calendar
               </h3>
-              <p className="text-sm text-slate-400">
+              <p className="text-sm text-slate-500">
                 Safari vehicle and driver assignments
               </p>
             </div>
@@ -957,11 +1066,11 @@ export default function Dashboard() {
                   setCalendarMonth(calendarMonth - 1);
                 }
               }}
-              className="p-2 hover:bg-slate-800 rounded-lg transition-colors"
+              className="rounded-lg border border-slate-200 p-2 transition-colors hover:bg-slate-50"
             >
-              <ChevronLeft className="w-4 h-4 text-slate-400" />
+              <ChevronLeft className="w-4 h-4 text-slate-500" />
             </button>
-            <span className="text-sm text-white font-medium min-w-[150px] text-center">
+            <span className="min-w-[150px] text-center text-sm font-medium text-slate-700">
               {new Date(calendarYear, calendarMonth).toLocaleString("en-US", {
                 month: "long",
                 year: "numeric",
@@ -976,9 +1085,9 @@ export default function Dashboard() {
                   setCalendarMonth(calendarMonth + 1);
                 }
               }}
-              className="p-2 hover:bg-slate-800 rounded-lg transition-colors"
+              className="rounded-lg border border-slate-200 p-2 transition-colors hover:bg-slate-50"
             >
-              <ChevronRight className="w-4 h-4 text-slate-400" />
+              <ChevronRight className="w-4 h-4 text-slate-500" />
             </button>
           </div>
         </div>
@@ -987,7 +1096,7 @@ export default function Dashboard() {
           {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
             <div
               key={day}
-              className="text-center text-xs font-semibold text-slate-400 py-2"
+              className="py-2 text-center text-xs font-semibold text-slate-500"
             >
               {day}
             </div>
@@ -1000,7 +1109,7 @@ export default function Dashboard() {
               return (
                 <div
                   key={`empty-${idx}`}
-                  className="aspect-square bg-slate-800/20 rounded-lg"
+                  className="aspect-square rounded-lg bg-slate-100"
                 />
               );
             }
@@ -1015,22 +1124,22 @@ export default function Dashboard() {
                 onClick={() => setSelectedDateKey(dateKey)}
                 className={`aspect-square rounded-lg border p-1 transition-colors ${
                   selectedDateKey === dateKey
-                    ? "border-cyan-400 bg-cyan-500/10"
+                    ? "border-cyan-300 bg-cyan-50"
                     : isToday
-                      ? "border-amber-500 bg-amber-500/10"
+                      ? "border-amber-400 bg-amber-50"
                       : dayAllocations.length > 0
-                        ? "border-blue-500/50 bg-blue-500/10"
-                        : "border-slate-700/50 bg-slate-800/30"
+                        ? "border-sky-300 bg-sky-50"
+                        : "border-slate-200 bg-white"
                 } ${dayAllocations.length > 0 ? "cursor-pointer" : "cursor-default"}`}
               >
                 <div className="flex flex-col h-full">
                   <div
                     className={`text-xs font-semibold ${
                       selectedDateKey === dateKey
-                        ? "text-cyan-300"
+                        ? "text-cyan-700"
                         : isToday
-                          ? "text-amber-400"
-                          : "text-white"
+                          ? "text-amber-700"
+                          : "text-slate-700"
                     }`}
                   >
                     {day}
@@ -1041,16 +1150,16 @@ export default function Dashboard() {
                         {dayAllocations.slice(0, 2).map((alloc, idx) => (
                           <div
                             key={idx}
-                            className="text-[10px] px-1 py-0.5 bg-blue-600/60 text-blue-100 rounded"
+                            className="rounded bg-sky-100 px-1 py-0.5 text-[10px] text-sky-700"
                           >
                             <p className="truncate">{alloc.bookingRef}</p>
-                            <p className="truncate text-blue-200/90">
+                            <p className="truncate text-sky-600">
                               {alloc.vehicleNo} · {alloc.driverName}
                             </p>
                           </div>
                         ))}
                         {dayAllocations.length > 2 && (
-                          <div className="text-[10px] text-slate-400 px-1">
+                          <div className="px-1 text-[10px] text-slate-500">
                             +{dayAllocations.length - 2}
                           </div>
                         )}
@@ -1063,12 +1172,12 @@ export default function Dashboard() {
           })}
         </div>
 
-        <div className="mt-6 pt-6 border-t border-slate-700/50">
+        <div className="mt-6 border-t border-slate-200 pt-6">
           <div className="flex items-center justify-between mb-3">
-            <h4 className="text-sm font-semibold text-white">
+            <h4 className="text-sm font-semibold uppercase tracking-[0.12em] text-slate-700">
               Allocation Details ({selectedDateKey || "Select a date"})
             </h4>
-            <span className="text-xs text-slate-400">
+            <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-slate-600">
               {selectedDayAllocations.length} allocation(s)
             </span>
           </div>
@@ -1083,33 +1192,47 @@ export default function Dashboard() {
               {selectedDayAllocations.map((alloc, index) => (
                 <div
                   key={`${selectedDateKey}-${alloc.vehicleId}-${alloc.driverId}-${index}`}
-                  className="rounded-xl border border-slate-700/60 bg-slate-800/40 p-3"
+                  className="overflow-hidden rounded-2xl border border-slate-200 bg-white"
                 >
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="text-sm font-medium text-white">
-                      Safari: {alloc.bookingRef}
+                  <div className="bg-[linear-gradient(140deg,rgba(251,191,36,0.08),rgba(56,189,248,0.08))] px-4 py-3 border-b border-slate-200/80">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-sm font-semibold text-slate-800">
+                        Safari: {alloc.bookingRef}
+                      </div>
+                      <span
+                        className={`rounded-md border px-2 py-1 text-xs ${allocationStatusColor(alloc.status)}`}
+                      >
+                        {alloc.status}
+                      </span>
                     </div>
-                    <span className="text-xs px-2 py-1 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30">
-                      {alloc.status}
-                    </span>
                   </div>
 
-                  <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
-                    <div className="flex items-start gap-2 text-slate-300">
-                      <MapPin className="w-3.5 h-3.5 text-amber-400 mt-0.5" />
+                  <div className="grid grid-cols-1 gap-3 p-4 md:grid-cols-3 text-xs">
+                    <div className="rounded-xl border border-amber-100 bg-amber-50/60 p-3 text-slate-600">
+                      <div className="mb-2 flex items-center gap-2 text-amber-700">
+                        <MapPin className="h-3.5 w-3.5" />
+                        <p className="font-semibold uppercase tracking-[0.08em] text-[10px]">
+                          Safari Details
+                        </p>
+                      </div>
                       <div>
-                        <p className="text-slate-400">Safari Details</p>
-                        <p className="text-white">{alloc.routeParks}</p>
+                        <p className="text-slate-800 font-medium">
+                          {alloc.routeParks}
+                        </p>
                         <p>
                           {alloc.startDate || "-"} to {alloc.endDate || "-"}
                         </p>
                       </div>
                     </div>
-                    <div className="flex items-start gap-2 text-slate-300">
-                      <Car className="w-3.5 h-3.5 text-cyan-400 mt-0.5" />
+                    <div className="rounded-xl border border-cyan-100 bg-cyan-50/60 p-3 text-slate-600">
+                      <div className="mb-2 flex items-center gap-2 text-cyan-700">
+                        <Car className="h-3.5 w-3.5" />
+                        <p className="font-semibold uppercase tracking-[0.08em] text-[10px]">
+                          Vehicle Details
+                        </p>
+                      </div>
                       <div>
-                        <p className="text-slate-400">Vehicle Details</p>
-                        <p className="text-white">
+                        <p className="text-slate-800 font-medium">
                           {alloc.vehicleNo} ({alloc.plateNo})
                         </p>
                         <p>
@@ -1117,11 +1240,17 @@ export default function Dashboard() {
                         </p>
                       </div>
                     </div>
-                    <div className="flex items-start gap-2 text-slate-300">
-                      <UserCheck className="w-3.5 h-3.5 text-emerald-400 mt-0.5" />
+                    <div className="rounded-xl border border-emerald-100 bg-emerald-50/60 p-3 text-slate-600">
+                      <div className="mb-2 flex items-center gap-2 text-emerald-700">
+                        <UserCheck className="h-3.5 w-3.5" />
+                        <p className="font-semibold uppercase tracking-[0.08em] text-[10px]">
+                          Driver Details
+                        </p>
+                      </div>
                       <div>
-                        <p className="text-slate-400">Driver Details</p>
-                        <p className="text-white">{alloc.driverName}</p>
+                        <p className="text-slate-800 font-medium">
+                          {alloc.driverName}
+                        </p>
                         <p>{alloc.notes || "No notes"}</p>
                       </div>
                     </div>
@@ -1133,55 +1262,81 @@ export default function Dashboard() {
         </div>
 
         {allocations.length > 0 && (
-          <div className="mt-6 pt-6 border-t border-slate-700/50">
-            <h4 className="text-sm font-semibold text-white mb-3">
-              Upcoming Allocations
-            </h4>
+          <div className="mt-6 border-t border-slate-200 pt-6">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <h4 className="text-sm font-semibold uppercase tracking-[0.12em] text-slate-700">
+                Upcoming Allocations
+              </h4>
+              <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-slate-600">
+                {upcomingAllocations.length} shown
+              </span>
+            </div>
             <div className="space-y-2 max-h-[250px] overflow-y-auto">
-              {allocations.slice(0, 5).map((allocation) => {
-                const lead =
-                  allocation.lead || leadsById.get(Number(allocation.leadId));
-                const vehicle =
-                  allocation.vehicle ||
-                  vehiclesById.get(Number(allocation.vehicleId));
-                const driver =
-                  allocation.driver ||
-                  usersById.get(Number(allocation.driverId));
+              {upcomingAllocations.map(
+                ({ allocation, lead, vehicle, driver, startDate, endDate }) => {
+                  const hasDateRange =
+                    !Number.isNaN(startDate.getTime()) &&
+                    !Number.isNaN(endDate.getTime());
 
-                if (!lead) return null;
+                  return (
+                    <div
+                      key={allocation.id}
+                      className="rounded-xl border border-slate-200 bg-white p-3.5 text-sm shadow-[0_4px_14px_rgba(15,23,42,0.05)]"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex min-w-0 items-center gap-2.5">
+                          <div className="rounded-lg bg-sky-100 p-2">
+                            <Car className="h-4 w-4 shrink-0 text-sky-700" />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="truncate font-semibold text-slate-800">
+                              {vehicle?.vehicleNo ||
+                                vehicle?.plateNo ||
+                                "Unknown"}
+                            </div>
+                            <div className="truncate text-xs text-slate-500">
+                              {lead.bookingRef || "-"} ·{" "}
+                              {driver?.name || "Unknown"}
+                            </div>
+                          </div>
+                        </div>
+                        <span
+                          className={`shrink-0 rounded-md border px-2 py-1 text-xs ${allocationStatusColor(allocation.status)}`}
+                        >
+                          {allocation.status}
+                        </span>
+                      </div>
 
-                return (
-                  <div
-                    key={allocation.id}
-                    className="flex items-start gap-3 p-3 rounded-lg bg-slate-800/40 text-sm"
-                  >
-                    <div className="flex items-center gap-2 flex-1 min-w-0">
-                      <Car className="w-4 h-4 text-blue-400 shrink-0" />
-                      <div className="min-w-0">
-                        <div className="font-medium text-white truncate">
-                          {vehicle?.vehicleNo || vehicle?.plateNo || "Unknown"}
-                        </div>
-                        <div className="text-xs text-slate-400 truncate">
-                          {lead.bookingRef || "-"} · {driver?.name || "Unknown"}
-                        </div>
+                      <div className="mt-2.5 flex items-center justify-between text-xs text-slate-500">
+                        <span className="truncate">
+                          Route: {lead.routeParks || "-"}
+                        </span>
+                        <span className="shrink-0">
+                          {hasDateRange
+                            ? `${lead.startDate} to ${lead.endDate}`
+                            : "Date not available"}
+                        </span>
                       </div>
                     </div>
-                    <span className="text-xs px-2 py-1 rounded bg-blue-500/20 text-blue-400 shrink-0">
-                      {allocation.status}
-                    </span>
-                  </div>
-                );
-              })}
+                  );
+                },
+              )}
+
+              {upcomingAllocations.length === 0 && (
+                <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-4 text-center text-xs text-slate-500">
+                  No upcoming allocations with current data.
+                </div>
+              )}
             </div>
           </div>
         )}
 
         {allocations.length === 0 && (
-          <div className="mt-6 pt-6 border-t border-slate-700/50 text-center text-sm text-slate-500">
+          <div className="mt-6 border-t border-slate-200 pt-6 text-center text-sm text-slate-500">
             No vehicle allocations yet.
             <Link
               to="/safari-allocations"
-              className="block mt-2 text-amber-400 hover:text-amber-300 transition-colors"
+              className="mt-2 block text-amber-700 transition-colors hover:text-amber-800"
             >
               Create allocation
             </Link>
@@ -1190,7 +1345,7 @@ export default function Dashboard() {
       </div>
 
       {isLoading && (
-        <div className="text-center text-slate-500 py-6">
+        <div className="py-6 text-center text-slate-500">
           Loading dashboard...
         </div>
       )}

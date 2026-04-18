@@ -37,6 +37,7 @@ const createFormState = () => ({
   phone: "",
   role: "Viewer",
   status: "Active",
+  receive_notifications: false,
 });
 
 const toTitleCase = (value) => {
@@ -70,6 +71,7 @@ const normalizeUser = (user) => ({
     ? toTitleCase(user.role)
     : "Viewer",
   status: normalizeStatus(user.status),
+  receive_notifications: Boolean(user.receive_notifications),
   lastLogin: formatLastLogin(user.last_login_at || user.lastLogin),
 });
 
@@ -163,6 +165,7 @@ export default function Users() {
         phone: selectedUser.phone,
         role: selectedUser.role,
         status: selectedUser.status,
+        receive_notifications: selectedUser.receive_notifications,
       });
       setIsModalOpen(true);
     } catch (error) {
@@ -193,6 +196,7 @@ export default function Users() {
         phone: form.phone,
         role: form.role,
         status: form.status,
+        receive_notifications: form.receive_notifications,
       };
 
       const response = editingId
@@ -378,7 +382,7 @@ export default function Users() {
 
       <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-2xl overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[980px]">
+          <table className="w-full min-w-[1080px]">
             <thead>
               <tr className="border-b border-slate-800">
                 {[
@@ -387,6 +391,7 @@ export default function Users() {
                   "Phone",
                   "Role",
                   "Status",
+                  "Notifications",
                   "Last Login",
                   "Actions",
                 ].map((header) => (
@@ -439,6 +444,13 @@ export default function Users() {
                         <UserX className="w-3 h-3" />
                       )}
                       {user.status}
+                    </span>
+                  </td>
+                  <td className="py-4 px-6">
+                    <span
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border ${user.receive_notifications ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" : "bg-slate-500/20 text-slate-400 border-slate-500/30"}`}
+                    >
+                      {user.receive_notifications ? "Enabled" : "Disabled"}
                     </span>
                   </td>
                   <td className="py-4 px-6 text-sm text-slate-400">
@@ -582,6 +594,25 @@ export default function Users() {
                     </option>
                   ))}
                 </select>
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="inline-flex items-center gap-3 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={form.receive_notifications}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        receive_notifications: e.target.checked,
+                      })
+                    }
+                    className="h-4 w-4 rounded border-slate-600 bg-slate-800 text-amber-500 focus:ring-amber-500 focus:ring-offset-slate-900"
+                  />
+                  <span className="text-sm text-slate-300">
+                    Receive notifications
+                  </span>
+                </label>
               </div>
 
               <div className="md:col-span-2 flex items-center justify-end gap-3 pt-2">

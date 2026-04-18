@@ -603,7 +603,7 @@ export default function JobCards() {
                     className="border-b border-slate-800/40 hover:bg-slate-800/30 transition-colors"
                   >
                     <td className="py-3 px-3">
-                      <div className="flex items-center gap-2 text-white text-sm font-medium">
+                      <div className="flex items-center gap-2 text-slate-800 text-sm font-medium">
                         <ClipboardList className="w-4 h-4 text-amber-400" />
                         {card.jobCardNo}
                       </div>
@@ -613,7 +613,7 @@ export default function JobCards() {
                     </td>
                     <td className="py-3 px-3">
                       <div className="space-y-1">
-                        <div className="flex items-center gap-2 text-white text-sm">
+                        <div className="flex items-center gap-2 text-slate-800 text-sm">
                           <User className="w-4 h-4 text-slate-400" />
                           {card.tourOperatorClientName}
                         </div>

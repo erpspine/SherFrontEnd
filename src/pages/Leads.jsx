@@ -17,6 +17,7 @@ import {
   UserCheck,
   FileCheck,
 } from "lucide-react";
+import Datepicker from "react-tailwindcss-datepicker";
 import { apiFetch } from "../utils/api";
 import Swal from "sweetalert2";
 
@@ -96,6 +97,39 @@ const createEmptyForm = () => ({
   bookingStatus: "Pending",
 });
 
+const normalizeDateValue = (value) => {
+  if (!value) return "";
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return value;
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return parsed.toISOString().slice(0, 10);
+};
+
+const toPickerValue = (value) => ({
+  startDate: value || null,
+  endDate: value || null,
+});
+
+const toApiDate = (value) => {
+  if (!value) return "";
+
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return value;
+  }
+
+  if (typeof value === "string" && /^\d{2}\/\d{2}\/\d{4}$/.test(value)) {
+    const [day, month, year] = value.split("/");
+    return `${year}-${month}-${day}`;
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return parsed.toISOString().slice(0, 10);
+};
+
 const formatDateTime = (value) => {
   if (!value) return "-";
   const parsed = new Date(value);
@@ -122,8 +156,8 @@ export default function Leads() {
     agentEmail: l.agent_email || l.agentEmail || "",
     agentPhone: l.agent_phone || l.agentPhone || "",
     clientCountry: l.client_country || l.clientCountry || "",
-    startDate: l.start_date || l.startDate || "",
-    endDate: l.end_date || l.endDate || "",
+    startDate: normalizeDateValue(l.start_date || l.startDate),
+    endDate: normalizeDateValue(l.end_date || l.endDate),
     routeParks: l.route_parks || l.routeParks || "",
     paxAdults: l.pax_adults ?? l.paxAdults ?? 0,
     paxChildren: l.pax_children ?? l.paxChildren ?? 0,
@@ -285,8 +319,8 @@ export default function Leads() {
         agentEmail: form.agentEmail,
         agentPhone: form.agentPhone,
         clientCountry: form.clientCountry,
-        startDate: form.startDate,
-        endDate: form.endDate,
+        startDate: toApiDate(form.startDate),
+        endDate: toApiDate(form.endDate),
         routeParks: form.routeParks,
         paxAdults: Number(form.paxAdults || 0),
         paxChildren: Number(form.paxChildren || 0),
@@ -736,22 +770,38 @@ export default function Leads() {
                     <label className="block text-xs font-medium text-slate-400 mb-1.5">
                       Start Date <span className="text-red-400">*</span>
                     </label>
-                    <input
-                      type="date"
-                      value={form.startDate}
-                      onChange={(e) => setField("startDate", e.target.value)}
-                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500 [color-scheme:dark]"
+                    <Datepicker
+                      useRange={false}
+                      asSingle
+                      primaryColor="amber"
+                      value={toPickerValue(form.startDate)}
+                      onChange={(newValue) =>
+                        setField("startDate", newValue?.startDate || "")
+                      }
+                      displayFormat="DD/MM/YYYY"
+                      inputClassName="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500"
+                      toggleClassName="absolute right-0 h-full px-3 text-slate-400"
+                      containerClassName="relative"
+                      popoverDirection="down"
                     />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-slate-400 mb-1.5">
                       End Date
                     </label>
-                    <input
-                      type="date"
-                      value={form.endDate}
-                      onChange={(e) => setField("endDate", e.target.value)}
-                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500 [color-scheme:dark]"
+                    <Datepicker
+                      useRange={false}
+                      asSingle
+                      primaryColor="amber"
+                      value={toPickerValue(form.endDate)}
+                      onChange={(newValue) =>
+                        setField("endDate", newValue?.startDate || "")
+                      }
+                      displayFormat="DD/MM/YYYY"
+                      inputClassName="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500"
+                      toggleClassName="absolute right-0 h-full px-3 text-slate-400"
+                      containerClassName="relative"
+                      popoverDirection="down"
                     />
                   </div>
                   <div className="sm:col-span-2">
