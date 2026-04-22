@@ -109,6 +109,50 @@ const normalizeAllocation = (allocation) => ({
   driverId: String(allocation.driverId || allocation.driver_id || ""),
   notes: allocation.notes || "",
   status: allocation.status || "Assigned",
+  lead: allocation.lead
+    ? {
+        id: Number(allocation.lead.id || 0),
+        bookingRef:
+          allocation.lead.booking_ref || allocation.lead.bookingRef || "-",
+        clientCompany:
+          allocation.lead.client_company ||
+          allocation.lead.clientCompany ||
+          "-",
+        agentContact:
+          allocation.lead.agent_contact || allocation.lead.agentContact || "-",
+        startDate:
+          allocation.lead.start_date || allocation.lead.startDate || "",
+        endDate: allocation.lead.end_date || allocation.lead.endDate || "",
+        routeParks:
+          allocation.lead.route_parks || allocation.lead.routeParks || "-",
+      }
+    : null,
+  proformaInvoice: allocation.proformaInvoice
+    ? {
+        id: Number(allocation.proformaInvoice.id || 0),
+        piNo:
+          allocation.proformaInvoice.pi_no ||
+          allocation.proformaInvoice.piNo ||
+          `PI-${allocation.proformaInvoice.id}`,
+      }
+    : null,
+  vehicle: allocation.vehicle
+    ? {
+        id: Number(allocation.vehicle.id || 0),
+        vehicleNo:
+          allocation.vehicle.vehicle_no || allocation.vehicle.vehicleNo || "",
+        plateNo:
+          allocation.vehicle.plate_no || allocation.vehicle.plateNo || "",
+        make: allocation.vehicle.make || "",
+        model: allocation.vehicle.model || "",
+      }
+    : null,
+  driver: allocation.driver
+    ? {
+        id: Number(allocation.driver.id || 0),
+        name: allocation.driver.name || "",
+      }
+    : null,
   createdAt:
     allocation.createdAt || allocation.created_at || new Date().toISOString(),
   updatedAt:
@@ -125,10 +169,18 @@ const extractAllocation = (payload) => {
   return payload;
 };
 
-const extractList = (payload, key) => {
+const extractList = (payload, keys) => {
   if (Array.isArray(payload)) return payload;
   if (Array.isArray(payload?.data)) return payload.data;
-  if (Array.isArray(payload?.[key])) return payload[key];
+
+  const keyList = Array.isArray(keys) ? keys : [keys];
+
+  for (const key of keyList) {
+    if (Array.isArray(payload?.[key])) {
+      return payload[key];
+    }
+  }
+
   return [];
 };
 
@@ -205,9 +257,11 @@ export default function SafariAllocations() {
       );
       setUsers(extractList(usersPayload, "users").map(normalizeUser));
       setAllocations(
-        extractList(allocationsPayload, "safariAllocations").map(
-          normalizeAllocation,
-        ),
+        extractList(allocationsPayload, [
+          "safariAllocations",
+          "safari_allocations",
+          "allocations",
+        ]).map(normalizeAllocation),
       );
     } catch (error) {
       setErrorMessage(error.message || "Failed to load safari allocations.");
@@ -279,9 +333,27 @@ export default function SafariAllocations() {
       );
       return {
         ...allocation,
-        safari,
-        vehicle,
-        driver,
+        safari:
+          safari ||
+          (allocation.lead
+            ? {
+                leadId: String(allocation.lead.id || allocation.leadId || ""),
+                piId: String(
+                  allocation.proformaInvoice?.id || allocation.piId || "",
+                ),
+                piNo: allocation.proformaInvoice?.piNo || "-",
+                bookingRef: allocation.lead.bookingRef || "-",
+                clientCompany: allocation.lead.clientCompany || "-",
+                agentContact: allocation.lead.agentContact || "-",
+                routeParks: allocation.lead.routeParks || "-",
+                startDate: allocation.lead.startDate || "",
+                endDate: allocation.lead.endDate || "",
+                pax: 0,
+                nationality: "-",
+              }
+            : null),
+        vehicle: vehicle || allocation.vehicle || null,
+        driver: driver || allocation.driver || null,
       };
     });
   }, [allocations, safariOptions, vehicles, driverOptions]);

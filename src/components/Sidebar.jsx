@@ -16,6 +16,8 @@ import {
   TrendingUp,
   Trees,
   ShieldCheck,
+  ListChecks,
+  Fuel,
 } from "lucide-react";
 import { clearAuthSession, getAuthUser } from "../utils/auth";
 import { apiFetch } from "../utils/api";
@@ -43,6 +45,8 @@ const menuGroups = [
       { path: "/proforma-invoices", icon: Receipt, label: "Proforma Invoices" },
       { path: "/invoices", icon: FileText, label: "Invoices" },
       { path: "/payments", icon: CreditCard, label: "Payments" },
+      { path: "/checklist", icon: ListChecks, label: "Checklist" },
+      { path: "/fuel-requisitions", icon: Fuel, label: "Fuel Requisitions" },
     ],
   },
   {

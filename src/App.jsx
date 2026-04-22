@@ -22,6 +22,9 @@ import ResetPassword from "./pages/ResetPassword";
 import Leads from "./pages/Leads";
 import Users from "./pages/Users";
 import RolesPermissions from "./pages/RolesPermissions";
+import Checklist from "./pages/Checklist";
+import FuelRequisitions from "./pages/FuelRequisitions";
+import FuelRequisitionCreate from "./pages/FuelRequisitionCreate";
 import { isAuthenticated } from "./utils/auth";
 
 function LoginRoute() {
@@ -49,6 +52,12 @@ function ProtectedRoutes() {
         <Route path="/payments" element={<Payments />} />
         <Route path="/users" element={<Users />} />
         <Route path="/roles-permissions" element={<RolesPermissions />} />
+        <Route path="/checklist" element={<Checklist />} />
+        <Route path="/fuel-requisitions" element={<FuelRequisitions />} />
+        <Route
+          path="/fuel-requisitions/new"
+          element={<FuelRequisitionCreate />}
+        />
         <Route path="/settings" element={<Settings />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

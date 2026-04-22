@@ -38,6 +38,14 @@ const defaultCompanyForm = {
   default_vat: "18",
 };
 
+const defaultProfileForm = {
+  firstName: "",
+  lastName: "",
+  email: "",
+  phone: "",
+  address: "",
+};
+
 const BACKEND_ORIGIN =
   import.meta.env.VITE_BACKEND_ORIGIN || window.location.origin;
 
@@ -77,6 +85,17 @@ const resolveLogoUrl = (settings = {}) => {
 export default function Settings() {
   const [activeTab, setActiveTab] = useState("profile");
   const [showPassword, setShowPassword] = useState(false);
+  const [profileForm, setProfileForm] = useState(defaultProfileForm);
+  const [profileMeta, setProfileMeta] = useState({
+    id: null,
+    name: "",
+    role: "",
+    status: "Active",
+    receiveNotifications: false,
+    roles: [],
+  });
+  const [isLoadingProfile, setIsLoadingProfile] = useState(false);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [passwordForm, setPasswordForm] = useState({
     currentPassword: "",
     newPassword: "",
@@ -94,6 +113,52 @@ export default function Settings() {
   const [isSavingCompany, setIsSavingCompany] = useState(false);
   const [companyError, setCompanyError] = useState("");
   const [companySuccess, setCompanySuccess] = useState("");
+
+  const setProfileField = (field, value) => {
+    setProfileForm((current) => ({ ...current, [field]: value }));
+  };
+
+  const loadProfile = async () => {
+    setIsLoadingProfile(true);
+
+    try {
+      const response = await apiFetch("/me");
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(data?.message || "Failed to load profile.");
+      }
+
+      const user = data?.user || data?.data?.user || data?.data || {};
+      const fullName = String(user.name || "").trim();
+      const nameParts = fullName.split(/\s+/).filter(Boolean);
+      const firstName = nameParts.shift() || "";
+      const lastName = nameParts.join(" ");
+
+      setProfileForm({
+        firstName,
+        lastName,
+        email: user.email || "",
+        phone: user.phone || "",
+        address: companyForm.company_address || "",
+      });
+
+      setProfileMeta({
+        id: user.id || null,
+        name: fullName,
+        role: user.role || "",
+        status: user.status || "Active",
+        receiveNotifications: Boolean(
+          user.receive_notifications ?? user.receiveNotifications,
+        ),
+        roles: Array.isArray(user.roles) ? user.roles : [],
+      });
+    } catch (err) {
+      setCompanyError(err.message || "Failed to load profile.");
+    } finally {
+      setIsLoadingProfile(false);
+    }
+  };
 
   const loadCompanySettings = async () => {
     setIsLoadingCompany(true);
@@ -127,15 +192,27 @@ export default function Settings() {
     setCompanyError("");
     setCompanySuccess("");
     try {
-      const body = new FormData();
-      Object.entries(companyForm).forEach(([k, v]) => body.append(k, v ?? ""));
-      if (companyLogoFile) body.append("logo", companyLogoFile);
-      body.append("_method", "PUT");
+      let response;
 
-      const response = await apiFetch("/settings/company", {
-        method: "POST",
-        body,
-      });
+      if (companyLogoFile) {
+        const body = new FormData();
+        Object.entries(companyForm).forEach(([k, v]) =>
+          body.append(k, v ?? ""),
+        );
+        body.append("logo", companyLogoFile);
+        body.append("_method", "PUT");
+
+        response = await apiFetch("/settings/company", {
+          method: "POST",
+          body,
+        });
+      } else {
+        response = await apiFetch("/settings/company", {
+          method: "PUT",
+          body: companyForm,
+        });
+      }
+
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data?.message || "Failed to save.");
 
@@ -174,15 +251,64 @@ export default function Settings() {
   };
 
   const handleProfileSave = async () => {
-    await Swal.fire({
-      title: "Saved",
-      text: "Profile settings saved successfully.",
-      icon: "success",
-      timer: 1800,
-      showConfirmButton: false,
-      background: "#0f172a",
-      color: "#e2e8f0",
-    });
+    if (!profileMeta.id) {
+      await Swal.fire({
+        title: "Save Failed",
+        text: "Profile details are not loaded yet.",
+        icon: "error",
+        background: "#0f172a",
+        color: "#e2e8f0",
+      });
+      return;
+    }
+
+    setIsSavingProfile(true);
+
+    try {
+      const fullName =
+        `${profileForm.firstName} ${profileForm.lastName}`.trim();
+
+      const response = await apiFetch(`/users/${profileMeta.id}`, {
+        method: "PUT",
+        body: {
+          name: fullName,
+          email: profileForm.email,
+          phone: profileForm.phone,
+          role: profileMeta.role,
+          roles: profileMeta.roles,
+          status: profileMeta.status,
+          receive_notifications: profileMeta.receiveNotifications,
+        },
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(data?.message || "Failed to save profile settings.");
+      }
+
+      await loadProfile();
+
+      await Swal.fire({
+        title: "Saved",
+        text: "Profile settings saved successfully.",
+        icon: "success",
+        timer: 1800,
+        showConfirmButton: false,
+        background: "#0f172a",
+        color: "#e2e8f0",
+      });
+    } catch (err) {
+      await Swal.fire({
+        title: "Save Failed",
+        text: err.message || "Failed to save profile settings.",
+        icon: "error",
+        background: "#0f172a",
+        color: "#e2e8f0",
+      });
+    } finally {
+      setIsSavingProfile(false);
+    }
   };
 
   const handlePasswordUpdate = async () => {
@@ -252,6 +378,7 @@ export default function Settings() {
   };
 
   useEffect(() => {
+    if (activeTab === "profile") loadProfile();
     if (activeTab === "company") loadCompanySettings();
   }, [activeTab]);
 
@@ -260,99 +387,124 @@ export default function Settings() {
       case "profile":
         return (
           <div className="space-y-6">
-            <div className="flex items-center gap-6">
-              <div className="relative">
-                <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center text-white font-bold text-3xl">
-                  SA
+            {isLoadingProfile ? (
+              <div className="py-16 text-center text-slate-500">
+                Loading profile...
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center gap-6">
+                  <div className="relative">
+                    <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center text-white font-bold text-3xl">
+                      {(profileForm.firstName?.[0] || "S") +
+                        (profileForm.lastName?.[0] || "A")}
+                    </div>
+                    <button className="absolute -bottom-2 -right-2 p-2 bg-slate-800 border border-slate-700 rounded-xl text-slate-400 hover:text-white hover:bg-slate-700 transition-colors">
+                      <Camera className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-white">
+                      Administrator Profile
+                    </h3>
+                    <p className="text-sm text-slate-400 mt-1">
+                      Manage the main Sher ERP account details.
+                    </p>
+                    <button className="mt-3 px-4 py-2 bg-slate-800 text-white rounded-xl text-sm font-medium hover:bg-slate-700 transition-colors">
+                      Upload New Photo
+                    </button>
+                  </div>
                 </div>
-                <button className="absolute -bottom-2 -right-2 p-2 bg-slate-800 border border-slate-700 rounded-xl text-slate-400 hover:text-white hover:bg-slate-700 transition-colors">
-                  <Camera className="w-4 h-4" />
-                </button>
-              </div>
-              <div>
-                <h3 className="text-lg font-semibold text-white">
-                  Administrator Profile
-                </h3>
-                <p className="text-sm text-slate-400 mt-1">
-                  Manage the main Sher ERP account details.
-                </p>
-                <button className="mt-3 px-4 py-2 bg-slate-800 text-white rounded-xl text-sm font-medium hover:bg-slate-700 transition-colors">
-                  Upload New Photo
-                </button>
-              </div>
-            </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-medium text-slate-400 mb-2">
-                  First Name
-                </label>
-                <input
-                  type="text"
-                  defaultValue="Sherif"
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-amber-500 transition-colors"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-400 mb-2">
-                  Last Name
-                </label>
-                <input
-                  type="text"
-                  defaultValue="Admin"
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-amber-500 transition-colors"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-400 mb-2">
-                  Email
-                </label>
-                <div className="relative">
-                  <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
-                  <input
-                    type="email"
-                    defaultValue="admin@sher-leasing.co.tz"
-                    className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-12 pr-4 py-3 text-white focus:outline-none focus:border-amber-500 transition-colors"
-                  />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-400 mb-2">
+                      First Name
+                    </label>
+                    <input
+                      type="text"
+                      value={profileForm.firstName}
+                      onChange={(event) =>
+                        setProfileField("firstName", event.target.value)
+                      }
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-amber-500 transition-colors"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-400 mb-2">
+                      Last Name
+                    </label>
+                    <input
+                      type="text"
+                      value={profileForm.lastName}
+                      onChange={(event) =>
+                        setProfileField("lastName", event.target.value)
+                      }
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-amber-500 transition-colors"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-400 mb-2">
+                      Email
+                    </label>
+                    <div className="relative">
+                      <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
+                      <input
+                        type="email"
+                        value={profileForm.email}
+                        onChange={(event) =>
+                          setProfileField("email", event.target.value)
+                        }
+                        className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-12 pr-4 py-3 text-white focus:outline-none focus:border-amber-500 transition-colors"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-400 mb-2">
+                      Phone
+                    </label>
+                    <div className="relative">
+                      <Phone className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
+                      <input
+                        type="tel"
+                        value={profileForm.phone}
+                        onChange={(event) =>
+                          setProfileField("phone", event.target.value)
+                        }
+                        className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-12 pr-4 py-3 text-white focus:outline-none focus:border-amber-500 transition-colors"
+                      />
+                    </div>
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-slate-400 mb-2">
+                      Address
+                    </label>
+                    <div className="relative">
+                      <MapPin className="absolute left-4 top-4 w-5 h-5 text-slate-500" />
+                      <textarea
+                        rows={3}
+                        value={profileForm.address}
+                        onChange={(event) =>
+                          setProfileField("address", event.target.value)
+                        }
+                        className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-12 pr-4 py-3 text-white focus:outline-none focus:border-amber-500 transition-colors resize-none"
+                      />
+                    </div>
+                  </div>
                 </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-400 mb-2">
-                  Phone
-                </label>
-                <div className="relative">
-                  <Phone className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
-                  <input
-                    type="tel"
-                    defaultValue="+255 754 123 456"
-                    className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-12 pr-4 py-3 text-white focus:outline-none focus:border-amber-500 transition-colors"
-                  />
-                </div>
-              </div>
-              <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-slate-400 mb-2">
-                  Address
-                </label>
-                <div className="relative">
-                  <MapPin className="absolute left-4 top-4 w-5 h-5 text-slate-500" />
-                  <textarea
-                    rows={3}
-                    defaultValue="Sher Leasing HQ, Nyerere Road, Dar es Salaam, Tanzania"
-                    className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-12 pr-4 py-3 text-white focus:outline-none focus:border-amber-500 transition-colors resize-none"
-                  />
-                </div>
-              </div>
-            </div>
 
-            <div className="flex justify-end">
-              <button
-                onClick={handleProfileSave}
-                className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-amber-400 to-amber-600 text-white rounded-xl font-medium hover:opacity-90 transition-opacity shadow-lg shadow-amber-500/25"
-              >
-                <Save className="w-5 h-5" />
-                Save Changes
-              </button>
-            </div>
+                <div className="flex justify-end">
+                  <button
+                    onClick={handleProfileSave}
+                    disabled={isSavingProfile}
+                    className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-amber-400 to-amber-600 text-white rounded-xl font-medium hover:opacity-90 transition-opacity shadow-lg shadow-amber-500/25"
+                  >
+                    <Save className="w-5 h-5" />
+                    {isSavingProfile ? "Saving..." : "Save Changes"}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         );
 
