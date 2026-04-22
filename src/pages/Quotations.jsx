@@ -1,4 +1,4 @@
-﻿import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Search,
   Plus,
@@ -14,6 +14,7 @@ import {
   Send,
   FileDown,
   Loader2,
+  ChevronRight,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import Datepicker from "react-tailwindcss-datepicker";
@@ -52,20 +53,68 @@ const createDayItem = () => ({
   rate: "",
 });
 
-const createDaySection = (index = 1) => ({
-  dayTitle: `Day ${index}`,
+const formatDateToIso = (dateValue) => {
+  const year = dateValue.getFullYear();
+  const month = String(dateValue.getMonth() + 1).padStart(2, "0");
+  const day = String(dateValue.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const toIsoDate = (value) => {
+  if (!value) return "";
+  const asString = String(value).trim();
+  const directMatch = asString.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (directMatch) return directMatch[1];
+  const parsed = new Date(asString);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return formatDateToIso(parsed);
+};
+
+const addDaysToIsoDate = (isoDate, daysToAdd) => {
+  const parsed = new Date(`${isoDate}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return "";
+  parsed.setDate(parsed.getDate() + daysToAdd);
+  return formatDateToIso(parsed);
+};
+
+const getTripDates = (startDate, endDate) => {
+  const start = toIsoDate(startDate);
+  const end = toIsoDate(endDate);
+  if (!start || !end) return [];
+  const startObj = new Date(`${start}T00:00:00`);
+  const endObj = new Date(`${end}T00:00:00`);
+  if (Number.isNaN(startObj.getTime()) || Number.isNaN(endObj.getTime())) {
+    return [];
+  }
+  if (startObj > endObj) return [start];
+
+  const dates = [];
+  const cursor = new Date(startObj);
+  while (cursor <= endObj) {
+    dates.push(formatDateToIso(cursor));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return dates;
+};
+
+const createDaySection = (index = 1, dayDate = "") => ({
+  dayDate,
+  dayTitle: dayDate || `Day ${index}`,
   dayDescription: "",
   items: [createDayItem()],
 });
 
-const createFormState = () => ({
-  leadId: "",
-  client: "",
-  attention: "",
-  quoteDate: new Date().toISOString().split("T")[0],
-  notes: "",
-  daySections: [createDaySection(1)],
-});
+const createFormState = () => {
+  const today = new Date().toISOString().split("T")[0];
+  return {
+    leadId: "",
+    client: "",
+    attention: "",
+    quoteDate: today,
+    notes: "",
+    daySections: [createDaySection(1, today)],
+  };
+};
 
 const formatCurrency = (value) => `USD ${Number(value || 0).toLocaleString()}`;
 const toNumber = (value) => Number(value || 0);
@@ -144,8 +193,15 @@ const normalizeDaySection = (section, index) => {
       ? section.line_items
       : [];
 
+  const dayDate =
+    section?.day_date ||
+    section?.dayDate ||
+    toIsoDate(section?.day_title || section?.dayTitle || "");
+
   return {
-    dayTitle: section?.day_title || section?.dayTitle || `Day ${index + 1}`,
+    dayDate,
+    dayTitle:
+      dayDate || section?.day_title || section?.dayTitle || `Day ${index + 1}`,
     dayDescription: section?.day_description || section?.dayDescription || "",
     items: rawItems.length ? rawItems.map(normalizeDayItem) : [createDayItem()],
   };
@@ -168,6 +224,7 @@ const normalizeQuotation = (quotation) => {
     ? rawDaySections.map(normalizeDaySection)
     : [
         {
+          dayDate: "",
           dayTitle: "Day 1",
           dayDescription: "",
           items: rawLineItems.length
@@ -225,6 +282,13 @@ export default function Quotations() {
   const [convertingId, setConvertingId] = useState(null);
   const [downloadingId, setDownloadingId] = useState(null);
   const [errorMessage, setErrorMessage] = useState("");
+  const [isProductModalOpen, setIsProductModalOpen] = useState(false);
+  const [pickerCategory, setPickerCategory] = useState("Transport");
+  const [pickerSearch, setPickerSearch] = useState("");
+  const [pickerTarget, setPickerTarget] = useState({
+    sectionIndex: 0,
+    itemIndex: 0,
+  });
   const navigate = useNavigate();
   const [ratesCache, setRatesCache] = useState({
     transport: [],
@@ -317,7 +381,7 @@ export default function Quotations() {
             : [];
       setRatesCache((prev) => ({ ...prev, [rateType]: list }));
     } catch {
-      // silently fail — manual rate entry remains available
+      // silently fail � manual rate entry remains available
     }
   };
 
@@ -373,10 +437,20 @@ export default function Quotations() {
   const addDaySection = () => {
     setForm((current) => ({
       ...current,
-      daySections: [
-        ...current.daySections,
-        createDaySection(current.daySections.length + 1),
-      ],
+      daySections: (() => {
+        const currentCount = current.daySections.length;
+        const lastSection = current.daySections[currentCount - 1];
+        const lastDate = toIsoDate(lastSection?.dayDate || "");
+        const nextDate = lastDate
+          ? addDaysToIsoDate(lastDate, 1)
+          : current.quoteDate
+            ? addDaysToIsoDate(current.quoteDate, currentCount)
+            : "";
+        return [
+          ...current.daySections,
+          createDaySection(currentCount + 1, nextDate),
+        ];
+      })(),
     }));
   };
 
@@ -385,7 +459,7 @@ export default function Quotations() {
       ...current,
       daySections:
         current.daySections.length === 1
-          ? [createDaySection(1)]
+          ? [createDaySection(1, current.quoteDate || "")]
           : current.daySections.filter((_, index) => index !== sectionIndex),
     }));
   };
@@ -556,9 +630,76 @@ export default function Quotations() {
       return;
     }
 
+    const missingDayDateIndex = form.daySections.findIndex(
+      (section) => !toIsoDate(section.dayDate || section.dayTitle),
+    );
+
+    if (missingDayDateIndex !== -1) {
+      setErrorMessage("Each day must have a valid date before saving.");
+      await Swal.fire({
+        title: "Missing Day Date",
+        text: `Please set a valid date for day ${missingDayDateIndex + 1}.`,
+        icon: "warning",
+        background: "#0f172a",
+        color: "#e2e8f0",
+      });
+      return;
+    }
+
+    let firstInvalidLine = null;
+
+    form.daySections.some((section, sectionIndex) =>
+      section.items.some((item, itemIndex) => {
+        const hasAnyValue =
+          item.item || item.description || item.unit || item.qty || item.rate;
+
+        if (!hasAnyValue) return false;
+
+        const qty = Number(item.qty);
+        const rate = Number(item.rate);
+        const isMissingCustomName =
+          item.item === "Others" && !String(item.customItem || "").trim();
+
+        const isInvalid =
+          !String(item.item || "").trim() ||
+          !String(item.description || "").trim() ||
+          !String(item.unit || "").trim() ||
+          !Number.isFinite(qty) ||
+          qty <= 0 ||
+          !Number.isFinite(rate) ||
+          rate < 0 ||
+          isMissingCustomName;
+
+        if (isInvalid) {
+          firstInvalidLine = {
+            day: sectionIndex + 1,
+            line: itemIndex + 1,
+          };
+          return true;
+        }
+
+        return false;
+      }),
+    );
+
+    if (firstInvalidLine) {
+      setErrorMessage(
+        `Please complete all required fields for day ${firstInvalidLine.day}, line ${firstInvalidLine.line}.`,
+      );
+      await Swal.fire({
+        title: "Incomplete Line Item",
+        text: `Day ${firstInvalidLine.day}, line ${firstInvalidLine.line} is incomplete. Fill item, description, unit, qty and rate.`,
+        icon: "warning",
+        background: "#0f172a",
+        color: "#e2e8f0",
+      });
+      return;
+    }
+
     const preparedDaySections = form.daySections
       .map((section) => ({
-        dayTitle: section.dayTitle,
+        dayDate: toIsoDate(section.dayDate),
+        dayTitle: toIsoDate(section.dayDate) || section.dayTitle,
         dayDescription: section.dayDescription,
         items: section.items.filter(
           (item) => item.item || item.description || item.qty || item.rate,
@@ -752,6 +893,60 @@ export default function Quotations() {
     }
   };
 
+  const handleRegeneratePI = async (quotation) => {
+    const confirmation = await Swal.fire({
+      title: "Regenerate PI?",
+      text: "This will update the existing Proforma Invoice with the latest quotation data.",
+      icon: "question",
+      showCancelButton: true,
+      confirmButtonText: "Regenerate",
+      cancelButtonText: "Cancel",
+      background: "#0f172a",
+      color: "#e2e8f0",
+      confirmButtonColor: "#d97706",
+    });
+
+    if (!confirmation.isConfirmed) return;
+
+    setConvertingId(quotation.id);
+    setErrorMessage("");
+
+    try {
+      const response = await apiFetch(
+        `/quotations/${quotation.id}/convert-to-pi`,
+        { method: "POST" },
+      );
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data?.message || "Unable to regenerate PI.");
+      }
+
+      await Swal.fire({
+        title: "PI Regenerated",
+        text: "Proforma Invoice updated with the latest quotation data.",
+        icon: "success",
+        timer: 1800,
+        showConfirmButton: false,
+        background: "#0f172a",
+        color: "#e2e8f0",
+      });
+
+      navigate("/proforma-invoices");
+    } catch (error) {
+      setErrorMessage(error.message || "Failed to regenerate PI.");
+      await Swal.fire({
+        title: "Regeneration Failed",
+        text: error.message || "Failed to regenerate PI.",
+        icon: "error",
+        background: "#0f172a",
+        color: "#e2e8f0",
+      });
+    } finally {
+      setConvertingId(null);
+    }
+  };
+
   const handleLeadSelect = (value) => {
     if (!value) {
       setForm((current) => ({ ...current, leadId: "" }));
@@ -772,13 +967,28 @@ export default function Quotations() {
       return;
     }
 
-    setForm((current) => ({
-      ...current,
-      leadId: value,
-      client: selectedLead.clientCompany,
-      attention: selectedLead.agentContact || "",
-      notes: `Lead ${selectedLead.bookingRef} | ${selectedLead.routeParks} | ${selectedLead.startDate} to ${selectedLead.endDate}${selectedLead.specialRequirements ? ` | ${selectedLead.specialRequirements}` : ""}`,
-      daySections: current.daySections.map((section, index) =>
+    setForm((current) => {
+      const tripDates = getTripDates(
+        selectedLead.startDate,
+        selectedLead.endDate,
+      );
+      const daySectionsFromLead = tripDates.length
+        ? tripDates.map((tripDate, index) =>
+            createDaySection(index + 1, tripDate),
+          )
+        : current.daySections.map((section, index) => {
+            const fallbackDate =
+              index === 0 && toIsoDate(selectedLead.startDate)
+                ? toIsoDate(selectedLead.startDate)
+                : toIsoDate(section.dayDate || "");
+            return {
+              ...section,
+              dayDate: fallbackDate,
+              dayTitle: fallbackDate || section.dayTitle,
+            };
+          });
+
+      const alignedSections = daySectionsFromLead.map((section, index) =>
         index === 0
           ? {
               ...section,
@@ -798,8 +1008,17 @@ export default function Quotations() {
               ),
             }
           : section,
-      ),
-    }));
+      );
+
+      return {
+        ...current,
+        leadId: value,
+        client: selectedLead.clientCompany,
+        attention: selectedLead.agentContact || "",
+        notes: `Lead ${selectedLead.bookingRef} | ${selectedLead.routeParks} | ${selectedLead.startDate} to ${selectedLead.endDate}${selectedLead.specialRequirements ? ` | ${selectedLead.specialRequirements}` : ""}`,
+        daySections: alignedSections,
+      };
+    });
   };
 
   const getRatesForItem = (itemType) => {
@@ -811,18 +1030,109 @@ export default function Quotations() {
 
   const getRateOptionLabel = (itemType, r) => {
     if (itemType === "Transport")
-      return `${r.particular || r.name || "—"} — USD ${r.rate}`;
+      return `${r.particular || r.name || "�"} � USD ${r.rate}`;
     const parkName = r.park_name || r.parkName || "";
     const type = r.type ? ` (${r.type})` : "";
     const category = r.category ? ` ${r.category}` : "";
-    return `${parkName}${type}${category} — USD ${r.rate}`;
+    return `${parkName}${type}${category} � USD ${r.rate}`;
   };
 
   const getRateDescription = (itemType, r) => {
     if (itemType === "Transport") return r.particular || r.name || "";
     const parkName = r.park_name || r.parkName || "";
-    return [parkName, r.type, r.category].filter(Boolean).join(" — ");
+    return [parkName, r.type, r.category].filter(Boolean).join(" � ");
   };
+
+  const getAutoQtyFromLead = (category, product) => {
+    const selectedLead = leads.find(
+      (lead) => String(lead.id) === String(form.leadId),
+    );
+    if (!selectedLead) return "";
+
+    if (category === "Transport") {
+      return String(selectedLead.noOfVehicles || "");
+    }
+
+    if (!["Park Fees", "Concession Fees"].includes(category)) return "";
+
+    const productHint = [
+      product?.category,
+      product?.type,
+      product?.particular,
+      product?.name,
+      product?.park_name,
+      product?.parkName,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+
+    const hasAdultHint = /adult/.test(productHint);
+    const hasChildHint = /child|children|kid/.test(productHint);
+
+    if (hasChildHint) return String(selectedLead.paxChildren || "");
+    if (hasAdultHint) return String(selectedLead.paxAdults || "");
+
+    return String(selectedLead.paxAdults || "");
+  };
+
+  const openProductPicker = async (sectionIndex, itemIndex) => {
+    setPickerTarget({ sectionIndex, itemIndex });
+    setPickerCategory("Transport");
+    setPickerSearch("");
+    setIsProductModalOpen(true);
+    await Promise.all(
+      ["Transport", "Park Fees", "Concession Fees"].map(loadRatesForType),
+    );
+  };
+
+  const applyProductToLine = (product, category) => {
+    const description =
+      category === "Transport"
+        ? product?.particular || product?.name || ""
+        : getRateDescription(category, product);
+    const autoQty = getAutoQtyFromLead(category, product);
+
+    setForm((current) => ({
+      ...current,
+      daySections: current.daySections.map((section, sectionIndex) => {
+        if (sectionIndex !== pickerTarget.sectionIndex) return section;
+        return {
+          ...section,
+          items: section.items.map((item, itemIndex) => {
+            if (itemIndex !== pickerTarget.itemIndex) return item;
+            if (category === "Others") {
+              return {
+                ...item,
+                item: "Others",
+              };
+            }
+
+            return {
+              ...item,
+              item: category,
+              description: description || item.description,
+              unit: category === "Transport" ? "Vehicle" : "Per person",
+              qty: autoQty !== "" ? autoQty : item.qty,
+              rate: String(product?.rate ?? item.rate ?? ""),
+            };
+          }),
+        };
+      }),
+    }));
+
+    setIsProductModalOpen(false);
+  };
+
+  const categories = ["Transport", "Park Fees", "Concession Fees", "Others"];
+  const productsForCategory = getRatesForItem(pickerCategory);
+  const filteredProducts = productsForCategory.filter((product) => {
+    if (!pickerSearch) return true;
+    const query = pickerSearch.toLowerCase();
+    return getRateDescription(pickerCategory, product)
+      .toLowerCase()
+      .includes(query);
+  });
 
   return (
     <div className="space-y-6">
@@ -1013,6 +1323,18 @@ export default function Quotations() {
                             {convertingId === quotation.id
                               ? "Converting..."
                               : "→ PI"}
+                          </button>
+                        )}
+                        {quotation.status === "Converted" && (
+                          <button
+                            onClick={() => handleRegeneratePI(quotation)}
+                            disabled={convertingId === quotation.id}
+                            className="px-2 py-1 text-xs font-medium text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 rounded-lg transition-colors"
+                            title="Regenerate PI"
+                          >
+                            {convertingId === quotation.id
+                              ? "Regenerating..."
+                              : "↺ PI"}
                           </button>
                         )}
                         <button
@@ -1210,16 +1532,23 @@ export default function Quotations() {
                       <div className="bg-slate-900/60 p-4 space-y-3 border-b border-slate-800">
                         <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-3 items-start">
                           <input
-                            type="text"
-                            value={section.dayTitle}
-                            onChange={(event) =>
+                            type="date"
+                            value={toIsoDate(
+                              section.dayDate || section.dayTitle,
+                            )}
+                            onChange={(event) => {
+                              const selectedDate = event.target.value;
+                              updateDaySection(
+                                sectionIndex,
+                                "dayDate",
+                                selectedDate,
+                              );
                               updateDaySection(
                                 sectionIndex,
                                 "dayTitle",
-                                event.target.value,
-                              )
-                            }
-                            placeholder="Day 1: Arusha → Serengeti"
+                                selectedDate,
+                              );
+                            }}
                             className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-amber-500"
                           />
                           <button
@@ -1275,40 +1604,23 @@ export default function Quotations() {
                                 className="border-b border-slate-800/50 align-middle"
                               >
                                 <td className="px-3 py-3">
-                                  <select
-                                    value={item.item}
-                                    onChange={(event) => {
-                                      updateDayItem(
-                                        sectionIndex,
-                                        itemIndex,
-                                        "item",
-                                        event.target.value,
-                                      );
-                                      if (event.target.value !== "Others") {
-                                        loadRatesForType(event.target.value);
-                                      }
-                                    }}
-                                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      openProductPicker(sectionIndex, itemIndex)
+                                    }
+                                    className={`w-full rounded-lg px-3 py-2 text-sm focus:outline-none text-left transition-all flex items-center justify-between gap-2 ${
+                                      item.item
+                                        ? "bg-emerald-50 border border-emerald-300 text-emerald-800 hover:bg-emerald-100"
+                                        : "bg-amber-50 border-2 border-amber-400 text-amber-800 hover:bg-amber-100 shadow-sm"
+                                    }`}
                                   >
-                                    <option value="">Select item...</option>
-                                    {item.item &&
-                                      ![
-                                        "Transport",
-                                        "Park Fees",
-                                        "Concession Fees",
-                                        "Others",
-                                      ].includes(item.item) && (
-                                        <option value={item.item}>
-                                          {item.item}
-                                        </option>
-                                      )}
-                                    <option value="Transport">Transport</option>
-                                    <option value="Park Fees">Park Fees</option>
-                                    <option value="Concession Fees">
-                                      Concession Fees
-                                    </option>
-                                    <option value="Others">Others</option>
-                                  </select>
+                                    <span className="inline-flex items-center gap-2 font-medium">
+                                      <Plus className="w-3.5 h-3.5" />
+                                      {item.item || "Select item"}
+                                    </span>
+                                    <ChevronRight className="w-4 h-4 opacity-80" />
+                                  </button>
                                   {item.item === "Others" && (
                                     <input
                                       type="text"
@@ -1614,7 +1926,7 @@ export default function Quotations() {
               </div>
             </div>
 
-            {/* Sticky footer — totals + action buttons always visible */}
+            {/* Sticky footer � totals + action buttons always visible */}
             <div
               className="flex-shrink-0 px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-4"
               style={{
@@ -1677,6 +1989,137 @@ export default function Quotations() {
                 >
                   {isSaving ? "Saving..." : "Create & Send"}
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isProductModalOpen && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+          <div
+            className="w-full max-w-5xl bg-white rounded-2xl border border-slate-200 shadow-2xl overflow-hidden"
+            style={{ maxHeight: "84vh" }}
+          >
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200">
+              <div>
+                <h3 className="text-lg font-bold text-slate-800">Add Item</h3>
+                <p className="text-sm text-slate-500">
+                  Select category on the right, then choose a product on the
+                  left.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsProductModalOpen(false)}
+                className="p-2 rounded-lg text-slate-500 hover:bg-slate-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-[1fr_240px]">
+              <div className="min-h-[420px]">
+                <div className="px-4 py-3 border-b border-slate-200">
+                  <div className="flex items-center gap-2 bg-slate-100 rounded-lg px-3 py-2">
+                    <Search className="w-4 h-4 text-slate-500" />
+                    <input
+                      value={pickerSearch}
+                      onChange={(event) => setPickerSearch(event.target.value)}
+                      placeholder="Search products..."
+                      disabled={pickerCategory === "Others"}
+                      className="w-full bg-transparent text-sm text-slate-700 outline-none disabled:opacity-50"
+                    />
+                  </div>
+                </div>
+
+                <div className="max-h-[500px] overflow-auto">
+                  {pickerCategory === "Others" ? (
+                    <div className="p-8 text-center">
+                      <p className="text-slate-700 font-medium">Custom Item</p>
+                      <p className="text-sm text-slate-500 mt-1">
+                        Use this to manually type your own product name.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => applyProductToLine(null, "Others")}
+                        className="mt-4 px-4 py-2 rounded-lg bg-amber-500 text-white hover:bg-amber-400"
+                      >
+                        Use Custom Item
+                      </button>
+                    </div>
+                  ) : (
+                    <table className="w-full">
+                      <thead className="sticky top-0 bg-slate-50 border-b border-slate-200">
+                        <tr>
+                          <th className="text-left px-4 py-3 text-xs uppercase tracking-wide text-slate-500">
+                            Product
+                          </th>
+                          <th className="text-right px-4 py-3 text-xs uppercase tracking-wide text-slate-500">
+                            Rate
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredProducts.length === 0 ? (
+                          <tr>
+                            <td
+                              colSpan={2}
+                              className="px-4 py-10 text-center text-sm text-slate-500"
+                            >
+                              No products found.
+                            </td>
+                          </tr>
+                        ) : (
+                          filteredProducts.map((product, index) => (
+                            <tr
+                              key={product.id || index}
+                              onClick={() =>
+                                applyProductToLine(product, pickerCategory)
+                              }
+                              className="border-b border-slate-100 hover:bg-amber-50 cursor-pointer"
+                            >
+                              <td className="px-4 py-3 text-sm text-slate-700">
+                                {getRateDescription(pickerCategory, product)}
+                              </td>
+                              <td className="px-4 py-3 text-sm font-semibold text-right text-slate-700">
+                                USD {Number(product.rate || 0).toLocaleString()}
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </div>
+
+              <div className="border-l border-slate-200 bg-slate-50 p-3">
+                <p className="text-xs uppercase tracking-wide text-slate-500 px-2 py-1">
+                  Categories
+                </p>
+                <div className="space-y-1 mt-1">
+                  {categories.map((category) => (
+                    <button
+                      key={category}
+                      type="button"
+                      onClick={() => {
+                        setPickerCategory(category);
+                        setPickerSearch("");
+                      }}
+                      className={`w-full px-3 py-2.5 rounded-lg text-sm font-medium flex items-center justify-between ${
+                        pickerCategory === category
+                          ? "bg-amber-500 text-white"
+                          : "text-slate-600 hover:bg-white"
+                      }`}
+                    >
+                      <span>{category}</span>
+                      {pickerCategory === category ? (
+                        <ChevronRight className="w-4 h-4" />
+                      ) : null}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
