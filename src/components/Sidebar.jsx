@@ -18,6 +18,7 @@ import {
   ShieldCheck,
   ListChecks,
   Fuel,
+  Wrench,
 } from "lucide-react";
 import { clearAuthSession, getAuthUser } from "../utils/auth";
 import { apiFetch } from "../utils/api";
@@ -28,25 +29,26 @@ const menuGroups = [
     items: [{ path: "/", icon: LayoutDashboard, label: "Dashboard" }],
   },
   {
-    label: "Fleet & Clients",
+    label: "Fleet",
     items: [
       { path: "/vehicles", icon: Car, label: "Vehicles" },
-      { path: "/clients", icon: Building2, label: "Clients" },
       { path: "/job-cards", icon: ClipboardList, label: "Job Cards" },
       { path: "/safari-allocations", icon: Car, label: "Safari Allocations" },
+      { path: "/checklist", icon: ListChecks, label: "Checklist" },
+      { path: "/fuel-requisitions", icon: Fuel, label: "Fuel Requisitions" },
+      { path: "/vehicle-services", icon: Wrench, label: "Vehicle Service" },
     ],
   },
   {
     label: "Operations",
     items: [
       { path: "/leads", icon: TrendingUp, label: "Leads" },
+      { path: "/clients", icon: Building2, label: "Clients" },
       { path: "/parks", icon: Trees, label: "Parks & Rates" },
       { path: "/quotations", icon: FileText, label: "Quotations" },
       { path: "/proforma-invoices", icon: Receipt, label: "Proforma Invoices" },
       { path: "/invoices", icon: FileText, label: "Invoices" },
       { path: "/payments", icon: CreditCard, label: "Payments" },
-      { path: "/checklist", icon: ListChecks, label: "Checklist" },
-      { path: "/fuel-requisitions", icon: Fuel, label: "Fuel Requisitions" },
     ],
   },
   {

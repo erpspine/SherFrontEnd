@@ -18,11 +18,16 @@ import {
   Building2,
   Car,
   FileText,
+  KeyRound,
+  RefreshCw,
+  Trash2,
+  Power,
 } from "lucide-react";
 
 const tabs = [
   { id: "profile", label: "Profile", icon: User },
   { id: "company", label: "Company", icon: Building2 },
+  { id: "apiTokens", label: "API Tokens", icon: KeyRound },
   { id: "notifications", label: "Notifications", icon: Bell },
   { id: "appearance", label: "Appearance", icon: Palette },
   { id: "security", label: "Security", icon: Shield },
@@ -44,6 +49,47 @@ const defaultProfileForm = {
   email: "",
   phone: "",
   address: "",
+};
+
+const defaultApiTokenForm = {
+  name: "",
+  website_url: "",
+};
+
+const getApiKeyDisplayName = (key = {}) => {
+  const explicitName = String(
+    key?.name || key?.token_name || key?.tokenName || "",
+  ).trim();
+  if (explicitName) return explicitName;
+
+  const rawUrl = String(key?.website_url || key?.websiteUrl || "").trim();
+  if (!rawUrl) return "Unnamed key";
+
+  try {
+    const normalizedUrl = /^https?:\/\//i.test(rawUrl)
+      ? rawUrl
+      : `https://${rawUrl}`;
+    return new URL(normalizedUrl).hostname || rawUrl;
+  } catch {
+    return rawUrl;
+  }
+};
+
+const normalizeApiKey = (key) => ({
+  id: key?.id,
+  name: getApiKeyDisplayName(key),
+  website_url: key?.website_url || key?.websiteUrl || "",
+  active: Boolean(key?.active),
+  last_used_at: key?.last_used_at || key?.lastUsedAt || null,
+  created_at: key?.created_at || key?.createdAt || null,
+  updated_at: key?.updated_at || key?.updatedAt || null,
+});
+
+const formatDateTime = (value) => {
+  if (!value) return "Never";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return String(value);
+  return parsed.toLocaleString();
 };
 
 const BACKEND_ORIGIN =
@@ -113,6 +159,14 @@ export default function Settings() {
   const [isSavingCompany, setIsSavingCompany] = useState(false);
   const [companyError, setCompanyError] = useState("");
   const [companySuccess, setCompanySuccess] = useState("");
+  const [apiKeys, setApiKeys] = useState([]);
+  const [apiTokenForm, setApiTokenForm] = useState(defaultApiTokenForm);
+  const [editingApiKeyId, setEditingApiKeyId] = useState(null);
+  const [isLoadingApiKeys, setIsLoadingApiKeys] = useState(false);
+  const [isSavingApiKey, setIsSavingApiKey] = useState(false);
+  const [apiKeyActionId, setApiKeyActionId] = useState(null);
+  const [apiKeyError, setApiKeyError] = useState("");
+  const [apiKeySuccess, setApiKeySuccess] = useState("");
 
   const setProfileField = (field, value) => {
     setProfileForm((current) => ({ ...current, [field]: value }));
@@ -311,6 +365,232 @@ export default function Settings() {
     }
   };
 
+  const loadApiKeys = async () => {
+    setIsLoadingApiKeys(true);
+    setApiKeyError("");
+
+    try {
+      const response = await apiFetch("/lead-api-keys");
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(data?.message || "Failed to load API keys.");
+      }
+
+      const list = Array.isArray(data?.apiKeys)
+        ? data.apiKeys
+        : Array.isArray(data?.data)
+          ? data.data
+          : [];
+      setApiKeys(list.map(normalizeApiKey));
+    } catch (error) {
+      setApiKeyError(error.message || "Failed to load API keys.");
+    } finally {
+      setIsLoadingApiKeys(false);
+    }
+  };
+
+  const resetApiTokenForm = () => {
+    setEditingApiKeyId(null);
+    setApiTokenForm(defaultApiTokenForm);
+  };
+
+  const copyTokenToClipboard = async (token) => {
+    try {
+      await navigator.clipboard.writeText(token);
+      setApiKeySuccess("Token copied to clipboard.");
+      setTimeout(() => setApiKeySuccess(""), 2500);
+    } catch {
+      setApiKeyError(
+        "Could not copy token automatically. Please copy it manually.",
+      );
+    }
+  };
+
+  const showPlainKeyModal = async (plainKey, title) => {
+    const result = await Swal.fire({
+      title,
+      html: `<div style=\"text-align:left\"><p style=\"margin-bottom:8px\">Store this key now. It will not be shown again.</p><div style=\"word-break:break-all;background:#0b1220;border:1px solid #334155;border-radius:8px;padding:10px;color:#e2e8f0;font-family:monospace\">${plainKey}</div></div>`,
+      icon: "success",
+      showCancelButton: true,
+      confirmButtonText: "Copy Key",
+      cancelButtonText: "Close",
+      background: "#0f172a",
+      color: "#e2e8f0",
+    });
+
+    if (result.isConfirmed) {
+      await copyTokenToClipboard(plainKey);
+    }
+  };
+
+  const handleSaveApiToken = async () => {
+    if (!apiTokenForm.name.trim() || !apiTokenForm.website_url.trim()) {
+      setApiKeyError("Name and website URL are required.");
+      return;
+    }
+
+    setIsSavingApiKey(true);
+    setApiKeyError("");
+    setApiKeySuccess("");
+
+    try {
+      const isEditing = Boolean(editingApiKeyId);
+      const path = isEditing
+        ? `/lead-api-keys/${editingApiKeyId}`
+        : "/lead-api-keys";
+      const method = isEditing ? "PUT" : "POST";
+
+      const response = await apiFetch(path, {
+        method,
+        body: {
+          name: apiTokenForm.name.trim(),
+          website_url: apiTokenForm.website_url.trim(),
+        },
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data?.message || "Failed to save API token.");
+      }
+
+      resetApiTokenForm();
+      await loadApiKeys();
+      setApiKeySuccess(data?.message || "API token saved successfully.");
+
+      const plainKey = data?.apiKey?.plainKey;
+      if (plainKey) {
+        await showPlainKeyModal(plainKey, "API Key Created");
+      }
+    } catch (error) {
+      setApiKeyError(error.message || "Failed to save API token.");
+    } finally {
+      setIsSavingApiKey(false);
+    }
+  };
+
+  const startEditApiKey = (key) => {
+    setEditingApiKeyId(key.id);
+    setApiTokenForm({
+      name: key.name,
+      website_url: key.website_url,
+    });
+    setApiKeyError("");
+    setApiKeySuccess("");
+  };
+
+  const handleToggleApiKey = async (key) => {
+    setApiKeyActionId(key.id);
+    setApiKeyError("");
+
+    try {
+      const response = await apiFetch(`/lead-api-keys/${key.id}`, {
+        method: "PUT",
+        body: { active: !key.active },
+      });
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(data?.message || "Failed to update API token status.");
+      }
+
+      setApiKeys((current) =>
+        current.map((item) =>
+          item.id === key.id ? { ...item, active: !item.active } : item,
+        ),
+      );
+      setApiKeySuccess(data?.message || "API token status updated.");
+      setTimeout(() => setApiKeySuccess(""), 2500);
+    } catch (error) {
+      setApiKeyError(error.message || "Failed to update API token status.");
+    } finally {
+      setApiKeyActionId(null);
+    }
+  };
+
+  const handleRegenerateApiKey = async (key) => {
+    const confirmation = await Swal.fire({
+      title: "Regenerate API key?",
+      text: "The old key will stop working immediately.",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Regenerate",
+      cancelButtonText: "Cancel",
+      background: "#0f172a",
+      color: "#e2e8f0",
+      confirmButtonColor: "#d97706",
+    });
+
+    if (!confirmation.isConfirmed) return;
+
+    setApiKeyActionId(key.id);
+    setApiKeyError("");
+
+    try {
+      const response = await apiFetch(`/lead-api-keys/${key.id}/regenerate`, {
+        method: "POST",
+      });
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(data?.message || "Failed to regenerate API token.");
+      }
+
+      await loadApiKeys();
+      setApiKeySuccess(data?.message || "API token regenerated.");
+
+      const plainKey = data?.apiKey?.plainKey;
+      if (plainKey) {
+        await showPlainKeyModal(plainKey, "API Key Regenerated");
+      }
+    } catch (error) {
+      setApiKeyError(error.message || "Failed to regenerate API token.");
+    } finally {
+      setApiKeyActionId(null);
+    }
+  };
+
+  const handleDeleteApiKey = async (key) => {
+    const confirmation = await Swal.fire({
+      title: "Delete API key?",
+      text: "This action cannot be undone.",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Delete",
+      cancelButtonText: "Cancel",
+      background: "#0f172a",
+      color: "#e2e8f0",
+      confirmButtonColor: "#dc2626",
+    });
+
+    if (!confirmation.isConfirmed) return;
+
+    setApiKeyActionId(key.id);
+    setApiKeyError("");
+
+    try {
+      const response = await apiFetch(`/lead-api-keys/${key.id}`, {
+        method: "DELETE",
+      });
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(data?.message || "Failed to delete API token.");
+      }
+
+      setApiKeys((current) => current.filter((item) => item.id !== key.id));
+      if (editingApiKeyId === key.id) {
+        resetApiTokenForm();
+      }
+      setApiKeySuccess(data?.message || "API token deleted.");
+      setTimeout(() => setApiKeySuccess(""), 2500);
+    } catch (error) {
+      setApiKeyError(error.message || "Failed to delete API token.");
+    } finally {
+      setApiKeyActionId(null);
+    }
+  };
+
   const handlePasswordUpdate = async () => {
     setPasswordError("");
     setPasswordSuccess("");
@@ -380,6 +660,7 @@ export default function Settings() {
   useEffect(() => {
     if (activeTab === "profile") loadProfile();
     if (activeTab === "company") loadCompanySettings();
+    if (activeTab === "apiTokens") loadApiKeys();
   }, [activeTab]);
 
   const renderTabContent = () => {
@@ -783,6 +1064,203 @@ export default function Settings() {
                 </label>
               </div>
             ))}
+          </div>
+        );
+
+      case "apiTokens":
+        return (
+          <div className="space-y-6">
+            <div className="bg-slate-800/40 border border-slate-700/50 rounded-2xl p-5">
+              <h4 className="text-white font-medium mb-1">Lead API Keys</h4>
+              <p className="text-sm text-slate-400 mb-5">
+                Create keys for external websites. Public lead capture endpoint:
+                <span className="ml-1 font-mono text-amber-300">
+                  POST /api/leads/capture-from-website
+                </span>
+                with
+                <span className="ml-1 font-mono text-amber-300">
+                  X-Lead-API-Key
+                </span>
+                header.
+              </p>
+
+              {apiKeyError && (
+                <div className="mb-4 bg-red-500/10 border border-red-500/30 text-red-300 rounded-xl px-4 py-3 text-sm">
+                  {apiKeyError}
+                </div>
+              )}
+              {apiKeySuccess && (
+                <div className="mb-4 bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 rounded-xl px-4 py-3 text-sm">
+                  {apiKeySuccess}
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-400 mb-2">
+                    Key Name
+                  </label>
+                  <input
+                    type="text"
+                    value={apiTokenForm.name}
+                    onChange={(event) =>
+                      setApiTokenForm((current) => ({
+                        ...current,
+                        name: event.target.value,
+                      }))
+                    }
+                    placeholder="My Travel Website"
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-amber-500 transition-colors"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-400 mb-2">
+                    Website URL
+                  </label>
+                  <input
+                    type="url"
+                    value={apiTokenForm.website_url}
+                    onChange={(event) =>
+                      setApiTokenForm((current) => ({
+                        ...current,
+                        website_url: event.target.value,
+                      }))
+                    }
+                    placeholder="https://mysite.com"
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-amber-500 transition-colors"
+                  />
+                </div>
+              </div>
+
+              <div className="mt-4 flex flex-wrap gap-3">
+                <button
+                  onClick={handleSaveApiToken}
+                  disabled={isSavingApiKey}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-amber-400 to-amber-600 text-white rounded-xl font-medium hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Save className="w-4 h-4" />
+                  {isSavingApiKey
+                    ? "Saving..."
+                    : editingApiKeyId
+                      ? "Update API Key"
+                      : "Create API Key"}
+                </button>
+                {editingApiKeyId && (
+                  <button
+                    onClick={resetApiTokenForm}
+                    className="px-5 py-2.5 bg-slate-700 text-white rounded-xl font-medium hover:bg-slate-600 transition-colors"
+                  >
+                    Cancel Edit
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="bg-slate-800/30 border border-slate-700/50 rounded-2xl overflow-hidden">
+              {isLoadingApiKeys ? (
+                <div className="py-14 text-center text-slate-500">
+                  Loading API keys...
+                </div>
+              ) : apiKeys.length === 0 ? (
+                <div className="py-14 text-center text-slate-500">
+                  No API keys created yet.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-900/70 border-b border-slate-800 text-slate-400">
+                      <tr>
+                        <th className="text-left px-4 py-3 font-medium">
+                          Name
+                        </th>
+                        <th className="text-left px-4 py-3 font-medium">
+                          Website
+                        </th>
+                        <th className="text-left px-4 py-3 font-medium">
+                          Status
+                        </th>
+                        <th className="text-left px-4 py-3 font-medium">
+                          Last Used
+                        </th>
+                        <th className="text-right px-4 py-3 font-medium">
+                          Actions
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {apiKeys.map((key) => (
+                        <tr
+                          key={key.id}
+                          className="border-b border-slate-800/60 text-slate-200"
+                        >
+                          <td className="px-4 py-3 font-medium text-white whitespace-nowrap">
+                            {key.name}
+                          </td>
+                          <td className="px-4 py-3 text-slate-300">
+                            <a
+                              href={key.website_url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="hover:text-amber-300 transition-colors"
+                            >
+                              {key.website_url}
+                            </a>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span
+                              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium border ${
+                                key.active
+                                  ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/30"
+                                  : "bg-slate-500/20 text-slate-300 border-slate-500/30"
+                              }`}
+                            >
+                              <Power className="w-3.5 h-3.5" />
+                              {key.active ? "Active" : "Disabled"}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-slate-400">
+                            {formatDateTime(key.last_used_at)}
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex justify-end items-center gap-2">
+                              <button
+                                onClick={() => startEditApiKey(key)}
+                                className="px-2.5 py-1.5 text-xs rounded-lg bg-blue-500/15 text-blue-300 hover:bg-blue-500/25 transition-colors"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                onClick={() => handleToggleApiKey(key)}
+                                disabled={apiKeyActionId === key.id}
+                                className="px-2.5 py-1.5 text-xs rounded-lg bg-slate-600/30 text-slate-200 hover:bg-slate-600/50 transition-colors disabled:opacity-60"
+                              >
+                                {key.active ? "Disable" : "Enable"}
+                              </button>
+                              <button
+                                onClick={() => handleRegenerateApiKey(key)}
+                                disabled={apiKeyActionId === key.id}
+                                className="p-1.5 rounded-lg text-amber-300 hover:bg-amber-500/15 transition-colors disabled:opacity-60"
+                                title="Regenerate key"
+                              >
+                                <RefreshCw className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteApiKey(key)}
+                                disabled={apiKeyActionId === key.id}
+                                className="p-1.5 rounded-lg text-red-300 hover:bg-red-500/15 transition-colors disabled:opacity-60"
+                                title="Delete key"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
           </div>
         );
 

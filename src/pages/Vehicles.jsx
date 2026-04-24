@@ -12,6 +12,8 @@ import {
   Trash2,
   X,
   Users,
+  History,
+  Calendar,
 } from "lucide-react";
 import Swal from "sweetalert2";
 import { apiFetch } from "../utils/api";
@@ -49,6 +51,33 @@ const extractList = (payload) => {
 };
 
 const extractSingle = (payload) => payload?.data || payload?.vehicle || payload;
+
+const normalizeHistoryEvent = (event) => ({
+  eventType: event?.eventType || event?.event_type || "event",
+  eventDate: event?.eventDate || event?.event_date || "",
+  eventAt: event?.eventAt || event?.event_at || "",
+  title: event?.title || "Vehicle event",
+  details: event?.details || "",
+});
+
+const formatDateTime = (value) => {
+  if (!value) return "-";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString();
+};
+
+const formatHistoryDetails = (details) => {
+  if (!details) return "-";
+  if (typeof details === "string") return details;
+  if (Array.isArray(details)) return details.join(", ");
+  if (typeof details === "object") {
+    return Object.entries(details)
+      .map(([key, value]) => `${key}: ${value}`)
+      .join(" | ");
+  }
+  return String(details);
+};
 
 const getStatusConfig = (status) => {
   switch (status) {
@@ -95,6 +124,17 @@ export default function Vehicles() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
+  const [historyVehicle, setHistoryVehicle] = useState(null);
+  const [historyItems, setHistoryItems] = useState([]);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [historyError, setHistoryError] = useState("");
+  const [historyFilters, setHistoryFilters] = useState({
+    eventType: "",
+    from: "",
+    to: "",
+    sort: "desc",
+  });
 
   const loadVehicles = async () => {
     setErrorMessage("");
@@ -138,6 +178,78 @@ export default function Vehicles() {
     setEditVehicle(null);
     setForm(createVehicleForm());
     setIsModalOpen(true);
+  };
+
+  const loadVehicleHistory = async (
+    vehicleId,
+    filterValues = historyFilters,
+  ) => {
+    setIsLoadingHistory(true);
+    setHistoryError("");
+
+    try {
+      const params = new URLSearchParams();
+      if (filterValues.eventType)
+        params.set("eventType", filterValues.eventType);
+      if (filterValues.from) params.set("from", filterValues.from);
+      if (filterValues.to) params.set("to", filterValues.to);
+      if (filterValues.sort) params.set("sort", filterValues.sort);
+
+      const query = params.toString();
+      const response = await apiFetch(
+        `/vehicles/${vehicleId}/history${query ? `?${query}` : ""}`,
+      );
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(payload?.message || "Unable to load vehicle history.");
+      }
+
+      const data = payload?.data || payload;
+      const rawVehicle = data?.vehicle || null;
+      const rawHistory = Array.isArray(data?.history) ? data.history : [];
+
+      setHistoryVehicle(rawVehicle ? normalizeVehicle(rawVehicle) : null);
+      setHistoryItems(rawHistory.map(normalizeHistoryEvent));
+    } catch (error) {
+      setHistoryError(error.message || "Failed to load vehicle history.");
+      setHistoryItems([]);
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  };
+
+  const openHistory = async (vehicle) => {
+    const defaultFilters = {
+      eventType: "",
+      from: "",
+      to: "",
+      sort: "desc",
+    };
+
+    setHistoryVehicle(vehicle);
+    setHistoryFilters(defaultFilters);
+    setHistoryItems([]);
+    setHistoryError("");
+    setIsHistoryModalOpen(true);
+    await loadVehicleHistory(vehicle.id, defaultFilters);
+  };
+
+  const handleApplyHistoryFilters = async () => {
+    if (!historyVehicle?.id) return;
+    await loadVehicleHistory(historyVehicle.id, historyFilters);
+  };
+
+  const handleResetHistoryFilters = async () => {
+    if (!historyVehicle?.id) return;
+    const defaultFilters = {
+      eventType: "",
+      from: "",
+      to: "",
+      sort: "desc",
+    };
+    setHistoryFilters(defaultFilters);
+    await loadVehicleHistory(historyVehicle.id, defaultFilters);
   };
 
   const openEdit = async (v) => {
@@ -460,6 +572,13 @@ export default function Vehicles() {
                     <td className="py-4 px-6">
                       <div className="flex items-center gap-2">
                         <button
+                          onClick={() => openHistory(v)}
+                          className="p-1.5 text-slate-400 hover:text-cyan-400 hover:bg-cyan-500/10 rounded-lg transition-colors"
+                          title="View History"
+                        >
+                          <History className="w-4 h-4" />
+                        </button>
+                        <button
                           onClick={() => openEdit(v)}
                           className="p-1.5 text-slate-400 hover:text-amber-400 hover:bg-amber-500/10 rounded-lg transition-colors"
                         >
@@ -608,6 +727,165 @@ export default function Vehicles() {
                     ? "Update Vehicle"
                     : "Add Vehicle"}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Vehicle History Modal */}
+      {isHistoryModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-6 border-b border-slate-800">
+              <div>
+                <h2 className="text-xl font-bold text-white">
+                  Vehicle History
+                </h2>
+                <p className="text-sm text-slate-400 mt-1">
+                  {historyVehicle
+                    ? `${historyVehicle.vehicleNo || "-"} · ${historyVehicle.plateNo || "-"}`
+                    : "Timeline"}
+                </p>
+              </div>
+              <button
+                onClick={() => setIsHistoryModalOpen(false)}
+                className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-5">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-400 mb-1.5">
+                    Event Type
+                  </label>
+                  <input
+                    type="text"
+                    value={historyFilters.eventType}
+                    onChange={(event) =>
+                      setHistoryFilters((current) => ({
+                        ...current,
+                        eventType: event.target.value,
+                      }))
+                    }
+                    placeholder="e.g. service_out"
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-400 mb-1.5">
+                    From
+                  </label>
+                  <input
+                    type="date"
+                    value={historyFilters.from}
+                    onChange={(event) =>
+                      setHistoryFilters((current) => ({
+                        ...current,
+                        from: event.target.value,
+                      }))
+                    }
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-400 mb-1.5">
+                    To
+                  </label>
+                  <input
+                    type="date"
+                    value={historyFilters.to}
+                    onChange={(event) =>
+                      setHistoryFilters((current) => ({
+                        ...current,
+                        to: event.target.value,
+                      }))
+                    }
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-400 mb-1.5">
+                    Sort
+                  </label>
+                  <select
+                    value={historyFilters.sort}
+                    onChange={(event) =>
+                      setHistoryFilters((current) => ({
+                        ...current,
+                        sort: event.target.value,
+                      }))
+                    }
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500"
+                  >
+                    <option value="desc">Latest first</option>
+                    <option value="asc">Oldest first</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleApplyHistoryFilters}
+                  disabled={isLoadingHistory}
+                  className="px-4 py-2 bg-gradient-to-r from-amber-400 to-amber-600 text-white rounded-lg text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+                >
+                  Apply Filters
+                </button>
+                <button
+                  onClick={handleResetHistoryFilters}
+                  disabled={isLoadingHistory}
+                  className="px-4 py-2 bg-slate-800 text-slate-200 rounded-lg text-sm font-medium hover:bg-slate-700 transition-colors disabled:opacity-50"
+                >
+                  Reset
+                </button>
+              </div>
+
+              {historyError && (
+                <div className="bg-red-500/10 border border-red-500/30 text-red-300 rounded-xl px-4 py-3 text-sm">
+                  {historyError}
+                </div>
+              )}
+
+              {isLoadingHistory ? (
+                <div className="py-12 text-center text-slate-500">
+                  Loading history...
+                </div>
+              ) : historyItems.length === 0 ? (
+                <div className="py-12 text-center text-slate-500">
+                  No history events found for this vehicle.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {historyItems.map((item, index) => (
+                    <div
+                      key={`${item.eventAt || item.eventDate || item.title}-${index}`}
+                      className="rounded-xl border border-slate-800 bg-slate-800/40 p-4"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div>
+                          <p className="text-white font-medium">{item.title}</p>
+                          <p className="text-xs text-cyan-300 mt-0.5 uppercase tracking-wide">
+                            {item.eventType}
+                          </p>
+                        </div>
+                        <div className="text-right text-xs text-slate-400">
+                          <div className="inline-flex items-center gap-1">
+                            <Calendar className="w-3.5 h-3.5" />
+                            <span>{item.eventDate || "-"}</span>
+                          </div>
+                          <p className="mt-1">{formatDateTime(item.eventAt)}</p>
+                        </div>
+                      </div>
+                      <p className="text-sm text-slate-300 mt-3">
+                        {formatHistoryDetails(item.details)}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>

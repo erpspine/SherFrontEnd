@@ -65,11 +65,124 @@ const allocationStatusColor = (status) => {
   }
 };
 
+const bookingColorClasses = (bookingRef) => {
+  const palette = [
+    {
+      badge: "bg-sky-100 text-sky-700 border border-sky-200",
+      dayContainer: "border-sky-300 bg-sky-50",
+      dayText: "text-sky-700",
+    },
+    {
+      badge: "bg-emerald-100 text-emerald-700 border border-emerald-200",
+      dayContainer: "border-emerald-300 bg-emerald-50",
+      dayText: "text-emerald-700",
+    },
+    {
+      badge: "bg-violet-100 text-violet-700 border border-violet-200",
+      dayContainer: "border-violet-300 bg-violet-50",
+      dayText: "text-violet-700",
+    },
+    {
+      badge: "bg-amber-100 text-amber-700 border border-amber-200",
+      dayContainer: "border-amber-300 bg-amber-50",
+      dayText: "text-amber-700",
+    },
+    {
+      badge: "bg-rose-100 text-rose-700 border border-rose-200",
+      dayContainer: "border-rose-300 bg-rose-50",
+      dayText: "text-rose-700",
+    },
+    {
+      badge: "bg-cyan-100 text-cyan-700 border border-cyan-200",
+      dayContainer: "border-cyan-300 bg-cyan-50",
+      dayText: "text-cyan-700",
+    },
+  ];
+
+  const key = String(bookingRef || "-");
+  let hash = 0;
+  for (let i = 0; i < key.length; i += 1) {
+    hash = (hash << 5) - hash + key.charCodeAt(i);
+    hash |= 0;
+  }
+
+  return palette[Math.abs(hash) % palette.length];
+};
+
+const getCalendarDayClasses = (dayAllocations = []) => {
+  const bookingRefs = new Set(
+    dayAllocations
+      .map((allocation) => String(allocation?.bookingRef || "").trim())
+      .filter(Boolean),
+  );
+
+  if (bookingRefs.size === 1) {
+    const onlyRef = Array.from(bookingRefs)[0];
+    const bookingClasses = bookingColorClasses(onlyRef);
+    return {
+      container: bookingClasses.dayContainer,
+      text: bookingClasses.dayText,
+    };
+  }
+
+  if (bookingRefs.size > 1) {
+    return {
+      container: "border-fuchsia-300 bg-fuchsia-50",
+      text: "text-fuchsia-700",
+    };
+  }
+
+  const statusSet = new Set(
+    dayAllocations
+      .map((allocation) => String(allocation?.status || "").toLowerCase())
+      .filter(Boolean),
+  );
+
+  if (statusSet.size > 1) {
+    return {
+      container: "border-violet-300 bg-violet-50",
+      text: "text-violet-700",
+    };
+  }
+
+  if (statusSet.has("cancelled") || statusSet.has("canceled")) {
+    return {
+      container: "border-rose-300 bg-rose-50",
+      text: "text-rose-700",
+    };
+  }
+
+  if (statusSet.has("completed")) {
+    return {
+      container: "border-indigo-300 bg-indigo-50",
+      text: "text-indigo-700",
+    };
+  }
+
+  if (statusSet.has("confirmed")) {
+    return {
+      container: "border-emerald-300 bg-emerald-50",
+      text: "text-emerald-700",
+    };
+  }
+
+  return {
+    container: "border-sky-300 bg-sky-50",
+    text: "text-sky-700",
+  };
+};
+
 const normalizeVehicle = (vehicle) => ({
   id: vehicle.id,
   status: vehicle.status || "Available",
   make: vehicle.make || "Unknown",
   vehicleNo: vehicle.vehicle_no || vehicle.vehicleNo || "",
+  registrationNo:
+    vehicle.registration_no ||
+    vehicle.registrationNo ||
+    vehicle.plate_no ||
+    vehicle.plateNo ||
+    "",
   plateNo: vehicle.plate_no || vehicle.plateNo || "",
   model: vehicle.model || "",
 });
@@ -633,6 +746,8 @@ export default function Dashboard() {
           vehicleId: allocation.vehicleId,
           driverId: allocation.driverId,
           vehicleNo: vehicle?.vehicleNo || vehicle?.plateNo || "Unknown",
+          registrationNo:
+            vehicle?.registrationNo || vehicle?.plateNo || "Unknown",
           plateNo: vehicle?.plateNo || "-",
           vehicleMake: vehicle?.make || "",
           vehicleModel: vehicle?.model || "",
@@ -1103,6 +1218,24 @@ export default function Dashboard() {
           ))}
         </div>
 
+        <div className="mb-4 flex flex-wrap gap-2 text-[11px] text-slate-600">
+          <span className="rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5">
+            Assigned
+          </span>
+          <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5">
+            Confirmed
+          </span>
+          <span className="rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5">
+            Completed
+          </span>
+          <span className="rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5">
+            Cancelled
+          </span>
+          <span className="rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5">
+            Mixed
+          </span>
+        </div>
+
         <div className="grid grid-cols-7 gap-2">
           {calendarDays.map((day, idx) => {
             if (day === null) {
@@ -1117,6 +1250,7 @@ export default function Dashboard() {
             const dateKey = `${calendarYear}-${String(calendarMonth + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
             const dayAllocations = calendarAllocations.get(dateKey) || [];
             const isToday = toLocalDateKey(new Date()) === dateKey;
+            const dayColorClasses = getCalendarDayClasses(dayAllocations);
 
             return (
               <div
@@ -1125,10 +1259,10 @@ export default function Dashboard() {
                 className={`aspect-square rounded-lg border p-1 transition-colors ${
                   selectedDateKey === dateKey
                     ? "border-cyan-300 bg-cyan-50"
-                    : isToday
-                      ? "border-amber-400 bg-amber-50"
-                      : dayAllocations.length > 0
-                        ? "border-sky-300 bg-sky-50"
+                    : dayAllocations.length > 0
+                      ? dayColorClasses.container
+                      : isToday
+                        ? "border-amber-400 bg-amber-50"
                         : "border-slate-200 bg-white"
                 } ${dayAllocations.length > 0 ? "cursor-pointer" : "cursor-default"}`}
               >
@@ -1137,9 +1271,11 @@ export default function Dashboard() {
                     className={`text-xs font-semibold ${
                       selectedDateKey === dateKey
                         ? "text-cyan-700"
-                        : isToday
-                          ? "text-amber-700"
-                          : "text-slate-700"
+                        : dayAllocations.length > 0
+                          ? dayColorClasses.text
+                          : isToday
+                            ? "text-amber-700"
+                            : "text-slate-700"
                     }`}
                   >
                     {day}
@@ -1150,11 +1286,14 @@ export default function Dashboard() {
                         {dayAllocations.slice(0, 2).map((alloc, idx) => (
                           <div
                             key={idx}
-                            className="rounded bg-sky-100 px-1 py-0.5 text-[10px] text-sky-700"
+                            className={`rounded px-1 py-0.5 text-[10px] ${bookingColorClasses(alloc.bookingRef).badge}`}
                           >
                             <p className="truncate">{alloc.bookingRef}</p>
-                            <p className="truncate text-sky-600">
-                              {alloc.vehicleNo} · {alloc.driverName}
+                            <p className="truncate">
+                              Reg: {alloc.registrationNo || alloc.plateNo}
+                            </p>
+                            <p className="truncate">
+                              Driver: {alloc.driverName}
                             </p>
                           </div>
                         ))}
@@ -1233,7 +1372,11 @@ export default function Dashboard() {
                       </div>
                       <div>
                         <p className="text-slate-800 font-medium">
-                          {alloc.vehicleNo} ({alloc.plateNo})
+                          {alloc.vehicleNo}
+                        </p>
+                        <p>
+                          Registration No:{" "}
+                          {alloc.registrationNo || alloc.plateNo}
                         </p>
                         <p>
                           {alloc.vehicleMake} {alloc.vehicleModel}
