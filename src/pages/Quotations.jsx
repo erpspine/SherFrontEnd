@@ -381,7 +381,7 @@ export default function Quotations() {
             : [];
       setRatesCache((prev) => ({ ...prev, [rateType]: list }));
     } catch {
-      // silently fail � manual rate entry remains available
+      // Silently fail; manual rate entry remains available.
     }
   };
 
@@ -1028,19 +1028,26 @@ export default function Quotations() {
     return [];
   };
 
+  const normalizeRateToken = (value) =>
+    String(value || "")
+      .replace(/_/g, " ")
+      .trim();
+
+  const buildRateName = (rate) =>
+    [rate.park_name || rate.parkName || "", rate.type, rate.category]
+      .map(normalizeRateToken)
+      .filter(Boolean)
+      .join(" - ");
+
   const getRateOptionLabel = (itemType, r) => {
     if (itemType === "Transport")
-      return `${r.particular || r.name || "�"} � USD ${r.rate}`;
-    const parkName = r.park_name || r.parkName || "";
-    const type = r.type ? ` (${r.type})` : "";
-    const category = r.category ? ` ${r.category}` : "";
-    return `${parkName}${type}${category} � USD ${r.rate}`;
+      return `${r.particular || r.name || "Unnamed"} - USD ${r.rate}`;
+    return `${buildRateName(r)} - USD ${r.rate}`;
   };
 
   const getRateDescription = (itemType, r) => {
     if (itemType === "Transport") return r.particular || r.name || "";
-    const parkName = r.park_name || r.parkName || "";
-    return [parkName, r.type, r.category].filter(Boolean).join(" � ");
+    return buildRateName(r);
   };
 
   const getAutoQtyFromLead = (category, product) => {
@@ -1926,7 +1933,7 @@ export default function Quotations() {
               </div>
             </div>
 
-            {/* Sticky footer � totals + action buttons always visible */}
+            {/* Sticky footer: totals + action buttons always visible */}
             <div
               className="flex-shrink-0 px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-4"
               style={{
