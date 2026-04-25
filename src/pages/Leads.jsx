@@ -141,6 +141,9 @@ export default function Leads() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [clients, setClients] = useState([]);
+  const [clientQuery, setClientQuery] = useState("");
+  const [showClientSuggestions, setShowClientSuggestions] = useState(false);
 
   const normalizeLead = (l) => ({
     id: l.id,
@@ -189,8 +192,35 @@ export default function Leads() {
     }
   };
 
+  const loadClients = async () => {
+    try {
+      const response = await apiFetch("/clients");
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) return;
+      const list = Array.isArray(payload)
+        ? payload
+        : Array.isArray(payload?.data)
+          ? payload.data
+          : Array.isArray(payload?.clients)
+            ? payload.clients
+            : [];
+      setClients(
+        list.map((c) => ({
+          id: c.id,
+          company: c.company || c.company_name || "",
+          name: c.name || c.client_name || "",
+          phone: c.phone || c.phone_number || "",
+          email: c.email || "",
+        })),
+      );
+    } catch {
+      // Non-critical; user can still type manually.
+    }
+  };
+
   useEffect(() => {
     loadLeads();
+    loadClients();
   }, []);
 
   const stats = {
@@ -223,8 +253,35 @@ export default function Leads() {
   const openNew = () => {
     setErrorMessage("");
     setForm(createEmptyForm());
+    setClientQuery("");
     setEditingId(null);
     setIsModalOpen(true);
+  };
+
+  const filteredClientSuggestions =
+    clientQuery.trim().length < 1
+      ? []
+      : clients
+          .filter((c) => {
+            const q = clientQuery.toLowerCase();
+            return (
+              c.company.toLowerCase().includes(q) ||
+              c.name.toLowerCase().includes(q) ||
+              c.email.toLowerCase().includes(q)
+            );
+          })
+          .slice(0, 8);
+
+  const handleClientSelect = (client) => {
+    setForm((prev) => ({
+      ...prev,
+      clientCompany: client.company,
+      agentContact: client.name || prev.agentContact,
+      agentPhone: client.phone || prev.agentPhone,
+      agentEmail: client.email || prev.agentEmail,
+    }));
+    setClientQuery(client.company);
+    setShowClientSuggestions(false);
   };
 
   const openEdit = async (lead) => {
@@ -679,19 +736,58 @@ export default function Leads() {
                   Client & Agent Details
                 </h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
+                  <div className="relative">
                     <label className="block text-xs font-medium text-slate-400 mb-1.5">
                       Client Company <span className="text-red-400">*</span>
                     </label>
                     <input
                       type="text"
-                      value={form.clientCompany}
-                      onChange={(e) =>
-                        setField("clientCompany", e.target.value)
+                      value={
+                        editingId !== null ? form.clientCompany : clientQuery
                       }
-                      placeholder="e.g. Hassan Trading Co."
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (editingId !== null) {
+                          setField("clientCompany", val);
+                        } else {
+                          setClientQuery(val);
+                          setField("clientCompany", val);
+                          setShowClientSuggestions(true);
+                        }
+                      }}
+                      onFocus={() => {
+                        if (editingId === null) setShowClientSuggestions(true);
+                      }}
+                      onBlur={() =>
+                        setTimeout(() => setShowClientSuggestions(false), 150)
+                      }
+                      placeholder="Search or type company name..."
+                      autoComplete="off"
                       className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
                     />
+                    {showClientSuggestions &&
+                      filteredClientSuggestions.length > 0 && (
+                        <ul className="absolute z-50 mt-1 w-full bg-slate-800 border border-slate-700 rounded-xl shadow-xl overflow-hidden max-h-52 overflow-y-auto">
+                          {filteredClientSuggestions.map((client) => (
+                            <li
+                              key={client.id}
+                              onMouseDown={() => handleClientSelect(client)}
+                              className="px-4 py-2.5 text-sm text-white hover:bg-amber-500/20 cursor-pointer flex flex-col gap-0.5"
+                            >
+                              <span className="font-medium">
+                                {client.company}
+                              </span>
+                              {(client.name || client.email) && (
+                                <span className="text-xs text-slate-400">
+                                  {[client.name, client.email]
+                                    .filter(Boolean)
+                                    .join(" · ")}
+                                </span>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-slate-400 mb-1.5">
