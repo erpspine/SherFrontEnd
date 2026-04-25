@@ -27,10 +27,15 @@ export async function apiFetch(path, options = {}) {
         }
     }
 
-    return fetch(`${API_BASE_URL}${path}`, {
-        method,
-        headers: finalHeaders,
-        body: body instanceof FormData || body === undefined ? body : JSON.stringify(body),
-        signal,
-    });
+    try {
+        return fetch(`${API_BASE_URL}${path}`, {
+            method,
+            headers: finalHeaders,
+            body: body instanceof FormData || body === undefined ? body : JSON.stringify(body),
+            signal,
+        });
+    } catch (error) {
+        console.error(`API request failed for ${method} ${path}:`, error);
+        throw error;
+    }
 }

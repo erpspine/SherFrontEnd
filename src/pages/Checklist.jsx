@@ -32,14 +32,24 @@ export default function Checklist() {
 
     try {
       const response = await apiFetch("/checklists");
-      const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
-        throw new Error(getErrorMessage(data, "Failed to load checklists."));
+        let errorMessage = "Failed to load checklists.";
+        try {
+          const errorData = await response.json();
+          errorMessage = getErrorMessage(errorData, errorMessage);
+        } catch (parseErr) {
+          console.error("Failed to parse error response:", parseErr);
+          errorMessage =
+            "Failed to load checklists (HTTP " + response.status + ")";
+        }
+        throw new Error(errorMessage);
       }
 
+      const data = await response.json();
       setChecklists(Array.isArray(data?.checklists) ? data.checklists : []);
     } catch (err) {
+      console.error("Error loading checklists:", err);
       setError(err.message || "Failed to load checklists.");
     } finally {
       setIsLoading(false);
