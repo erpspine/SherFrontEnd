@@ -511,7 +511,7 @@ export default function Parks() {
       !newRate.category ||
       newRate.rate === ""
     ) {
-      setRateError("Please fill park_id, type, category, and rate.");
+      setRateError("Please select a park, type, category and enter a rate.");
       return;
     }
 
@@ -670,7 +670,9 @@ export default function Parks() {
       !newConcessionRate.category ||
       newConcessionRate.rate === ""
     ) {
-      setConcessionError("Please fill park_id, type, category, and rate.");
+      setConcessionError(
+        "Please select a park, type, category and enter a rate.",
+      );
       return;
     }
 
@@ -1577,7 +1579,7 @@ export default function Parks() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">
-                    park_id
+                    Park <span className="text-red-400">*</span>
                   </label>
                   <select
                     value={newRate.park_id}
@@ -1589,12 +1591,15 @@ export default function Parks() {
                     }
                     className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-amber-500"
                   >
+                    <option value="">Select park...</option>
                     {parks.length === 0 && (
-                      <option value="">No parks available</option>
+                      <option disabled value="">
+                        No parks available — add a park first
+                      </option>
                     )}
                     {parks.map((park) => (
                       <option key={park.id} value={String(park.id)}>
-                        {park.id} - {park.name}
+                        {park.name}
                       </option>
                     ))}
                   </select>
@@ -1602,7 +1607,7 @@ export default function Parks() {
 
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">
-                    type
+                    Visitor Type <span className="text-red-400">*</span>
                   </label>
                   <select
                     value={newRate.type}
@@ -1624,7 +1629,7 @@ export default function Parks() {
 
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">
-                    category
+                    Category <span className="text-red-400">*</span>
                   </label>
                   <select
                     value={newRate.category}
@@ -1636,18 +1641,19 @@ export default function Parks() {
                     }
                     className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-amber-500"
                   >
-                    <option value="adult">adult</option>
-                    <option value="child">child</option>
+                    <option value="adult">Adult</option>
+                    <option value="child">Child</option>
                   </select>
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">
-                    rate
+                    Rate (USD) <span className="text-red-400">*</span>
                   </label>
                   <input
                     type="number"
                     min="0"
+                    step="any"
                     value={newRate.rate}
                     onChange={(event) =>
                       setNewRate((current) => ({
@@ -1655,7 +1661,7 @@ export default function Parks() {
                         rate: event.target.value,
                       }))
                     }
-                    placeholder="Enter rate"
+                    placeholder="e.g. 26.27"
                     className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
                   />
                 </div>
@@ -1720,7 +1726,7 @@ export default function Parks() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">
-                    park_id
+                    Park <span className="text-red-400">*</span>
                   </label>
                   <select
                     value={newConcessionRate.park_id}
@@ -1732,12 +1738,15 @@ export default function Parks() {
                     }
                     className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-amber-500"
                   >
+                    <option value="">Select park...</option>
                     {parks.length === 0 && (
-                      <option value="">No parks available</option>
+                      <option disabled value="">
+                        No parks available — add a park first
+                      </option>
                     )}
                     {parks.map((park) => (
                       <option key={park.id} value={String(park.id)}>
-                        {park.id} - {park.name}
+                        {park.name}
                       </option>
                     ))}
                   </select>
@@ -1745,7 +1754,7 @@ export default function Parks() {
 
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">
-                    type
+                    Visitor Type <span className="text-red-400">*</span>
                   </label>
                   <select
                     value={newConcessionRate.type}
@@ -1767,7 +1776,7 @@ export default function Parks() {
 
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">
-                    category
+                    Category <span className="text-red-400">*</span>
                   </label>
                   <select
                     value={newConcessionRate.category}
@@ -1779,18 +1788,19 @@ export default function Parks() {
                     }
                     className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-amber-500"
                   >
-                    <option value="adult">adult</option>
-                    <option value="child">child</option>
+                    <option value="adult">Adult</option>
+                    <option value="child">Child</option>
                   </select>
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">
-                    rate
+                    Rate (USD) <span className="text-red-400">*</span>
                   </label>
                   <input
                     type="number"
                     min="0"
+                    step="any"
                     value={newConcessionRate.rate}
                     onChange={(event) =>
                       setNewConcessionRate((current) => ({
@@ -1798,7 +1808,7 @@ export default function Parks() {
                         rate: event.target.value,
                       }))
                     }
-                    placeholder="Enter rate"
+                    placeholder="e.g. 10.50"
                     className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
                   />
                 </div>
@@ -1881,11 +1891,12 @@ export default function Parks() {
 
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">
-                    Rate
+                    Rate (USD) <span className="text-red-400">*</span>
                   </label>
                   <input
                     type="number"
                     min="0"
+                    step="any"
                     value={newTransportRate.rate}
                     onChange={(event) =>
                       setNewTransportRate((current) => ({
@@ -1893,7 +1904,7 @@ export default function Parks() {
                         rate: event.target.value,
                       }))
                     }
-                    placeholder="Enter rate"
+                    placeholder="e.g. 150.00"
                     className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
                   />
                 </div>
