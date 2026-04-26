@@ -19,6 +19,7 @@ import {
   ListChecks,
   Fuel,
   Wrench,
+  Route,
 } from "lucide-react";
 import { clearAuthSession, getAuthUser } from "../utils/auth";
 import { apiFetch } from "../utils/api";
@@ -37,6 +38,11 @@ const menuGroups = [
       { path: "/checklist", icon: ListChecks, label: "Checklist" },
       { path: "/fuel-requisitions", icon: Fuel, label: "Fuel Requisitions" },
       { path: "/vehicle-services", icon: Wrench, label: "Vehicle Service" },
+      {
+        path: "/route-distances",
+        icon: Route,
+        label: "Route Distances",
+      },
     ],
   },
   {

@@ -23,6 +23,10 @@ import { apiFetch } from "../utils/api";
 import Select from "react-select";
 
 const statusConfig = {
+  Pending: {
+    color: "bg-amber-500/20 text-amber-400 border-amber-500/30",
+    icon: Clock,
+  },
   Draft: {
     color: "bg-slate-500/20 text-slate-400 border-slate-500/30",
     icon: Clock,
@@ -118,6 +122,53 @@ const createFormState = () => {
 
 const formatCurrency = (value) => `USD ${Number(value || 0).toLocaleString()}`;
 const toNumber = (value) => Number(value || 0);
+
+const formatDateTime = (value) => {
+  if (!value) return "-";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return String(value);
+  return parsed.toLocaleString();
+};
+
+const normalizeIsoDateOnly = (value) => {
+  const raw = String(value || "").trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  const fromDateTime = raw.match(/^(\d{4}-\d{2}-\d{2})T/);
+  return fromDateTime ? fromDateTime[1] : "";
+};
+
+const getItineraryDatesLabel = (daySections = []) => {
+  const dates = daySections
+    .map((section) => normalizeIsoDateOnly(section?.dayDate))
+    .filter(Boolean)
+    .filter((date, index, arr) => arr.indexOf(date) === index)
+    .sort();
+
+  if (!dates.length) return "";
+  if (dates.length === 1) return dates[0];
+  return `${dates[0]} to ${dates[dates.length - 1]}`;
+};
+
+const getQuotationDestinationsLabel = (quotation) => {
+  const fromDayDescriptions = (quotation?.daySections || [])
+    .map((section) => String(section?.dayDescription || "").trim())
+    .filter(Boolean);
+
+  if (fromDayDescriptions.length) {
+    return [...new Set(fromDayDescriptions)].join(" | ");
+  }
+
+  return String(quotation?.serviceSummary || "").trim();
+};
+
+const formatQuotationNumberFromId = (id, dateValue) => {
+  const numericId = Number(id);
+  if (!Number.isFinite(numericId) || numericId <= 0) return "";
+
+  const isoDate = toIsoDate(dateValue);
+  const year = isoDate ? isoDate.slice(0, 4) : String(new Date().getFullYear());
+  return `QT-${year}-${String(Math.trunc(numericId)).padStart(4, "0")}`;
+};
 
 const toPickerValue = (value) => ({
   startDate: value || null,
@@ -234,14 +285,32 @@ const normalizeQuotation = (quotation) => {
       ];
 
   const lineItems = daySections.flatMap((section) => section.items);
+  const quoteDateRaw =
+    quotation.quote_date ||
+    quotation.quoteDate ||
+    quotation.date ||
+    quotation.created_at ||
+    quotation.createdAt ||
+    "";
+  const quoteNoRaw =
+    quotation.quote_no ||
+    quotation.quoteNo ||
+    quotation.quotation_no ||
+    quotation.quotationNo ||
+    quotation.quotation_number ||
+    quotation.quotationNumber ||
+    quotation.reference_no ||
+    quotation.referenceNo ||
+    "";
 
   return {
     id: quotation.id,
-    quoteNo: quotation.quote_no || quotation.quoteNo || "",
+    quoteNo: String(
+      quoteNoRaw || formatQuotationNumberFromId(quotation.id, quoteDateRaw),
+    ),
     leadId: String(quotation.lead_id || quotation.leadId || ""),
-    date: quotation.quote_date || quotation.quoteDate || quotation.date || "",
-    quoteDate:
-      quotation.quote_date || quotation.quoteDate || quotation.date || "",
+    date: quoteDateRaw,
+    quoteDate: quoteDateRaw,
     client: quotation.client || "",
     attention: quotation.attention || "",
     notes: quotation.notes || "",
@@ -255,7 +324,19 @@ const normalizeQuotation = (quotation) => {
     subtotal: Number(quotation.subtotal || 0),
     tax: Number(quotation.tax || 0),
     total: Number(quotation.total || 0),
-    status: quotation.status || "Draft",
+    status: quotation.status || "Pending",
+    sentById: quotation.sent_by_id ?? quotation.sentById ?? null,
+    sentBy:
+      quotation.sentBy ||
+      quotation.sent_by ||
+      quotation.sent_by_name ||
+      quotation.sentByName ||
+      quotation.sent_by_user_name ||
+      quotation.sentByUserName ||
+      quotation?.sent_by_user?.name ||
+      quotation?.sentByUser?.name ||
+      "",
+    sentAt: quotation.sent_at || quotation.sentAt || "",
   };
 };
 
@@ -279,6 +360,7 @@ export default function Quotations() {
   const [form, setForm] = useState(createFormState());
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [markingSentId, setMarkingSentId] = useState(null);
   const [convertingId, setConvertingId] = useState(null);
   const [downloadingId, setDownloadingId] = useState(null);
   const [errorMessage, setErrorMessage] = useState("");
@@ -392,7 +474,7 @@ export default function Quotations() {
 
   const stats = {
     total: quotations.length,
-    draft: quotations.filter((quotation) => quotation.status === "Draft")
+    pending: quotations.filter((quotation) => quotation.status === "Pending")
       .length,
     sent: quotations.filter((quotation) => quotation.status === "Sent").length,
     approved: quotations.filter((quotation) => quotation.status === "Approved")
@@ -617,7 +699,7 @@ export default function Quotations() {
     }
   };
 
-  const handleSaveQuotation = async (status) => {
+  const handleSaveQuotation = async () => {
     if (!form.client || !form.quoteDate) {
       setErrorMessage("Please fill client and quotation date before saving.");
       await Swal.fire({
@@ -750,7 +832,6 @@ export default function Quotations() {
         subtotal,
         tax,
         total: grandTotal,
-        status,
       };
 
       const response = editingId
@@ -799,6 +880,58 @@ export default function Quotations() {
     }
   };
 
+  const handleMarkSent = async (quotation) => {
+    const confirmation = await Swal.fire({
+      title: "Mark quotation as sent?",
+      text: "Status will change to Sent and sender details will be recorded.",
+      icon: "question",
+      showCancelButton: true,
+      confirmButtonText: "Yes, mark as sent",
+      cancelButtonText: "Cancel",
+      background: "#0f172a",
+      color: "#e2e8f0",
+      confirmButtonColor: "#2563eb",
+    });
+
+    if (!confirmation.isConfirmed) return;
+
+    setMarkingSentId(quotation.id);
+    setErrorMessage("");
+
+    try {
+      const response = await apiFetch(`/quotations/${quotation.id}/mark-sent`, {
+        method: "PATCH",
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data?.message || "Unable to mark quotation as sent.");
+      }
+
+      await loadQuotations();
+      await Swal.fire({
+        title: "Marked as Sent",
+        text: "Quotation status updated to Sent.",
+        icon: "success",
+        timer: 1500,
+        showConfirmButton: false,
+        background: "#0f172a",
+        color: "#e2e8f0",
+      });
+    } catch (error) {
+      setErrorMessage(error.message || "Failed to update quotation status.");
+      await Swal.fire({
+        title: "Update Failed",
+        text: error.message || "Failed to update quotation status.",
+        icon: "error",
+        background: "#0f172a",
+        color: "#e2e8f0",
+      });
+    } finally {
+      setMarkingSentId(null);
+    }
+  };
+
   const handleDownloadPdf = async (quotation) => {
     setDownloadingId(quotation.id);
     try {
@@ -813,7 +946,7 @@ export default function Quotations() {
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = `${quotation.quoteNo || `quotation-${quotation.id}`}.pdf`;
+      anchor.download = `${quotation.quoteNo || formatQuotationNumberFromId(quotation.id, quotation.quoteDate || quotation.date)}.pdf`;
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
@@ -1169,7 +1302,11 @@ export default function Quotations() {
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         {[
           { label: "Total", value: stats.total, color: "text-white" },
-          { label: "Draft", value: stats.draft, color: "text-slate-400" },
+          {
+            label: "Pending",
+            value: stats.pending,
+            color: "text-amber-400",
+          },
           { label: "Sent", value: stats.sent, color: "text-blue-400" },
           { label: "Approved", value: stats.approved, color: "text-green-400" },
           {
@@ -1203,21 +1340,26 @@ export default function Quotations() {
             />
           </div>
           <div className="flex flex-wrap gap-2">
-            {["All", "Draft", "Sent", "Approved", "Rejected", "Converted"].map(
-              (status) => (
-                <button
-                  key={status}
-                  onClick={() => setStatusFilter(status)}
-                  className={`px-3 py-2 rounded-xl text-sm font-medium transition-all ${
-                    statusFilter === status
-                      ? "bg-amber-500 text-white"
-                      : "bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700"
-                  }`}
-                >
-                  {status}
-                </button>
-              ),
-            )}
+            {[
+              "All",
+              "Pending",
+              "Sent",
+              "Approved",
+              "Rejected",
+              "Converted",
+            ].map((status) => (
+              <button
+                key={status}
+                onClick={() => setStatusFilter(status)}
+                className={`px-3 py-2 rounded-xl text-sm font-medium transition-all ${
+                  statusFilter === status
+                    ? "bg-amber-500 text-white"
+                    : "bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700"
+                }`}
+              >
+                {status}
+              </button>
+            ))}
           </div>
         </div>
       </div>
@@ -1229,12 +1371,14 @@ export default function Quotations() {
               <tr className="border-b border-slate-800">
                 {[
                   "Quote #",
-                  "Date",
+                  "Quote Date",
                   "Client",
                   "Service Summary",
-                  "Line Items",
                   "Total Amount",
                   "Status",
+                  "Sent By",
+                  "Sent At",
+                  "Send",
                   "Actions",
                 ].map((header) => (
                   <th
@@ -1249,7 +1393,7 @@ export default function Quotations() {
             <tbody>
               {filtered.map((quotation) => {
                 const config =
-                  statusConfig[quotation.status] || statusConfig.Draft;
+                  statusConfig[quotation.status] || statusConfig.Pending;
                 return (
                   <tr
                     key={quotation.id}
@@ -1261,7 +1405,11 @@ export default function Quotations() {
                           <FileText className="w-4 h-4 text-amber-400" />
                         </div>
                         <span className="text-white font-medium text-sm">
-                          {quotation.quoteNo || "Pending #"}
+                          {quotation.quoteNo ||
+                            formatQuotationNumberFromId(
+                              quotation.id,
+                              quotation.quoteDate || quotation.date,
+                            )}
                         </span>
                       </div>
                     </td>
@@ -1276,11 +1424,20 @@ export default function Quotations() {
                         </span>
                       </div>
                     </td>
-                    <td className="py-4 px-6 text-sm text-slate-300 max-w-xs">
-                      {quotation.serviceSummary}
-                    </td>
-                    <td className="py-4 px-6 text-sm text-slate-300">
-                      {quotation.lineItems.length}
+                    <td className="py-4 px-6 text-sm max-w-xs">
+                      <div className="space-y-1">
+                        <p
+                          className="text-slate-700 font-medium truncate"
+                          title={getQuotationDestinationsLabel(quotation)}
+                        >
+                          {getQuotationDestinationsLabel(quotation) || "-"}
+                        </p>
+                        <p className="text-xs text-slate-600">
+                          {getItineraryDatesLabel(quotation.daySections)
+                            ? `Itinerary: ${getItineraryDatesLabel(quotation.daySections)}`
+                            : "Itinerary: -"}
+                        </p>
+                      </div>
                     </td>
                     <td className="py-4 px-6">
                       <span className="text-white font-semibold text-sm">
@@ -1294,6 +1451,30 @@ export default function Quotations() {
                         <config.icon className="w-3 h-3" />
                         {quotation.status}
                       </span>
+                    </td>
+                    <td className="py-4 px-6 text-sm text-slate-300 whitespace-nowrap">
+                      {quotation.sentBy || "-"}
+                    </td>
+                    <td className="py-4 px-6 text-xs text-slate-400 whitespace-nowrap">
+                      {formatDateTime(quotation.sentAt)}
+                    </td>
+                    <td className="py-4 px-6">
+                      {quotation.status === "Pending" ? (
+                        <button
+                          onClick={() => handleMarkSent(quotation)}
+                          disabled={markingSentId === quotation.id}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-500/15 text-blue-400 border border-blue-500/30 hover:bg-blue-500/25 disabled:opacity-50"
+                        >
+                          {markingSentId === quotation.id ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Send className="w-3.5 h-3.5" />
+                          )}
+                          Mark Sent
+                        </button>
+                      ) : (
+                        <span className="text-xs text-slate-500">-</span>
+                      )}
                     </td>
                     <td className="py-4 px-6">
                       <div className="flex items-center gap-1">
@@ -1979,22 +2160,11 @@ export default function Quotations() {
                   Cancel
                 </button>
                 <button
-                  onClick={() => handleSaveQuotation("Draft")}
-                  disabled={isSaving}
-                  className="px-6 py-2.5 rounded-xl hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed font-medium"
-                  style={{
-                    background: "linear-gradient(to right,#E31B24,#B01218)",
-                    color: "#ffffff",
-                  }}
-                >
-                  {isSaving ? "Saving..." : "Save Draft"}
-                </button>
-                <button
-                  onClick={() => handleSaveQuotation("Sent")}
+                  onClick={handleSaveQuotation}
                   disabled={isSaving}
                   className="px-6 py-2.5 bg-gradient-to-r from-amber-400 to-amber-600 text-white rounded-xl hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  {isSaving ? "Saving..." : "Create & Send"}
+                  {isSaving ? "Saving..." : editingId ? "Save" : "Create"}
                 </button>
               </div>
             </div>

@@ -765,18 +765,20 @@ export default function Leads() {
                     />
                     {showClientSuggestions &&
                       filteredClientSuggestions.length > 0 && (
-                        <ul className="absolute z-50 mt-1 w-full bg-slate-800 border border-slate-700 rounded-xl shadow-xl overflow-hidden max-h-52 overflow-y-auto">
+                        <ul className="absolute z-50 mt-1 w-full bg-white border border-slate-300 rounded-xl shadow-2xl ring-1 ring-black/10 overflow-hidden max-h-52 overflow-y-auto divide-y divide-slate-200">
                           {filteredClientSuggestions.map((client) => (
                             <li
                               key={client.id}
                               onMouseDown={() => handleClientSelect(client)}
-                              className="px-4 py-2.5 text-sm text-white hover:bg-amber-500/20 cursor-pointer flex flex-col gap-0.5"
+                              className="px-4 py-2.5 text-sm bg-white text-slate-900 hover:bg-amber-100 cursor-pointer flex flex-col gap-0.5"
                             >
-                              <span className="font-medium">
-                                {client.company}
+                              <span className="font-semibold text-slate-900">
+                                {client.company ||
+                                  client.name ||
+                                  "Unnamed client"}
                               </span>
                               {(client.name || client.email) && (
-                                <span className="text-xs text-slate-400">
+                                <span className="text-xs text-slate-700">
                                   {[client.name, client.email]
                                     .filter(Boolean)
                                     .join(" · ")}

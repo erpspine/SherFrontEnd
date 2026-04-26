@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from "react";
+﻿import { useEffect, useRef, useState } from "react";
 import {
   Search,
   Plus,
@@ -15,6 +15,7 @@ import {
   History,
   Calendar,
 } from "lucide-react";
+
 import Swal from "sweetalert2";
 import { apiFetch } from "../utils/api";
 
@@ -25,23 +26,106 @@ const createVehicleForm = () => ({
   model: "",
   year: new Date().getFullYear(),
   seats: "",
-  mileage: "",
+  initialMileage: "",
   status: "Available",
   chassis: "",
+  specs: "",
 });
 
-const normalizeVehicle = (vehicle) => ({
-  id: vehicle.id,
-  vehicleNo: vehicle.vehicle_no || vehicle.vehicleNo || "",
-  plateNo: vehicle.plate_no || vehicle.plateNo || "",
-  make: vehicle.make || "",
-  model: vehicle.model || "",
-  year: Number(vehicle.year || new Date().getFullYear()),
-  seats: Number(vehicle.seats || 0),
-  mileage: Number(vehicle.mileage || 0),
-  status: vehicle.status || "Available",
-  chassis: vehicle.chassis || "",
-});
+const normalizeVehicle = (vehicle) => {
+  const item = vehicle?.attributes
+    ? { ...vehicle.attributes, id: vehicle.id }
+    : vehicle;
+
+  return {
+    id: item.id,
+    vehicleNo:
+      item.vehicle_no ||
+      item.vehicleNo ||
+      item.vehicle_number ||
+      item.vehicleNumber ||
+      item.car_no ||
+      item.carNo ||
+      "",
+    plateNo:
+      item.plate_no ||
+      item.plateNo ||
+      item.registration_no ||
+      item.registrationNo ||
+      "",
+    make: item.make || "",
+    model: item.model || "",
+    year: Number(item.year || new Date().getFullYear()),
+    seats: Number(item.seats || 0),
+    initialMileage: Number(
+      item.initial_mileage ?? item.initialMileage ?? item.mileage ?? 0,
+    ),
+    currentMileage: Number(
+      item.current_mileage ??
+        item.currentMileage ??
+        item.initialMileage ??
+        item.mileage ??
+        0,
+    ),
+    status: item.status || "Available",
+    chassis: item.chassis || item.chassis_no || item.chassisNo || "",
+    specs:
+      item.specs ||
+      item.specifications ||
+      item.specification ||
+      item.vehicle_specs ||
+      item.vehicleSpecs ||
+      "",
+    photoUrl:
+      item.photo_url ||
+      item.photoUrl ||
+      item.image_url ||
+      item.imageUrl ||
+      item.photo ||
+      item.image ||
+      "",
+  };
+};
+
+const extractJobCardsList = (payload) => {
+  if (Array.isArray(payload?.data)) return payload.data;
+  if (Array.isArray(payload?.jobCards)) return payload.jobCards;
+  if (Array.isArray(payload?.job_cards)) return payload.job_cards;
+  return [];
+};
+
+const toNumberOrNull = (value) => {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+};
+
+const pickLatestMileageByVehicle = (rawJobCards) => {
+  const latestByVehicle = new Map();
+  rawJobCards.forEach((card) => {
+    const vehicleId = Number(card?.vehicle_id ?? card?.vehicleId ?? 0);
+    if (!vehicleId) return;
+
+    const odometerIn = toNumberOrNull(card?.odometer_in ?? card?.odometerIn);
+    const odometerOut = toNumberOrNull(card?.odometer_out ?? card?.odometerOut);
+    const mileageValue = odometerIn ?? odometerOut;
+    if (mileageValue === null) return;
+
+    const updatedAt = card?.updated_at || card?.updatedAt || "";
+    const createdAt = card?.created_at || card?.createdAt || "";
+    const timestamp =
+      Date.parse(updatedAt || createdAt || "") || Number(card?.id || 0);
+
+    const previous = latestByVehicle.get(vehicleId);
+    if (!previous || timestamp >= previous.timestamp) {
+      latestByVehicle.set(vehicleId, {
+        timestamp,
+        mileage: mileageValue,
+      });
+    }
+  });
+
+  return latestByVehicle;
+};
 
 const extractList = (payload) => {
   if (Array.isArray(payload)) return payload;
@@ -135,17 +219,66 @@ export default function Vehicles() {
     to: "",
     sort: "desc",
   });
+  const [photoFile, setPhotoFile] = useState(null);
+  const [photoPreview, setPhotoPreview] = useState("");
+  const photoPreviewObjectUrlRef = useRef("");
+
+  const updatePhotoPreviewFromFile = (file) => {
+    if (photoPreviewObjectUrlRef.current) {
+      URL.revokeObjectURL(photoPreviewObjectUrlRef.current);
+      photoPreviewObjectUrlRef.current = "";
+    }
+
+    if (!file) {
+      setPhotoPreview("");
+      return;
+    }
+
+    const objectUrl = URL.createObjectURL(file);
+    photoPreviewObjectUrlRef.current = objectUrl;
+    setPhotoPreview(objectUrl);
+  };
 
   const loadVehicles = async () => {
     setErrorMessage("");
     setIsLoading(true);
     try {
-      const response = await apiFetch("/vehicles");
-      const payload = await response.json();
-      if (!response.ok) {
-        throw new Error(payload?.message || "Unable to fetch vehicles.");
+      const [vehiclesResponse, jobCardsResponse] = await Promise.all([
+        apiFetch("/vehicles"),
+        apiFetch("/job-cards"),
+      ]);
+
+      const [vehiclesPayload, jobCardsPayload] = await Promise.all([
+        vehiclesResponse.json().catch(() => ({})),
+        jobCardsResponse.json().catch(() => ({})),
+      ]);
+
+      if (!vehiclesResponse.ok) {
+        throw new Error(
+          vehiclesPayload?.message || "Unable to fetch vehicles.",
+        );
       }
-      setVehicles(extractList(payload).map(normalizeVehicle));
+
+      const normalizedVehicles =
+        extractList(vehiclesPayload).map(normalizeVehicle);
+      const latestMileageByVehicle = jobCardsResponse.ok
+        ? pickLatestMileageByVehicle(extractJobCardsList(jobCardsPayload))
+        : new Map();
+
+      const mergedVehicles = normalizedVehicles.map((vehicle) => {
+        const mileageFromJobCard = latestMileageByVehicle.get(
+          vehicle.id,
+        )?.mileage;
+        return {
+          ...vehicle,
+          currentMileage:
+            mileageFromJobCard ??
+            vehicle.currentMileage ??
+            vehicle.initialMileage,
+        };
+      });
+
+      setVehicles(mergedVehicles);
     } catch (error) {
       setErrorMessage(error.message || "Failed to load vehicles.");
     } finally {
@@ -155,6 +288,14 @@ export default function Vehicles() {
 
   useEffect(() => {
     loadVehicles();
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (photoPreviewObjectUrlRef.current) {
+        URL.revokeObjectURL(photoPreviewObjectUrlRef.current);
+      }
+    };
   }, []);
 
   const stats = {
@@ -177,6 +318,8 @@ export default function Vehicles() {
   const openAdd = () => {
     setEditVehicle(null);
     setForm(createVehicleForm());
+    setPhotoFile(null);
+    setPhotoPreview("");
     setIsModalOpen(true);
   };
 
@@ -263,6 +406,8 @@ export default function Vehicles() {
       const selectedVehicle = normalizeVehicle(extractSingle(payload));
       setEditVehicle(selectedVehicle);
       setForm({ ...selectedVehicle });
+      setPhotoFile(null);
+      setPhotoPreview(selectedVehicle.photoUrl || "");
       setIsModalOpen(true);
     } catch (error) {
       setErrorMessage(error.message || "Unable to open vehicle details.");
@@ -321,11 +466,30 @@ export default function Vehicles() {
   };
 
   const handleSaveVehicle = async () => {
-    if (!form.vehicleNo || !form.plateNo || !form.make || !form.model) {
-      setErrorMessage("Please fill Vehicle No, Plate No, Make and Model.");
+    const yearValue = Number(form.year);
+    const seatsValue = Number(form.seats);
+    const initialMileageValue = Number(form.initialMileage);
+
+    if (
+      !form.vehicleNo ||
+      !form.plateNo ||
+      !form.make ||
+      !form.model ||
+      !form.chassis ||
+      Number.isNaN(yearValue) ||
+      yearValue < 1900 ||
+      yearValue > 2100 ||
+      Number.isNaN(seatsValue) ||
+      seatsValue < 1 ||
+      Number.isNaN(initialMileageValue) ||
+      initialMileageValue < 0
+    ) {
+      setErrorMessage(
+        "Please fill Vehicle No, Plate No, Make, Model, Year (1900-2100), Seats (min 1), Initial Mileage (min 0), and Chassis.",
+      );
       await Swal.fire({
         title: "Missing Required Fields",
-        text: "Please fill Vehicle No, Plate No, Make and Model.",
+        text: "Please fill Vehicle No, Plate No, Make, Model, Year (1900-2100), Seats (min 1), Initial Mileage (min 0), and Chassis.",
         icon: "warning",
         background: "#0f172a",
         color: "#e2e8f0",
@@ -337,21 +501,31 @@ export default function Vehicles() {
     setErrorMessage("");
 
     try {
-      const payload = {
-        vehicleNo: form.vehicleNo,
-        plateNo: form.plateNo,
-        make: form.make,
-        model: form.model,
-        year: Number(form.year || new Date().getFullYear()),
-        seats: Number(form.seats || 0),
-        mileage: Number(form.mileage || 0),
-        status: form.status || "Available",
-        chassis: form.chassis,
-      };
+      const payload = new FormData();
+      payload.append("vehicleNo", form.vehicleNo);
+      payload.append("plateNo", form.plateNo);
+      payload.append("make", form.make);
+      payload.append("model", form.model);
+      payload.append("year", String(yearValue));
+      payload.append("seats", String(seatsValue));
+      payload.append("initialMileage", String(initialMileageValue));
+      payload.append("mileage", String(initialMileageValue));
+      payload.append("status", form.status || "Available");
+      payload.append("chassis", form.chassis || "");
+      payload.append("specs", form.specs || "");
+      if (photoFile) {
+        payload.append("photo", photoFile);
+      }
+
+      // PHP does not parse multipart/form-data for PUT requests.
+      // Use POST with _method spoofing so Laravel receives all FormData fields.
+      if (editVehicle) {
+        payload.append("_method", "PUT");
+      }
 
       const response = editVehicle
         ? await apiFetch(`/vehicles/${editVehicle.id}`, {
-            method: "PUT",
+            method: "POST",
             body: payload,
           })
         : await apiFetch("/vehicles", {
@@ -367,6 +541,8 @@ export default function Vehicles() {
       setIsModalOpen(false);
       setEditVehicle(null);
       setForm(createVehicleForm());
+      setPhotoFile(null);
+      setPhotoPreview("");
       await loadVehicles();
 
       await Swal.fire({
@@ -511,7 +687,8 @@ export default function Vehicles() {
                   "Car No",
                   "Vehicle",
                   "Seats",
-                  "Mileage",
+                  "Initial Mileage",
+                  "Current Mileage",
                   "Status",
                   "Actions",
                 ].map((h) => (
@@ -538,7 +715,15 @@ export default function Vehicles() {
                     <td className="py-4 px-6">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center flex-shrink-0">
-                          <Car className="w-5 h-5 text-white" />
+                          {v.photoUrl ? (
+                            <img
+                              src={v.photoUrl}
+                              alt={`${v.make} ${v.model}`}
+                              className="w-10 h-10 rounded-xl object-cover"
+                            />
+                          ) : (
+                            <Car className="w-5 h-5 text-white" />
+                          )}
                         </div>
                         <div>
                           <p className="text-white font-medium">
@@ -547,6 +732,11 @@ export default function Vehicles() {
                           <p className="text-slate-400 text-sm">
                             {v.plateNo} · {v.year} · Chassis: {v.chassis}
                           </p>
+                          {v.specs && (
+                            <p className="text-slate-500 text-xs mt-0.5 line-clamp-1">
+                              {v.specs}
+                            </p>
+                          )}
                         </div>
                       </div>
                     </td>
@@ -556,8 +746,11 @@ export default function Vehicles() {
                         {v.seats}
                       </div>
                     </td>
-                    <td className="py-4 px-6 text-slate-300 text-sm">
-                      {v.mileage.toLocaleString()} km
+                    <td className="py-4 px-6 text-slate-300 text-sm whitespace-nowrap">
+                      {Number(v.initialMileage || 0).toLocaleString()} km
+                    </td>
+                    <td className="py-4 px-6 text-slate-300 text-sm whitespace-nowrap">
+                      {Number(v.currentMileage || 0).toLocaleString()} km
                     </td>
                     <td className="py-4 px-6">
                       <div
@@ -671,8 +864,8 @@ export default function Vehicles() {
                   type: "number",
                 },
                 {
-                  label: "Mileage",
-                  key: "mileage",
+                  label: "Initial Mileage",
+                  key: "initialMileage",
                   placeholder: "45200",
                   type: "number",
                 },
@@ -692,6 +885,54 @@ export default function Vehicles() {
                   />
                 </div>
               ))}
+              <div className="sm:col-span-2">
+                <label className="block text-sm font-medium text-slate-300 mb-2">
+                  Specs
+                </label>
+                <textarea
+                  rows={3}
+                  value={form.specs}
+                  onChange={(e) => setForm({ ...form, specs: e.target.value })}
+                  placeholder="e.g. 4x4, diesel, automatic, pop-up roof"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 transition-colors resize-none"
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="block text-sm font-medium text-slate-300 mb-2">
+                  Photo Attachment
+                </label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] || null;
+                    setPhotoFile(file);
+                    updatePhotoPreviewFromFile(file);
+                  }}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-200 file:mr-4 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-amber-500 file:text-white hover:file:bg-amber-600"
+                />
+                <p className="mt-2 text-xs text-slate-400">
+                  Upload vehicle image (JPG, PNG, WEBP).{" "}
+                  {photoFile
+                    ? `Selected: ${photoFile.name}`
+                    : "No file selected yet."}
+                </p>
+                {!photoFile && editVehicle?.photoUrl && (
+                  <p className="mt-1 text-xs text-cyan-300">
+                    Existing photo is attached. Choose another file to replace
+                    it.
+                  </p>
+                )}
+                {photoPreview && (
+                  <div className="mt-3">
+                    <img
+                      src={photoPreview}
+                      alt="Vehicle preview"
+                      className="w-36 h-24 rounded-lg object-cover border border-slate-700"
+                    />
+                  </div>
+                )}
+              </div>
               <div>
                 <label className="block text-sm font-medium text-slate-300 mb-2">
                   Status
