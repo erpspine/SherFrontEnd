@@ -49,6 +49,47 @@ const formatDate = (value) => {
   return parsed.toLocaleDateString();
 };
 
+const normalizeIsoDateOnly = (value) => {
+  const raw = String(value || "").trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  const fromDateTime = raw.match(/^(\d{4}-\d{2}-\d{2})T/);
+  return fromDateTime ? fromDateTime[1] : "";
+};
+
+const getPIItineraryDatesLabel = (daySections = []) => {
+  const dates = daySections
+    .map((section) =>
+      normalizeIsoDateOnly(
+        section?.dayDate ||
+          section?.day_date ||
+          section?.dayTitle ||
+          section?.day_title ||
+          "",
+      ),
+    )
+    .filter(Boolean)
+    .filter((date, index, arr) => arr.indexOf(date) === index)
+    .sort();
+
+  if (!dates.length) return "";
+  if (dates.length === 1) return dates[0];
+  return `${dates[0]} to ${dates[dates.length - 1]}`;
+};
+
+const getPIDestinationsLabel = (pi) => {
+  const fromDayDescriptions = (pi?.daySections || [])
+    .map((section) =>
+      String(section?.dayDescription || section?.day_description || "").trim(),
+    )
+    .filter(Boolean);
+
+  if (fromDayDescriptions.length) {
+    return [...new Set(fromDayDescriptions)].join(" | ");
+  }
+
+  return String(pi?.serviceSummary || "").trim();
+};
+
 const addDays = (value, days) => {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return "";
@@ -400,11 +441,20 @@ export default function ProformaInvoices() {
                         </span>
                       </div>
                     </td>
-                    <td
-                      className="py-4 px-4 text-sm text-slate-300 max-w-sm truncate"
-                      title={pi.serviceSummary}
-                    >
-                      {pi.serviceSummary}
+                    <td className="py-4 px-4 text-sm max-w-sm">
+                      <div className="space-y-1">
+                        <p
+                          className="text-slate-300 truncate"
+                          title={getPIDestinationsLabel(pi)}
+                        >
+                          {getPIDestinationsLabel(pi) || "-"}
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          {getPIItineraryDatesLabel(pi.daySections)
+                            ? `Itinerary: ${getPIItineraryDatesLabel(pi.daySections)}`
+                            : "Itinerary: -"}
+                        </p>
+                      </div>
                     </td>
                     <td className="py-4 px-4">
                       <span className="text-white font-semibold text-sm whitespace-nowrap">

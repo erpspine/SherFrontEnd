@@ -26,6 +26,7 @@ import Checklist from "./pages/Checklist";
 import FuelRequisitions from "./pages/FuelRequisitions";
 import FuelRequisitionCreate from "./pages/FuelRequisitionCreate";
 import VehicleServices from "./pages/VehicleServices";
+import RouteDistances from "./pages/RouteDistances";
 import { isAuthenticated } from "./utils/auth";
 
 function LoginRoute() {
@@ -56,6 +57,7 @@ function ProtectedRoutes() {
         <Route path="/checklist" element={<Checklist />} />
         <Route path="/fuel-requisitions" element={<FuelRequisitions />} />
         <Route path="/vehicle-services" element={<VehicleServices />} />
+        <Route path="/route-distances" element={<RouteDistances />} />
         <Route
           path="/fuel-requisitions/new"
           element={<FuelRequisitionCreate />}

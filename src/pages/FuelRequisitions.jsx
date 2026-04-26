@@ -11,26 +11,47 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { apiFetch } from "../utils/api";
+import { getAuthUser } from "../utils/auth";
 
-const STATUS_OPTIONS = ["All", "Pending", "Approved", "Rejected"];
+const STATUS_OPTIONS = ["All", "Pending", "Approved", "Rejected", "Amend"];
 
 const statusStyles = {
   Pending: "border-amber-200 bg-amber-50 text-amber-700",
   Approved: "border-emerald-200 bg-emerald-50 text-emerald-700",
   Rejected: "border-rose-200 bg-rose-50 text-rose-700",
+  Amend: "border-sky-200 bg-sky-50 text-sky-700",
 };
 
 const statusIcons = {
   Pending: Clock3,
   Approved: CheckCircle2,
   Rejected: XCircle,
+  Amend: RefreshCw,
+};
+
+const normalizeStatus = (value) => {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
+  if (normalized === "approved" || normalized === "approve") {
+    return "Approved";
+  }
+  if (normalized === "rejected" || normalized === "reject") {
+    return "Rejected";
+  }
+  if (normalized === "amend" || normalized === "amended") {
+    return "Amend";
+  }
+  return "Pending";
 };
 
 const normalizeRequisition = (entry) => {
-  const statusRaw = entry.status || entry.requisitionStatus || "Pending";
-  const status = ["Pending", "Approved", "Rejected"].includes(statusRaw)
-    ? statusRaw
-    : "Pending";
+  const statusRaw =
+    entry.status ||
+    entry.requisitionStatus ||
+    entry.approvalStatus ||
+    "Pending";
+  const status = normalizeStatus(statusRaw);
 
   return {
     id: entry.id,
@@ -38,7 +59,41 @@ const normalizeRequisition = (entry) => {
     bookingRef: entry.lead?.bookingRef || entry.bookingRef || "",
     clientCompany: entry.lead?.clientCompany || entry.clientCompany || "",
     litres: Number(entry.litres || 0),
+    baseRatePerKm: Number(
+      entry.baseRatePerKm ?? entry.base_rate_per_km ?? entry.baseRate ?? 0,
+    ),
+    totalFuelLitres: Number(
+      entry.totalFuelLitres ?? entry.total_fuel_litres ?? entry.litres ?? 0,
+    ),
     reason: entry.reason || "",
+    note:
+      entry.note ||
+      entry.notes ||
+      entry.approvalNote ||
+      entry.approval_note ||
+      entry.responseNote ||
+      "",
+    approvedByName:
+      entry.approvedBy?.name ||
+      entry.approvedByName ||
+      entry.approved_by_name ||
+      "",
+    rejectedByName:
+      entry.rejectedBy?.name ||
+      entry.rejectedByName ||
+      entry.rejected_by_name ||
+      "",
+    amendedByName:
+      entry.amendedBy?.name ||
+      entry.amendedByName ||
+      entry.amended_by_name ||
+      "",
+    respondedByName:
+      entry.respondedBy?.name ||
+      entry.respondedByName ||
+      entry.responded_by_name ||
+      "",
+    respondedAt: entry.respondedAt || entry.responded_at || "",
     status,
     requestedByName:
       entry.requestedBy?.name || entry.requestedByName || "Unknown",
@@ -54,6 +109,57 @@ const extractList = (payload) => {
   return [];
 };
 
+const extractAllocations = (payload) => {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.data)) return payload.data;
+  if (Array.isArray(payload?.safariAllocations))
+    return payload.safariAllocations;
+  if (Array.isArray(payload?.safari_allocations))
+    return payload.safari_allocations;
+  if (Array.isArray(payload?.allocations)) return payload.allocations;
+  return [];
+};
+
+const normalizeAllocation = (allocation) => {
+  const leadId =
+    allocation.lead?.id || allocation.leadId || allocation.lead_id || null;
+
+  const vehicleNo =
+    allocation.vehicle?.vehicleNo ||
+    allocation.vehicle?.vehicle_no ||
+    allocation.vehicleNo ||
+    allocation.vehicle_no ||
+    "";
+  const plateNo =
+    allocation.vehicle?.plateNo ||
+    allocation.vehicle?.plate_no ||
+    allocation.plateNo ||
+    allocation.plate_no ||
+    "";
+  const vehicleLabel = [vehicleNo, plateNo ? `(${plateNo})` : ""]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+
+  const driverName =
+    allocation.driver?.name ||
+    allocation.driverName ||
+    allocation.driver_name ||
+    "";
+
+  return {
+    leadId: leadId ? String(leadId) : "",
+    vehicleLabel,
+    driverName: String(driverName || "").trim(),
+    updatedAt:
+      allocation.updatedAt ||
+      allocation.updated_at ||
+      allocation.createdAt ||
+      allocation.created_at ||
+      "",
+  };
+};
+
 const formatDateTime = (value) => {
   if (!value) return "-";
   const date = new Date(value);
@@ -61,30 +167,92 @@ const formatDateTime = (value) => {
   return date.toLocaleString();
 };
 
+const isAdminUser = (user) => {
+  const role = String(user?.role || "")
+    .trim()
+    .toLowerCase();
+  const roles = Array.isArray(user?.roles)
+    ? user.roles.map((item) =>
+        String(item || "")
+          .trim()
+          .toLowerCase(),
+      )
+    : [];
+
+  if (role.includes("admin")) return true;
+  if (roles.some((item) => item.includes("admin"))) return true;
+  return false;
+};
+
 export default function FuelRequisitions() {
+  const authUser = getAuthUser();
+  const canApprove = isAdminUser(authUser);
   const [items, setItems] = useState([]);
+  const [allocationByLead, setAllocationByLead] = useState({});
+  const [noteDrafts, setNoteDrafts] = useState({});
+  const [savingById, setSavingById] = useState({});
+  const [activeActionById, setActiveActionById] = useState({});
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
 
   const loadItems = async () => {
     setIsLoading(true);
     setErrorMessage("");
+    setSuccessMessage("");
 
     try {
-      const response = await apiFetch("/fuel-requisitions");
-      const payload = await response.json().catch(() => ({}));
+      const [requisitionsRes, allocationsRes] = await Promise.all([
+        apiFetch("/fuel-requisitions"),
+        apiFetch("/safari-allocations"),
+      ]);
+      const payload = await requisitionsRes.json().catch(() => ({}));
+      const allocationsPayload = await allocationsRes.json().catch(() => ({}));
 
-      if (!response.ok) {
+      if (!requisitionsRes.ok) {
         throw new Error(
           payload?.message || "Unable to load fuel requisitions.",
         );
       }
 
-      setItems(extractList(payload).map(normalizeRequisition));
+      const normalizedItems = extractList(payload).map(normalizeRequisition);
+      setItems(normalizedItems);
+      setNoteDrafts(
+        normalizedItems.reduce((acc, item) => {
+          acc[item.id] = item.note || "";
+          return acc;
+        }, {}),
+      );
+
+      if (allocationsRes.ok) {
+        const normalized = extractAllocations(allocationsPayload)
+          .map(normalizeAllocation)
+          .filter((allocation) => allocation.leadId);
+
+        const byLead = normalized.reduce((acc, allocation) => {
+          const existing = acc[allocation.leadId];
+          if (!existing) {
+            acc[allocation.leadId] = allocation;
+            return acc;
+          }
+
+          const existingTime = Date.parse(existing.updatedAt || "") || 0;
+          const currentTime = Date.parse(allocation.updatedAt || "") || 0;
+          if (currentTime >= existingTime) {
+            acc[allocation.leadId] = allocation;
+          }
+          return acc;
+        }, {});
+
+        setAllocationByLead(byLead);
+      } else {
+        setAllocationByLead({});
+      }
     } catch (error) {
       setErrorMessage(error.message || "Failed to load fuel requisitions.");
+      setAllocationByLead({});
     } finally {
       setIsLoading(false);
     }
@@ -93,6 +261,85 @@ export default function FuelRequisitions() {
   useEffect(() => {
     loadItems();
   }, []);
+
+  const updateApproval = async (itemId, nextStatus) => {
+    if (!canApprove) return;
+
+    const currentItem = items.find(
+      (item) => String(item.id) === String(itemId),
+    );
+    if (
+      currentItem?.status === "Approved" ||
+      currentItem?.status === "Rejected"
+    ) {
+      return;
+    }
+
+    const note = String(noteDrafts[itemId] || "").trim();
+    setSavingById((prev) => ({ ...prev, [itemId]: true }));
+    setActiveActionById((prev) => ({ ...prev, [itemId]: nextStatus }));
+    setErrorMessage("");
+    setSuccessMessage("");
+
+    try {
+      const body = {
+        status: nextStatus,
+        note,
+      };
+
+      let response = await apiFetch(`/fuel-requisitions/${itemId}`, {
+        method: "PATCH",
+        body,
+      });
+
+      if (!response.ok) {
+        response = await apiFetch(`/fuel-requisitions/${itemId}`, {
+          method: "PUT",
+          body,
+        });
+      }
+
+      // Backward-compatible fallback for existing action endpoints.
+      if (!response.ok && nextStatus === "Approved") {
+        response = await apiFetch(`/fuel-requisitions/${itemId}/approve`, {
+          method: "POST",
+          body: note ? { note } : undefined,
+        });
+      }
+
+      if (!response.ok && nextStatus === "Rejected") {
+        response = await apiFetch(`/fuel-requisitions/${itemId}/reject`, {
+          method: "POST",
+          body,
+        });
+      }
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(
+          payload?.message || "Unable to update requisition approval status.",
+        );
+      }
+
+      setItems((current) =>
+        current.map((item) =>
+          String(item.id) === String(itemId)
+            ? {
+                ...item,
+                status: nextStatus,
+                note,
+              }
+            : item,
+        ),
+      );
+      setSuccessMessage(`Requisition #${itemId} updated to ${nextStatus}.`);
+    } catch (error) {
+      setErrorMessage(error.message || "Failed to update approval status.");
+    } finally {
+      setSavingById((prev) => ({ ...prev, [itemId]: false }));
+      setActiveActionById((prev) => ({ ...prev, [itemId]: "" }));
+    }
+  };
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -103,6 +350,7 @@ export default function FuelRequisitions() {
         (item.bookingRef || "").toLowerCase().includes(query) ||
         (item.clientCompany || "").toLowerCase().includes(query) ||
         (item.reason || "").toLowerCase().includes(query) ||
+        (item.note || "").toLowerCase().includes(query) ||
         (item.requestedByName || "").toLowerCase().includes(query);
 
       const statusMatch =
@@ -122,7 +370,7 @@ export default function FuelRequisitions() {
       pending,
       approved,
       rejected,
-      litresTotal: items.reduce((sum, item) => sum + item.litres, 0),
+      litresTotal: items.reduce((sum, item) => sum + item.totalFuelLitres, 0),
     };
   }, [items]);
 
@@ -216,6 +464,11 @@ export default function FuelRequisitions() {
           </div>
 
           <div className="flex items-center gap-2">
+            {canApprove && (
+              <span className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-semibold uppercase tracking-wide text-sky-700">
+                Admin only
+              </span>
+            )}
             <Filter className="h-4 w-4 text-slate-500" />
             <select
               value={statusFilter}
@@ -237,23 +490,31 @@ export default function FuelRequisitions() {
           </div>
         )}
 
+        {successMessage && (
+          <div className="mx-4 mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+            {successMessage}
+          </div>
+        )}
+
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-slate-200 text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>
                 <th className="px-4 py-3">Lead</th>
-                <th className="px-4 py-3">Litres</th>
+                <th className="px-4 py-3">Base Rate / Total Fuel</th>
                 <th className="px-4 py-3">Reason</th>
                 <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3">Note</th>
                 <th className="px-4 py-3">Requested By</th>
                 <th className="px-4 py-3">Created</th>
+                {canApprove && <th className="px-4 py-3">Approval</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {isLoading ? (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={canApprove ? 8 : 7}
                     className="px-4 py-10 text-center text-slate-500"
                   >
                     Loading fuel requisitions...
@@ -262,7 +523,7 @@ export default function FuelRequisitions() {
               ) : filtered.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={canApprove ? 8 : 7}
                     className="px-4 py-10 text-center text-slate-500"
                   >
                     No fuel requisitions found.
@@ -271,6 +532,38 @@ export default function FuelRequisitions() {
               ) : (
                 filtered.map((item) => {
                   const StatusIcon = statusIcons[item.status] || Clock3;
+                  const allocation = item.leadId
+                    ? allocationByLead[String(item.leadId)]
+                    : null;
+                  const isCompleted =
+                    item.status === "Approved" || item.status === "Rejected";
+
+                  const actionByLabel =
+                    item.status === "Approved"
+                      ? item.approvedByName || item.respondedByName
+                      : item.status === "Rejected"
+                        ? item.rejectedByName || item.respondedByName
+                        : item.status === "Amend"
+                          ? item.amendedByName || item.respondedByName
+                          : item.respondedByName;
+
+                  const actionByBadgeClass =
+                    item.status === "Approved"
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                      : item.status === "Rejected"
+                        ? "border-rose-200 bg-rose-50 text-rose-700"
+                        : item.status === "Amend"
+                          ? "border-sky-200 bg-sky-50 text-sky-700"
+                          : "border-slate-200 bg-slate-50 text-slate-600";
+
+                  const actionByText =
+                    item.status === "Approved"
+                      ? `Approved by ${actionByLabel}`
+                      : item.status === "Rejected"
+                        ? `Rejected by ${actionByLabel}`
+                        : item.status === "Amend"
+                          ? `Amended by ${actionByLabel}`
+                          : `${item.status} by ${actionByLabel}`;
 
                   return (
                     <tr key={item.id} className="align-top">
@@ -281,9 +574,24 @@ export default function FuelRequisitions() {
                         <div className="text-slate-500">
                           {item.clientCompany || "-"}
                         </div>
+                        {allocation?.vehicleLabel && (
+                          <div className="mt-1 text-xs font-medium text-slate-700">
+                            Vehicle: {allocation.vehicleLabel}
+                          </div>
+                        )}
+                        {allocation?.driverName && (
+                          <div className="text-xs font-medium text-slate-700">
+                            Driver: {allocation.driverName}
+                          </div>
+                        )}
                       </td>
-                      <td className="px-4 py-3 font-semibold text-slate-800">
-                        {item.litres.toFixed(2)} L
+                      <td className="px-4 py-3">
+                        <div className="font-semibold text-slate-800">
+                          {item.baseRatePerKm.toFixed(2)} / KM
+                        </div>
+                        <div className="text-xs font-medium text-slate-600">
+                          {item.totalFuelLitres.toFixed(2)} L
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-slate-700 max-w-[360px]">
                         <div className="line-clamp-2">{item.reason || "-"}</div>
@@ -298,6 +606,21 @@ export default function FuelRequisitions() {
                           {item.status}
                         </span>
                       </td>
+                      <td className="px-4 py-3 text-slate-700 max-w-[320px]">
+                        <div className="line-clamp-3">{item.note || "-"}</div>
+                        {actionByLabel && (
+                          <span
+                            className={`mt-1 inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${actionByBadgeClass}`}
+                          >
+                            {actionByText}
+                          </span>
+                        )}
+                        {item.respondedAt && (
+                          <div className="text-xs text-slate-500">
+                            {formatDateTime(item.respondedAt)}
+                          </div>
+                        )}
+                      </td>
                       <td className="px-4 py-3">
                         <div className="font-medium text-slate-800">
                           {item.requestedByName}
@@ -309,6 +632,77 @@ export default function FuelRequisitions() {
                       <td className="px-4 py-3 text-slate-600">
                         {formatDateTime(item.createdAt)}
                       </td>
+                      {canApprove && (
+                        <td className="px-4 py-3 min-w-[260px]">
+                          {!isCompleted ? (
+                            <>
+                              <textarea
+                                rows={2}
+                                value={noteDrafts[item.id] ?? item.note ?? ""}
+                                onChange={(event) =>
+                                  setNoteDrafts((prev) => ({
+                                    ...prev,
+                                    [item.id]: event.target.value,
+                                  }))
+                                }
+                                disabled={Boolean(savingById[item.id])}
+                                placeholder="Type approval note"
+                                className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs text-slate-900 outline-none transition focus:border-sher-gold focus:ring-4 focus:ring-sher-gold/20 disabled:cursor-not-allowed disabled:bg-slate-100"
+                              />
+                              <div className="mt-2 flex flex-wrap gap-1.5">
+                                <button
+                                  type="button"
+                                  disabled={Boolean(savingById[item.id])}
+                                  onClick={() =>
+                                    updateApproval(item.id, "Amend")
+                                  }
+                                  className="rounded-md border border-sky-300 bg-sky-50 px-2 py-1 text-xs font-semibold text-sky-700 hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  {Boolean(savingById[item.id]) &&
+                                  activeActionById[item.id] === "Amend"
+                                    ? "Saving..."
+                                    : "Amend"}
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={Boolean(savingById[item.id])}
+                                  onClick={() =>
+                                    updateApproval(item.id, "Rejected")
+                                  }
+                                  className="rounded-md border border-rose-300 bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  {Boolean(savingById[item.id]) &&
+                                  activeActionById[item.id] === "Rejected"
+                                    ? "Saving..."
+                                    : "Reject"}
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={Boolean(savingById[item.id])}
+                                  onClick={() =>
+                                    updateApproval(item.id, "Approved")
+                                  }
+                                  className="rounded-md border border-emerald-300 bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  {Boolean(savingById[item.id]) &&
+                                  activeActionById[item.id] === "Approved"
+                                    ? "Saving..."
+                                    : "Approve"}
+                                </button>
+                              </div>
+                              {Boolean(savingById[item.id]) && (
+                                <div className="mt-1 text-xs font-medium text-slate-500">
+                                  Updating approval status...
+                                </div>
+                              )}
+                            </>
+                          ) : (
+                            <div className="text-xs font-semibold text-slate-500">
+                              Process complete
+                            </div>
+                          )}
+                        </td>
+                      )}
                     </tr>
                   );
                 })

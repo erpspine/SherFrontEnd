@@ -70,8 +70,9 @@ const normalizeClient = (client) => ({
   phone: client.phone || client.phone_number || "",
   email: client.email || "",
   address: client.address || client.location || "",
-  activeLeases: Number(client.activeLeases || client.active_leases || 0),
-  totalQuotes: Number(client.totalQuotes || client.total_quotes || 0),
+  totalQuotes: Number(
+    client.totalQuotations ?? client.totalQuotes ?? client.total_quotes ?? 0,
+  ),
   since: formatSince(client.created_at || client.createdAt),
   avatar: getInitials(client.name || client.client_name || ""),
 });
@@ -111,17 +112,13 @@ export default function Clients() {
 
   const stats = useMemo(() => {
     const total = clients.length;
-    const activeLeases = clients.reduce(
-      (sum, client) => sum + Number(client.activeLeases || 0),
-      0,
-    );
     const totalQuotes = clients.reduce(
       (sum, client) => sum + Number(client.totalQuotes || 0),
       0,
     );
     const avgQuotes = total > 0 ? (totalQuotes / total).toFixed(1) : "0.0";
 
-    return { total, activeLeases, totalQuotes, avgQuotes };
+    return { total, totalQuotes, avgQuotes };
   }, [clients]);
 
   const filtered = useMemo(() => {
@@ -302,7 +299,7 @@ export default function Clients() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
         {[
           {
             label: "Total Clients",
@@ -310,13 +307,6 @@ export default function Clients() {
             color: "text-white",
             bg: "bg-blue-500/10",
             iconColor: "text-blue-400",
-          },
-          {
-            label: "Active Leases",
-            value: stats.activeLeases,
-            color: "text-green-400",
-            bg: "bg-green-500/10",
-            iconColor: "text-green-400",
           },
           {
             label: "Total Quotes",
@@ -376,7 +366,6 @@ export default function Clients() {
                   "Client",
                   "Contact",
                   "Location",
-                  "Active Leases",
                   "Total Quotes",
                   "Since",
                   "Actions",
@@ -393,7 +382,7 @@ export default function Clients() {
             <tbody>
               {isLoading && (
                 <tr>
-                  <td colSpan={7} className="py-10 text-center text-slate-500">
+                  <td colSpan={6} className="py-10 text-center text-slate-500">
                     <div className="inline-flex items-center gap-2">
                       <Loader2 className="w-4 h-4 animate-spin" />
                       Loading clients...
@@ -442,11 +431,6 @@ export default function Clients() {
                         <MapPin className="w-3.5 h-3.5 text-slate-500" />
                         {c.address || "-"}
                       </div>
-                    </td>
-                    <td className="py-4 px-6">
-                      <span className="text-green-400 font-semibold">
-                        {c.activeLeases}
-                      </span>
                     </td>
                     <td className="py-4 px-6">
                       <div className="flex items-center gap-1.5 text-sm text-slate-300">
