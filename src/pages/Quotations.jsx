@@ -1370,16 +1370,17 @@ export default function Quotations() {
             <thead>
               <tr className="border-b border-slate-800">
                 {[
+                  "Actions",
                   "Quote #",
                   "Quote Date",
                   "Client",
+                  "Attention",
                   "Service Summary",
                   "Total Amount",
                   "Status",
                   "Sent By",
                   "Sent At",
                   "Send",
-                  "Actions",
                 ].map((header) => (
                   <th
                     key={header}
@@ -1400,84 +1401,7 @@ export default function Quotations() {
                     className="border-b border-slate-800/50 hover:bg-slate-800/20 transition-colors"
                   >
                     <td className="py-4 px-6">
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center">
-                          <FileText className="w-4 h-4 text-amber-400" />
-                        </div>
-                        <span className="text-white font-medium text-sm">
-                          {quotation.quoteNo ||
-                            formatQuotationNumberFromId(
-                              quotation.id,
-                              quotation.quoteDate || quotation.date,
-                            )}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="py-4 px-6 text-sm text-slate-400">
-                      {quotation.date}
-                    </td>
-                    <td className="py-4 px-6">
-                      <div className="flex items-center gap-2">
-                        <Building2 className="w-4 h-4 text-slate-500 flex-shrink-0" />
-                        <span className="text-sm text-slate-300">
-                          {quotation.client}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="py-4 px-6 text-sm max-w-xs">
-                      <div className="space-y-1">
-                        <p
-                          className="text-slate-700 font-medium truncate"
-                          title={getQuotationDestinationsLabel(quotation)}
-                        >
-                          {getQuotationDestinationsLabel(quotation) || "-"}
-                        </p>
-                        <p className="text-xs text-slate-600">
-                          {getItineraryDatesLabel(quotation.daySections)
-                            ? `Itinerary: ${getItineraryDatesLabel(quotation.daySections)}`
-                            : "Itinerary: -"}
-                        </p>
-                      </div>
-                    </td>
-                    <td className="py-4 px-6">
-                      <span className="text-white font-semibold text-sm">
-                        {formatCurrency(quotation.total)}
-                      </span>
-                    </td>
-                    <td className="py-4 px-6">
-                      <span
-                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border ${config.color}`}
-                      >
-                        <config.icon className="w-3 h-3" />
-                        {quotation.status}
-                      </span>
-                    </td>
-                    <td className="py-4 px-6 text-sm text-slate-300 whitespace-nowrap">
-                      {quotation.sentBy || "-"}
-                    </td>
-                    <td className="py-4 px-6 text-xs text-slate-400 whitespace-nowrap">
-                      {formatDateTime(quotation.sentAt)}
-                    </td>
-                    <td className="py-4 px-6">
-                      {quotation.status === "Pending" ? (
-                        <button
-                          onClick={() => handleMarkSent(quotation)}
-                          disabled={markingSentId === quotation.id}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-500/15 text-blue-400 border border-blue-500/30 hover:bg-blue-500/25 disabled:opacity-50"
-                        >
-                          {markingSentId === quotation.id ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          ) : (
-                            <Send className="w-3.5 h-3.5" />
-                          )}
-                          Mark Sent
-                        </button>
-                      ) : (
-                        <span className="text-xs text-slate-500">-</span>
-                      )}
-                    </td>
-                    <td className="py-4 px-6">
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center justify-start gap-1 whitespace-nowrap">
                         <button
                           onClick={() => openEditQuotation(quotation)}
                           className="p-1.5 text-slate-400 hover:text-amber-400 hover:bg-amber-500/10 rounded-lg transition-colors"
@@ -1533,6 +1457,86 @@ export default function Quotations() {
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
+                    </td>
+                    <td className="py-4 px-6">
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center">
+                          <FileText className="w-4 h-4 text-amber-400" />
+                        </div>
+                        <span className="text-white font-medium text-sm">
+                          {quotation.quoteNo ||
+                            formatQuotationNumberFromId(
+                              quotation.id,
+                              quotation.quoteDate || quotation.date,
+                            )}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="py-4 px-6 text-sm text-slate-400">
+                      {quotation.date}
+                    </td>
+                    <td className="py-4 px-6">
+                      <div className="flex items-center gap-2">
+                        <Building2 className="w-4 h-4 text-slate-500 flex-shrink-0" />
+                        <span className="text-sm text-slate-300">
+                          {quotation.client}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="py-4 px-6 text-sm text-slate-300 whitespace-nowrap">
+                      {quotation.attention || "-"}
+                    </td>
+                    <td className="py-4 px-6 text-sm max-w-xs">
+                      <div className="space-y-1">
+                        <p
+                          className="text-slate-700 font-medium truncate"
+                          title={getQuotationDestinationsLabel(quotation)}
+                        >
+                          {getQuotationDestinationsLabel(quotation) || "-"}
+                        </p>
+                        <p className="text-xs text-slate-600">
+                          {getItineraryDatesLabel(quotation.daySections)
+                            ? `Itinerary: ${getItineraryDatesLabel(quotation.daySections)}`
+                            : "Itinerary: -"}
+                        </p>
+                      </div>
+                    </td>
+                    <td className="py-4 px-6">
+                      <span className="text-white font-semibold text-sm">
+                        {formatCurrency(quotation.total)}
+                      </span>
+                    </td>
+                    <td className="py-4 px-6">
+                      <span
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border ${config.color}`}
+                      >
+                        <config.icon className="w-3 h-3" />
+                        {quotation.status}
+                      </span>
+                    </td>
+                    <td className="py-4 px-6 text-sm text-slate-300 whitespace-nowrap">
+                      {quotation.sentBy || "-"}
+                    </td>
+                    <td className="py-4 px-6 text-xs text-slate-400 whitespace-nowrap">
+                      {formatDateTime(quotation.sentAt)}
+                    </td>
+                    <td className="py-4 px-6">
+                      {quotation.status === "Pending" ? (
+                        <button
+                          onClick={() => handleMarkSent(quotation)}
+                          disabled={markingSentId === quotation.id}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-500/15 text-blue-400 border border-blue-500/30 hover:bg-blue-500/25 disabled:opacity-50"
+                        >
+                          {markingSentId === quotation.id ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Send className="w-3.5 h-3.5" />
+                          )}
+                          Mark Sent
+                        </button>
+                      ) : (
+                        <span className="text-xs text-slate-500">-</span>
+                      )}
                     </td>
                   </tr>
                 );

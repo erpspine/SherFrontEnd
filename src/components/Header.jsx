@@ -1,7 +1,7 @@
 ﻿import { Bell, Search, Menu } from "lucide-react";
 import { getAuthUser } from "../utils/auth";
 
-export default function Header({ toggleSidebar }) {
+export default function Header({ toggleSidebar, isSidebarCollapsed }) {
   const authUser = getAuthUser();
   const userName = authUser?.name || "Super Admin";
   const userInitials = userName
@@ -17,7 +17,8 @@ export default function Header({ toggleSidebar }) {
       <div className="flex items-center gap-4">
         <button
           onClick={toggleSidebar}
-          className="lg:hidden p-2 hover:bg-slate-100 rounded-lg transition-colors"
+          className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+          title={isSidebarCollapsed ? "Expand menu" : "Collapse menu"}
         >
           <Menu className="w-6 h-6 text-slate-600" />
         </button>

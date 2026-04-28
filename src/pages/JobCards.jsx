@@ -362,6 +362,7 @@ export default function JobCards() {
   const [leads, setLeads] = useState([]);
   const [vehicles, setVehicles] = useState([]);
   const [jobCards, setJobCards] = useState([]);
+  const [safariAllocations, setSafariAllocations] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -376,20 +377,29 @@ export default function JobCards() {
     setErrorMessage("");
 
     try {
-      const [jobCardsResponse, leadsResponse, vehiclesResponse] =
-        await Promise.all([
-          apiFetch("/job-cards"),
-          apiFetch("/leads"),
-          apiFetch("/vehicles"),
-        ]);
+      const [
+        jobCardsResponse,
+        leadsResponse,
+        vehiclesResponse,
+        safariAllocationsResponse,
+      ] = await Promise.all([
+        apiFetch("/job-cards"),
+        apiFetch("/leads"),
+        apiFetch("/vehicles"),
+        apiFetch("/safari-allocations"),
+      ]);
 
-      const [jobCardsPayload, leadsPayload, vehiclesPayload] =
-        await Promise.all([
-          jobCardsResponse.json().catch(() => ({})),
-          leadsResponse.json().catch(() => ({})),
-          vehiclesResponse.json().catch(() => ({})),
-        ]);
-
+      const [
+        jobCardsPayload,
+        leadsPayload,
+        vehiclesPayload,
+        safariAllocationsPayload,
+      ] = await Promise.all([
+        jobCardsResponse.json().catch(() => ({})),
+        leadsResponse.json().catch(() => ({})),
+        vehiclesResponse.json().catch(() => ({})),
+        safariAllocationsResponse.json().catch(() => ({})),
+      ]);
       if (!jobCardsResponse.ok) {
         throw new Error(
           jobCardsPayload?.message || "Unable to fetch job cards.",
@@ -412,6 +422,12 @@ export default function JobCards() {
       setLeads(extractList(leadsPayload, "leads").map(normalizeLead));
       setVehicles(
         extractList(vehiclesPayload, "vehicles").map(normalizeVehicle),
+      );
+      setSafariAllocations(
+        extractList(safariAllocationsPayload, "allocations").map((a) => ({
+          leadId: Number(a.leadId ?? a.lead_id ?? 0),
+          vehicleId: Number(a.vehicleId ?? a.vehicle_id ?? 0),
+        })),
       );
     } catch (error) {
       setErrorMessage(error.message || "Failed to load job cards.");
@@ -507,7 +523,13 @@ export default function JobCards() {
       setField("leadId", leadIdValue);
       return;
     }
-    setForm(buildFormFromLead(lead));
+    const allocation = safariAllocations.find(
+      (a) => String(a.leadId) === String(lead.id),
+    );
+    setForm({
+      ...buildFormFromLead(lead),
+      vehicleId: allocation ? String(allocation.vehicleId) : "",
+    });
   };
 
   const handleTypeChange = (nextType) => {
@@ -700,7 +722,7 @@ export default function JobCards() {
     try {
       const payload = {
         leadId: isSafariType ? Number(form.leadId) : null,
-        vehicleId: !isSafariType ? Number(form.vehicleId) : null,
+        vehicleId: form.vehicleId ? Number(form.vehicleId) : null,
         status: selectedStatus,
         type: form.type || "Safari",
         safariStartDate: form.safariStartDate || null,
@@ -1102,6 +1124,28 @@ export default function JobCards() {
                         Lead cannot be changed while editing.
                       </p>
                     )}
+                  </div>
+                )}
+
+                {isSafariType && (
+                  <div>
+                    <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                      Vehicle
+                    </label>
+                    <select
+                      value={form.vehicleId}
+                      onChange={(event) =>
+                        setField("vehicleId", event.target.value)
+                      }
+                      className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
+                    >
+                      <option value="">Select vehicle</option>
+                      {vehicles.map((vehicle) => (
+                        <option key={vehicle.id} value={vehicle.id}>
+                          {vehicle.label}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 )}
 
