@@ -189,9 +189,6 @@ export default function FuelRequisitions() {
   const canApprove = isAdminUser(authUser);
   const [items, setItems] = useState([]);
   const [allocationByLead, setAllocationByLead] = useState({});
-  const [noteDrafts, setNoteDrafts] = useState({});
-  const [savingById, setSavingById] = useState({});
-  const [activeActionById, setActiveActionById] = useState({});
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [isLoading, setIsLoading] = useState(true);
@@ -219,12 +216,6 @@ export default function FuelRequisitions() {
 
       const normalizedItems = extractList(payload).map(normalizeRequisition);
       setItems(normalizedItems);
-      setNoteDrafts(
-        normalizedItems.reduce((acc, item) => {
-          acc[item.id] = item.note || "";
-          return acc;
-        }, {}),
-      );
 
       if (allocationsRes.ok) {
         const normalized = extractAllocations(allocationsPayload)
@@ -261,85 +252,6 @@ export default function FuelRequisitions() {
   useEffect(() => {
     loadItems();
   }, []);
-
-  const updateApproval = async (itemId, nextStatus) => {
-    if (!canApprove) return;
-
-    const currentItem = items.find(
-      (item) => String(item.id) === String(itemId),
-    );
-    if (
-      currentItem?.status === "Approved" ||
-      currentItem?.status === "Rejected"
-    ) {
-      return;
-    }
-
-    const note = String(noteDrafts[itemId] || "").trim();
-    setSavingById((prev) => ({ ...prev, [itemId]: true }));
-    setActiveActionById((prev) => ({ ...prev, [itemId]: nextStatus }));
-    setErrorMessage("");
-    setSuccessMessage("");
-
-    try {
-      const body = {
-        status: nextStatus,
-        note,
-      };
-
-      let response = await apiFetch(`/fuel-requisitions/${itemId}`, {
-        method: "PATCH",
-        body,
-      });
-
-      if (!response.ok) {
-        response = await apiFetch(`/fuel-requisitions/${itemId}`, {
-          method: "PUT",
-          body,
-        });
-      }
-
-      // Backward-compatible fallback for existing action endpoints.
-      if (!response.ok && nextStatus === "Approved") {
-        response = await apiFetch(`/fuel-requisitions/${itemId}/approve`, {
-          method: "POST",
-          body: note ? { note } : undefined,
-        });
-      }
-
-      if (!response.ok && nextStatus === "Rejected") {
-        response = await apiFetch(`/fuel-requisitions/${itemId}/reject`, {
-          method: "POST",
-          body,
-        });
-      }
-
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(
-          payload?.message || "Unable to update requisition approval status.",
-        );
-      }
-
-      setItems((current) =>
-        current.map((item) =>
-          String(item.id) === String(itemId)
-            ? {
-                ...item,
-                status: nextStatus,
-                note,
-              }
-            : item,
-        ),
-      );
-      setSuccessMessage(`Requisition #${itemId} updated to ${nextStatus}.`);
-    } catch (error) {
-      setErrorMessage(error.message || "Failed to update approval status.");
-    } finally {
-      setSavingById((prev) => ({ ...prev, [itemId]: false }));
-      setActiveActionById((prev) => ({ ...prev, [itemId]: "" }));
-    }
-  };
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -507,14 +419,14 @@ export default function FuelRequisitions() {
                 <th className="px-4 py-3">Note</th>
                 <th className="px-4 py-3">Requested By</th>
                 <th className="px-4 py-3">Created</th>
-                {canApprove && <th className="px-4 py-3">Approval</th>}
+                <th className="px-4 py-3">Details</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {isLoading ? (
                 <tr>
                   <td
-                    colSpan={canApprove ? 8 : 7}
+                    colSpan={8}
                     className="px-4 py-10 text-center text-slate-500"
                   >
                     Loading fuel requisitions...
@@ -523,7 +435,7 @@ export default function FuelRequisitions() {
               ) : filtered.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={canApprove ? 8 : 7}
+                    colSpan={8}
                     className="px-4 py-10 text-center text-slate-500"
                   >
                     No fuel requisitions found.
@@ -535,8 +447,6 @@ export default function FuelRequisitions() {
                   const allocation = item.leadId
                     ? allocationByLead[String(item.leadId)]
                     : null;
-                  const isCompleted =
-                    item.status === "Approved" || item.status === "Rejected";
 
                   const actionByLabel =
                     item.status === "Approved"
@@ -632,77 +542,14 @@ export default function FuelRequisitions() {
                       <td className="px-4 py-3 text-slate-600">
                         {formatDateTime(item.createdAt)}
                       </td>
-                      {canApprove && (
-                        <td className="px-4 py-3 min-w-[260px]">
-                          {!isCompleted ? (
-                            <>
-                              <textarea
-                                rows={2}
-                                value={noteDrafts[item.id] ?? item.note ?? ""}
-                                onChange={(event) =>
-                                  setNoteDrafts((prev) => ({
-                                    ...prev,
-                                    [item.id]: event.target.value,
-                                  }))
-                                }
-                                disabled={Boolean(savingById[item.id])}
-                                placeholder="Type approval note"
-                                className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs text-slate-900 outline-none transition focus:border-sher-gold focus:ring-4 focus:ring-sher-gold/20 disabled:cursor-not-allowed disabled:bg-slate-100"
-                              />
-                              <div className="mt-2 flex flex-wrap gap-1.5">
-                                <button
-                                  type="button"
-                                  disabled={Boolean(savingById[item.id])}
-                                  onClick={() =>
-                                    updateApproval(item.id, "Amend")
-                                  }
-                                  className="rounded-md border border-sky-300 bg-sky-50 px-2 py-1 text-xs font-semibold text-sky-700 hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-60"
-                                >
-                                  {Boolean(savingById[item.id]) &&
-                                  activeActionById[item.id] === "Amend"
-                                    ? "Saving..."
-                                    : "Amend"}
-                                </button>
-                                <button
-                                  type="button"
-                                  disabled={Boolean(savingById[item.id])}
-                                  onClick={() =>
-                                    updateApproval(item.id, "Rejected")
-                                  }
-                                  className="rounded-md border border-rose-300 bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
-                                >
-                                  {Boolean(savingById[item.id]) &&
-                                  activeActionById[item.id] === "Rejected"
-                                    ? "Saving..."
-                                    : "Reject"}
-                                </button>
-                                <button
-                                  type="button"
-                                  disabled={Boolean(savingById[item.id])}
-                                  onClick={() =>
-                                    updateApproval(item.id, "Approved")
-                                  }
-                                  className="rounded-md border border-emerald-300 bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
-                                >
-                                  {Boolean(savingById[item.id]) &&
-                                  activeActionById[item.id] === "Approved"
-                                    ? "Saving..."
-                                    : "Approve"}
-                                </button>
-                              </div>
-                              {Boolean(savingById[item.id]) && (
-                                <div className="mt-1 text-xs font-medium text-slate-500">
-                                  Updating approval status...
-                                </div>
-                              )}
-                            </>
-                          ) : (
-                            <div className="text-xs font-semibold text-slate-500">
-                              Process complete
-                            </div>
-                          )}
-                        </td>
-                      )}
+                      <td className="px-4 py-3">
+                        <Link
+                          to={`/fuel-requisitions/${item.id}/approval`}
+                          className="inline-flex items-center rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                        >
+                          {canApprove ? "Review & Approve" : "View Details"}
+                        </Link>
+                      </td>
                     </tr>
                   );
                 })

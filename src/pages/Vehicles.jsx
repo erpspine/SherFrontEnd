@@ -1,4 +1,5 @@
 ﻿import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Search,
   Plus,
@@ -199,6 +200,7 @@ const getStatusConfig = (status) => {
 };
 
 export default function Vehicles() {
+  const navigate = useNavigate();
   const [vehicles, setVehicles] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedStatus, setSelectedStatus] = useState("All");
@@ -221,6 +223,10 @@ export default function Vehicles() {
   });
   const [photoFile, setPhotoFile] = useState(null);
   const [photoPreview, setPhotoPreview] = useState("");
+  const [previewPhoto, setPreviewPhoto] = useState({
+    url: "",
+    title: "",
+  });
   const photoPreviewObjectUrlRef = useRef("");
 
   const updatePhotoPreviewFromFile = (file) => {
@@ -709,18 +715,36 @@ export default function Vehicles() {
                     key={v.id}
                     className="border-b border-slate-800/50 hover:bg-slate-800/20 transition-colors"
                   >
-                    <td className="py-4 px-6 text-slate-300 text-sm font-medium whitespace-nowrap">
-                      {v.vehicleNo || "-"}
+                    <td className="py-4 px-6 text-sm font-medium whitespace-nowrap">
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/vehicles/${v.id}`)}
+                        className="text-amber-400 hover:text-amber-300 hover:underline transition-colors"
+                      >
+                        {v.vehicleNo || "-"}
+                      </button>
                     </td>
                     <td className="py-4 px-6">
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center flex-shrink-0">
+                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center flex-shrink-0 overflow-hidden">
                           {v.photoUrl ? (
-                            <img
-                              src={v.photoUrl}
-                              alt={`${v.make} ${v.model}`}
-                              className="w-10 h-10 rounded-xl object-cover"
-                            />
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setPreviewPhoto({
+                                  url: v.photoUrl,
+                                  title: `${v.make} ${v.model}`.trim(),
+                                })
+                              }
+                              className="block h-full w-full cursor-zoom-in"
+                              title="View full photo"
+                            >
+                              <img
+                                src={v.photoUrl}
+                                alt={`${v.make} ${v.model}`}
+                                className="w-10 h-10 rounded-xl object-cover transition-transform hover:scale-110"
+                              />
+                            </button>
                           ) : (
                             <Car className="w-5 h-5 text-white" />
                           )}
@@ -807,6 +831,39 @@ export default function Vehicles() {
           </p>
         </div>
       </div>
+
+      {previewPhoto.url && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
+          onClick={() => setPreviewPhoto({ url: "", title: "" })}
+        >
+          <div
+            className="relative w-full max-w-5xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setPreviewPhoto({ url: "", title: "" })}
+              className="absolute right-3 top-3 z-10 rounded-full bg-slate-900/80 p-2 text-slate-200 transition-colors hover:bg-slate-800 hover:text-white"
+              title="Close photo preview"
+            >
+              <X className="h-5 w-5" />
+            </button>
+            <div className="overflow-hidden rounded-2xl border border-slate-700 bg-slate-950 shadow-2xl">
+              <img
+                src={previewPhoto.url}
+                alt={previewPhoto.title || "Vehicle photo"}
+                className="max-h-[85vh] w-full object-contain"
+              />
+              {previewPhoto.title && (
+                <div className="border-t border-slate-800 px-4 py-3 text-sm font-medium text-slate-200">
+                  {previewPhoto.title}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add/Edit Modal */}
       {isModalOpen && (

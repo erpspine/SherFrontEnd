@@ -878,10 +878,10 @@ export default function JobCards() {
             <thead>
               <tr className="border-b border-slate-800/50">
                 <th className="text-left py-3 px-3 text-xs font-semibold text-slate-400 uppercase">
-                  Job Card No
+                  Type
                 </th>
                 <th className="text-left py-3 px-3 text-xs font-semibold text-slate-400 uppercase">
-                  Type
+                  Job Card No
                 </th>
                 <th className="text-left py-3 px-3 text-xs font-semibold text-slate-400 uppercase">
                   Status
@@ -937,14 +937,14 @@ export default function JobCards() {
                     key={card.id}
                     className="border-b border-slate-800/40 hover:bg-slate-800/30 transition-colors"
                   >
+                    <td className="py-3 px-3 text-sm text-slate-300 whitespace-nowrap">
+                      {card.type || "Safari"}
+                    </td>
                     <td className="py-3 px-3">
                       <div className="flex items-center gap-2 text-slate-800 text-sm font-medium">
                         <ClipboardList className="w-4 h-4 text-amber-400" />
                         {card.jobCardNo}
                       </div>
-                    </td>
-                    <td className="py-3 px-3 text-sm text-slate-300 whitespace-nowrap">
-                      {card.type || "Safari"}
                     </td>
                     <td className="py-3 px-3 text-sm whitespace-nowrap">
                       <span

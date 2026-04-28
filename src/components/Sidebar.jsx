@@ -20,6 +20,7 @@ import {
   Fuel,
   Wrench,
   Route,
+  Calendar,
 } from "lucide-react";
 import { clearAuthSession, getAuthUser } from "../utils/auth";
 import { apiFetch } from "../utils/api";
@@ -33,6 +34,11 @@ const menuGroups = [
     label: "Fleet",
     items: [
       { path: "/vehicles", icon: Car, label: "Vehicles" },
+      {
+        path: "/vehicle-availability",
+        icon: Calendar,
+        label: "Vehicle Availability",
+      },
       { path: "/job-cards", icon: ClipboardList, label: "Job Cards" },
       { path: "/safari-allocations", icon: Car, label: "Safari Allocations" },
       { path: "/checklist", icon: ListChecks, label: "Checklist" },

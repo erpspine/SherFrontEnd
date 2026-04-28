@@ -25,7 +25,10 @@ import RolesPermissions from "./pages/RolesPermissions";
 import Checklist from "./pages/Checklist";
 import FuelRequisitions from "./pages/FuelRequisitions";
 import FuelRequisitionCreate from "./pages/FuelRequisitionCreate";
+import FuelRequisitionApproval from "./pages/FuelRequisitionApproval";
 import VehicleServices from "./pages/VehicleServices";
+import VehicleView from "./pages/VehicleView";
+import VehicleAvailability from "./pages/VehicleAvailability";
 import RouteDistances from "./pages/RouteDistances";
 import { isAuthenticated } from "./utils/auth";
 
@@ -43,6 +46,8 @@ function ProtectedRoutes() {
       <Routes>
         <Route path="/" element={<Dashboard />} />
         <Route path="/vehicles" element={<Vehicles />} />
+        <Route path="/vehicles/:id" element={<VehicleView />} />
+        <Route path="/vehicle-availability" element={<VehicleAvailability />} />
         <Route path="/clients" element={<Clients />} />
         <Route path="/job-cards" element={<JobCards />} />
         <Route path="/safari-allocations" element={<SafariAllocations />} />
@@ -56,6 +61,10 @@ function ProtectedRoutes() {
         <Route path="/roles-permissions" element={<RolesPermissions />} />
         <Route path="/checklist" element={<Checklist />} />
         <Route path="/fuel-requisitions" element={<FuelRequisitions />} />
+        <Route
+          path="/fuel-requisitions/:id/approval"
+          element={<FuelRequisitionApproval />}
+        />
         <Route path="/vehicle-services" element={<VehicleServices />} />
         <Route path="/route-distances" element={<RouteDistances />} />
         <Route
