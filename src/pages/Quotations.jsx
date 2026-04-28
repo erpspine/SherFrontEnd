@@ -114,6 +114,7 @@ const createFormState = () => {
     leadId: "",
     client: "",
     attention: "",
+    groupName: "",
     quoteDate: today,
     notes: "",
     daySections: [createDaySection(1, today)],
@@ -122,6 +123,14 @@ const createFormState = () => {
 
 const formatCurrency = (value) => `USD ${Number(value || 0).toLocaleString()}`;
 const toNumber = (value) => Number(value || 0);
+
+const formatDisplayDate = (value) => {
+  const isoDate = toIsoDate(value);
+  if (!isoDate) return value || "-";
+
+  const [year, month, day] = isoDate.split("-");
+  return `${day}/${month}/${year}`;
+};
 
 const formatDateTime = (value) => {
   if (!value) return "-";
@@ -145,8 +154,8 @@ const getItineraryDatesLabel = (daySections = []) => {
     .sort();
 
   if (!dates.length) return "";
-  if (dates.length === 1) return dates[0];
-  return `${dates[0]} to ${dates[dates.length - 1]}`;
+  if (dates.length === 1) return formatDisplayDate(dates[0]);
+  return `${formatDisplayDate(dates[0])} to ${formatDisplayDate(dates[dates.length - 1])}`;
 };
 
 const getQuotationDestinationsLabel = (quotation) => {
@@ -168,6 +177,21 @@ const formatQuotationNumberFromId = (id, dateValue) => {
   const isoDate = toIsoDate(dateValue);
   const year = isoDate ? isoDate.slice(0, 4) : String(new Date().getFullYear());
   return `QT-${year}-${String(Math.trunc(numericId)).padStart(4, "0")}`;
+};
+
+const getQuotationNumberValue = (quotation) => {
+  const databaseNumber =
+    quotation?.quotation_number ||
+    quotation?.quotationNumber ||
+    quotation?.quote_no ||
+    quotation?.quoteNo ||
+    quotation?.quotation_no ||
+    quotation?.quotationNo ||
+    quotation?.reference_no ||
+    quotation?.referenceNo ||
+    "";
+
+  return String(databaseNumber || "");
 };
 
 const toPickerValue = (value) => ({
@@ -292,27 +316,21 @@ const normalizeQuotation = (quotation) => {
     quotation.created_at ||
     quotation.createdAt ||
     "";
-  const quoteNoRaw =
-    quotation.quote_no ||
-    quotation.quoteNo ||
-    quotation.quotation_no ||
-    quotation.quotationNo ||
-    quotation.quotation_number ||
-    quotation.quotationNumber ||
-    quotation.reference_no ||
-    quotation.referenceNo ||
-    "";
+  const quotationNumberRaw = getQuotationNumberValue(quotation);
 
   return {
     id: quotation.id,
+    quotationNumber: quotationNumberRaw,
     quoteNo: String(
-      quoteNoRaw || formatQuotationNumberFromId(quotation.id, quoteDateRaw),
+      quotationNumberRaw ||
+        formatQuotationNumberFromId(quotation.id, quoteDateRaw),
     ),
     leadId: String(quotation.lead_id || quotation.leadId || ""),
     date: quoteDateRaw,
     quoteDate: quoteDateRaw,
     client: quotation.client || "",
     attention: quotation.attention || "",
+    groupName: quotation.group_name || quotation.groupName || "",
     notes: quotation.notes || "",
     serviceSummary:
       quotation.service_summary ||
@@ -487,8 +505,13 @@ export default function Quotations() {
   const filtered = quotations.filter((quotation) => {
     const query = searchTerm.toLowerCase();
     const matchSearch =
-      quotation.quoteNo.toLowerCase().includes(query) ||
+      String(quotation.quotationNumber || quotation.quoteNo || "")
+        .toLowerCase()
+        .includes(query) ||
       quotation.client.toLowerCase().includes(query) ||
+      String(quotation.groupName || "")
+        .toLowerCase()
+        .includes(query) ||
       quotation.serviceSummary.toLowerCase().includes(query);
     const matchStatus =
       statusFilter === "All" || quotation.status === statusFilter;
@@ -628,6 +651,7 @@ export default function Quotations() {
         leadId: selectedQuotation.leadId,
         client: selectedQuotation.client,
         attention: selectedQuotation.attention,
+        groupName: selectedQuotation.groupName,
         quoteDate: selectedQuotation.quoteDate,
         notes: selectedQuotation.notes,
         daySections:
@@ -825,6 +849,7 @@ export default function Quotations() {
         leadId: form.leadId || null,
         client: form.client,
         attention: form.attention,
+        groupName: form.groupName,
         quoteDate: form.quoteDate,
         notes: form.notes,
         daySections: preparedDaySections,
@@ -946,7 +971,7 @@ export default function Quotations() {
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = `${quotation.quoteNo || formatQuotationNumberFromId(quotation.id, quotation.quoteDate || quotation.date)}.pdf`;
+      anchor.download = `${quotation.quotationNumber || quotation.quoteNo || formatQuotationNumberFromId(quotation.id, quotation.quoteDate || quotation.date)}.pdf`;
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
@@ -1374,7 +1399,7 @@ export default function Quotations() {
                   "Quote #",
                   "Quote Date",
                   "Client",
-                  "Attention",
+                  "Group Name",
                   "Service Summary",
                   "Total Amount",
                   "Status",
@@ -1384,7 +1409,9 @@ export default function Quotations() {
                 ].map((header) => (
                   <th
                     key={header}
-                    className="text-left py-4 px-6 text-sm font-semibold text-slate-400"
+                    className={`text-left py-4 px-6 text-sm font-semibold text-slate-400 ${
+                      header === "Quote #" ? "min-w-[180px]" : ""
+                    }`}
                   >
                     {header}
                   </th>
@@ -1392,13 +1419,17 @@ export default function Quotations() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((quotation) => {
+              {filtered.map((quotation, index) => {
                 const config =
                   statusConfig[quotation.status] || statusConfig.Pending;
                 return (
                   <tr
                     key={quotation.id}
-                    className="border-b border-slate-800/50 hover:bg-slate-800/20 transition-colors"
+                    className={`border-b border-slate-800/50 transition-colors ${
+                      index % 2 === 0
+                        ? "bg-amber-300/[0.04] hover:bg-amber-300/[0.09]"
+                        : "bg-sky-300/[0.04] hover:bg-sky-300/[0.09]"
+                    }`}
                   >
                     <td className="py-4 px-6">
                       <div className="flex items-center justify-start gap-1 whitespace-nowrap">
@@ -1458,13 +1489,14 @@ export default function Quotations() {
                         </button>
                       </div>
                     </td>
-                    <td className="py-4 px-6">
+                    <td className="py-4 px-6 min-w-[180px] whitespace-nowrap">
                       <div className="flex items-center gap-2">
                         <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center">
                           <FileText className="w-4 h-4 text-amber-400" />
                         </div>
                         <span className="text-white font-medium text-sm">
-                          {quotation.quoteNo ||
+                          {quotation.quotationNumber ||
+                            quotation.quoteNo ||
                             formatQuotationNumberFromId(
                               quotation.id,
                               quotation.quoteDate || quotation.date,
@@ -1473,7 +1505,7 @@ export default function Quotations() {
                       </div>
                     </td>
                     <td className="py-4 px-6 text-sm text-slate-400">
-                      {quotation.date}
+                      {formatDisplayDate(quotation.date)}
                     </td>
                     <td className="py-4 px-6">
                       <div className="flex items-center gap-2">
@@ -1484,7 +1516,7 @@ export default function Quotations() {
                       </div>
                     </td>
                     <td className="py-4 px-6 text-sm text-slate-300 whitespace-nowrap">
-                      {quotation.attention || "-"}
+                      {quotation.groupName || "-"}
                     </td>
                     <td className="py-4 px-6 text-sm max-w-xs">
                       <div className="space-y-1">
@@ -1676,6 +1708,20 @@ export default function Quotations() {
                       setForm({ ...form, attention: e.target.value })
                     }
                     placeholder="Contact person"
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">
+                    Group Name
+                  </label>
+                  <input
+                    type="text"
+                    value={form.groupName}
+                    onChange={(e) =>
+                      setForm({ ...form, groupName: e.target.value })
+                    }
+                    placeholder="Group name"
                     className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
                   />
                 </div>

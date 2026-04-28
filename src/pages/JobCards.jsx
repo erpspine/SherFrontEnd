@@ -4,6 +4,7 @@ import {
   Calendar,
   ClipboardList,
   Download,
+  Eye,
   Edit,
   Globe,
   Loader2,
@@ -18,25 +19,66 @@ import {
 import { apiFetch } from "../utils/api";
 import Swal from "sweetalert2";
 
+const parseDateValue = (value) => {
+  if (!value) return null;
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+
+  const stringValue = String(value).trim();
+
+  const isoMatch = stringValue.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoMatch) {
+    const year = Number(isoMatch[1]);
+    const month = Number(isoMatch[2]);
+    const day = Number(isoMatch[3]);
+    const parsed = new Date(year, month - 1, day);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  const dmyMatch = stringValue.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (dmyMatch) {
+    const day = Number(dmyMatch[1]);
+    const month = Number(dmyMatch[2]);
+    const year = Number(dmyMatch[3]);
+    const parsed = new Date(year, month - 1, day);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  const parsed = new Date(stringValue);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
 const formatDate = (value) => {
-  if (!value) return "-";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleDateString();
+  const parsed = parseDateValue(value);
+  if (!parsed) return value || "-";
+
+  const day = String(parsed.getDate()).padStart(2, "0");
+  const month = String(parsed.getMonth() + 1).padStart(2, "0");
+  const year = parsed.getFullYear();
+  return `${day}/${month}/${year}`;
 };
 
 const formatDateTime = (value) => {
-  if (!value) return "-";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleString();
+  const parsed = parseDateValue(value);
+  if (!parsed) return value || "-";
+
+  const day = String(parsed.getDate()).padStart(2, "0");
+  const month = String(parsed.getMonth() + 1).padStart(2, "0");
+  const year = parsed.getFullYear();
+  const hours = String(parsed.getHours()).padStart(2, "0");
+  const minutes = String(parsed.getMinutes()).padStart(2, "0");
+  return `${day}/${month}/${year} ${hours}:${minutes}`;
 };
 
 const toInputDate = (value) => {
-  if (!value) return "";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "";
-  return parsed.toISOString().split("T")[0];
+  const parsed = parseDateValue(value);
+  if (!parsed) return "";
+
+  const year = parsed.getFullYear();
+  const month = String(parsed.getMonth() + 1).padStart(2, "0");
+  const day = String(parsed.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 };
 
 const normalizeLead = (lead) => ({
@@ -239,6 +281,18 @@ const normalizeJobCard = (jobCard) => {
       jobCard.jobStatus ||
       fallbackStatus,
     guideLanguage: jobCard.guide_language || jobCard.guideLanguage || "",
+    vehicleNo:
+      jobCard.vehicle_no ||
+      jobCard.vehicleNo ||
+      jobCard?.vehicle?.vehicle_no ||
+      jobCard?.vehicle?.vehicleNo ||
+      "",
+    vehiclePlateNo:
+      jobCard.plate_no ||
+      jobCard.plateNo ||
+      jobCard?.vehicle?.plate_no ||
+      jobCard?.vehicle?.plateNo ||
+      "",
     updatedAt: jobCard.updated_at || jobCard.updatedAt || "",
     createdAt: jobCard.created_at || jobCard.createdAt || "",
   };
@@ -365,7 +419,9 @@ export default function JobCards() {
   const [safariAllocations, setSafariAllocations] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [selectedJobCard, setSelectedJobCard] = useState(null);
   const [form, setForm] = useState(createEmptyForm());
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -584,6 +640,65 @@ export default function JobCards() {
       });
     }
   };
+
+  const openView = async (jobCard) => {
+    setErrorMessage("");
+    try {
+      const response = await apiFetch(`/job-cards/${jobCard.id}`);
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(
+          payload?.message || "Unable to fetch job card details.",
+        );
+      }
+
+      const selected = normalizeJobCard(extractSingle(payload, "jobCard"));
+      setSelectedJobCard(selected);
+      setIsViewModalOpen(true);
+    } catch (error) {
+      setErrorMessage(error.message || "Unable to open job card details.");
+      await Swal.fire({
+        title: "Load Failed",
+        text: error.message || "Unable to open job card details.",
+        icon: "error",
+        background: "#0f172a",
+        color: "#e2e8f0",
+      });
+    }
+  };
+
+  const detailValue = (value) => {
+    if (value === null || value === undefined) return "-";
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      return trimmed ? trimmed : "-";
+    }
+    return String(value);
+  };
+
+  const routeItineraryText = useMemo(() => {
+    const itinerary = selectedJobCard?.routeItinerary;
+    if (Array.isArray(itinerary) && itinerary.length > 0) {
+      return itinerary
+        .map((item) => {
+          if (typeof item === "string") return item;
+          if (item && typeof item === "object") {
+            return (
+              item.label ||
+              item.name ||
+              item.place ||
+              item.park ||
+              item.location ||
+              JSON.stringify(item)
+            );
+          }
+          return String(item);
+        })
+        .join(", ");
+    }
+
+    return "-";
+  }, [selectedJobCard]);
 
   const handleDelete = async (id) => {
     const confirmation = await Swal.fire({
@@ -963,7 +1078,7 @@ export default function JobCards() {
                       {card.type || "Safari"}
                     </td>
                     <td className="py-3 px-3">
-                      <div className="flex items-center gap-2 text-slate-800 text-sm font-medium">
+                      <div className="flex items-center gap-2 text-slate-200 text-sm font-medium">
                         <ClipboardList className="w-4 h-4 text-amber-400" />
                         {card.jobCardNo}
                       </div>
@@ -984,7 +1099,7 @@ export default function JobCards() {
                     </td>
                     <td className="py-3 px-3">
                       <div className="space-y-1">
-                        <div className="flex items-center gap-2 text-slate-800 text-sm">
+                        <div className="flex items-center gap-2 text-slate-200 text-sm">
                           <User className="w-4 h-4 text-slate-400" />
                           {card.tourOperatorClientName}
                         </div>
@@ -993,13 +1108,15 @@ export default function JobCards() {
                         </div>
                       </div>
                     </td>
-                    <td className="py-3 px-3 text-sm text-slate-300">
+                    <td className="py-3 px-3 text-sm text-slate-100 min-w-[170px]">
                       <div className="flex items-start gap-2">
                         <Calendar className="w-4 h-4 text-slate-400 mt-0.5" />
                         <div>
-                          <div>{formatDate(card.safariStartDate)}</div>
-                          <div className="text-xs text-slate-500">
-                            to {formatDate(card.safariEndDate)}
+                          <div className="font-medium">
+                            Out: {formatDate(card.safariStartDate)}
+                          </div>
+                          <div className="text-xs text-slate-300">
+                            In: {formatDate(card.safariEndDate)}
                           </div>
                         </div>
                       </div>
@@ -1042,6 +1159,13 @@ export default function JobCards() {
                           ) : (
                             <Download className="w-4 h-4" />
                           )}
+                        </button>
+                        <button
+                          onClick={() => openView(card)}
+                          className="p-2 text-slate-400 hover:text-cyan-400 hover:bg-slate-700 rounded-lg transition-colors"
+                          title="View"
+                        >
+                          <Eye className="w-4 h-4" />
                         </button>
                         <button
                           onClick={() => openEdit(card)}
@@ -1101,6 +1225,23 @@ export default function JobCards() {
               )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                    Type
+                  </label>
+                  <select
+                    value={form.type}
+                    onChange={(event) => handleTypeChange(event.target.value)}
+                    className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
+                  >
+                    {JOB_CARD_TYPES.map((typeOption) => (
+                      <option key={typeOption} value={typeOption}>
+                        {typeOption}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
                 {isSafariType && (
                   <div>
                     <label className="block text-xs font-medium text-slate-300 mb-1.5">
@@ -1148,23 +1289,6 @@ export default function JobCards() {
                     </select>
                   </div>
                 )}
-
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                    Type
-                  </label>
-                  <select
-                    value={form.type}
-                    onChange={(event) => handleTypeChange(event.target.value)}
-                    className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
-                  >
-                    {JOB_CARD_TYPES.map((typeOption) => (
-                      <option key={typeOption} value={typeOption}>
-                        {typeOption}
-                      </option>
-                    ))}
-                  </select>
-                </div>
 
                 <div>
                   <label className="block text-xs font-medium text-slate-300 mb-1.5">
@@ -1636,6 +1760,318 @@ export default function JobCards() {
                   : editingId
                     ? "Update Job Card"
                     : "Create Job Card"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isViewModalOpen && selectedJobCard && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/60"
+            onClick={() => {
+              setIsViewModalOpen(false);
+              setSelectedJobCard(null);
+            }}
+          />
+
+          <div className="relative w-full max-w-5xl max-h-[90vh] overflow-y-auto bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 sticky top-0 bg-slate-900">
+              <h2 className="text-lg font-semibold text-white">
+                Job Card Details - {detailValue(selectedJobCard.jobCardNo)}
+              </h2>
+              <button
+                onClick={() => {
+                  setIsViewModalOpen(false);
+                  setSelectedJobCard(null);
+                }}
+                className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6 text-sm">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-slate-800/40 border border-slate-700/50 rounded-xl p-4">
+                  <p className="text-slate-400 text-xs uppercase">Type</p>
+                  <p className="text-white mt-1">
+                    {detailValue(selectedJobCard.type)}
+                  </p>
+                </div>
+                <div className="bg-slate-800/40 border border-slate-700/50 rounded-xl p-4">
+                  <p className="text-slate-400 text-xs uppercase">Status</p>
+                  <p className="text-white mt-1">
+                    {detailValue(selectedJobCard.status)}
+                  </p>
+                </div>
+                <div className="bg-slate-800/40 border border-slate-700/50 rounded-xl p-4">
+                  <p className="text-slate-400 text-xs uppercase">
+                    Booking Ref
+                  </p>
+                  <p className="text-white mt-1">
+                    {detailValue(selectedJobCard.bookingReferenceNo)}
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-slate-800/30 border border-slate-700/50 rounded-xl p-4 space-y-2">
+                  <p className="text-slate-300 font-semibold">Schedule</p>
+                  <p className="text-slate-300">
+                    Date Out:{" "}
+                    <span className="text-white">
+                      {formatDate(selectedJobCard.safariStartDate)}
+                    </span>
+                  </p>
+                  <p className="text-slate-300">
+                    Time Out:{" "}
+                    <span className="text-white">
+                      {detailValue(selectedJobCard.timeOut)}
+                    </span>
+                  </p>
+                  <p className="text-slate-300">
+                    Date In:{" "}
+                    <span className="text-white">
+                      {formatDate(selectedJobCard.safariEndDate)}
+                    </span>
+                  </p>
+                  <p className="text-slate-300">
+                    Time In:{" "}
+                    <span className="text-white">
+                      {detailValue(selectedJobCard.timeIn)}
+                    </span>
+                  </p>
+                  <p className="text-slate-300">
+                    Number of Days:{" "}
+                    <span className="text-white">
+                      {detailValue(selectedJobCard.numberOfDays)}
+                    </span>
+                  </p>
+                </div>
+
+                <div className="bg-slate-800/30 border border-slate-700/50 rounded-xl p-4 space-y-2">
+                  <p className="text-slate-300 font-semibold">
+                    Client and Contact
+                  </p>
+                  <p className="text-slate-300">
+                    Client Name:{" "}
+                    <span className="text-white">
+                      {detailValue(selectedJobCard.tourOperatorClientName)}
+                    </span>
+                  </p>
+                  <p className="text-slate-300">
+                    Contact Person:{" "}
+                    <span className="text-white">
+                      {detailValue(selectedJobCard.contactPerson)}
+                    </span>
+                  </p>
+                  <p className="text-slate-300">
+                    Contact Number:{" "}
+                    <span className="text-white">
+                      {detailValue(selectedJobCard.contactNumber)}
+                    </span>
+                  </p>
+                  <p className="text-slate-300">
+                    Contact Email:{" "}
+                    <span className="text-white">
+                      {detailValue(selectedJobCard.contactEmail)}
+                    </span>
+                  </p>
+                  <p className="text-slate-300">
+                    Nationality:{" "}
+                    <span className="text-white">
+                      {detailValue(selectedJobCard.nationality)}
+                    </span>
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-slate-800/30 border border-slate-700/50 rounded-xl p-4 space-y-2">
+                  <p className="text-slate-300 font-semibold">
+                    Travel and Route
+                  </p>
+                  <p className="text-slate-300">
+                    Pickup Location:{" "}
+                    <span className="text-white">
+                      {detailValue(selectedJobCard.pickupLocation)}
+                    </span>
+                  </p>
+                  <p className="text-slate-300">
+                    Dropoff Location:{" "}
+                    <span className="text-white">
+                      {detailValue(selectedJobCard.dropoffLocation)}
+                    </span>
+                  </p>
+                  <p className="text-slate-300">
+                    Route Summary:{" "}
+                    <span className="text-white">
+                      {detailValue(selectedJobCard.routeSummary)}
+                    </span>
+                  </p>
+                  <p className="text-slate-300">
+                    Route Itinerary:{" "}
+                    <span className="text-white">{routeItineraryText}</span>
+                  </p>
+                  <p className="text-slate-300">
+                    Guide Language:{" "}
+                    <span className="text-white">
+                      {detailValue(selectedJobCard.guideLanguage)}
+                    </span>
+                  </p>
+                </div>
+
+                <div className="bg-slate-800/30 border border-slate-700/50 rounded-xl p-4 space-y-2">
+                  <p className="text-slate-300 font-semibold">
+                    Vehicle and Usage
+                  </p>
+                  <p className="text-slate-300">
+                    Vehicle Number:{" "}
+                    <span className="text-white">
+                      {detailValue(selectedJobCard.vehicleNo)}
+                    </span>
+                  </p>
+                  <p className="text-slate-300">
+                    Plate Number:{" "}
+                    <span className="text-white">
+                      {detailValue(selectedJobCard.vehiclePlateNo)}
+                    </span>
+                  </p>
+                  <p className="text-slate-300">
+                    Driver Details:{" "}
+                    <span className="text-white">
+                      {detailValue(selectedJobCard.driverDetails)}
+                    </span>
+                  </p>
+                  <p className="text-slate-300">
+                    Odometer Out:{" "}
+                    <span className="text-white">
+                      {detailValue(selectedJobCard.odometerOut)}
+                    </span>
+                  </p>
+                  <p className="text-slate-300">
+                    Odometer In:{" "}
+                    <span className="text-white">
+                      {detailValue(selectedJobCard.odometerIn)}
+                    </span>
+                  </p>
+                  <p className="text-slate-300">
+                    Mileage:{" "}
+                    <span className="text-white">
+                      {detailValue(selectedJobCard.mileage)}
+                    </span>
+                  </p>
+                  <p className="text-slate-300">
+                    Fuel Gauge Out:{" "}
+                    <span className="text-white">
+                      {detailValue(selectedJobCard.fuelGaugeOut)}
+                    </span>
+                  </p>
+                  <p className="text-slate-300">
+                    Fuel Gauge In:{" "}
+                    <span className="text-white">
+                      {detailValue(selectedJobCard.fuelGaugeIn)}
+                    </span>
+                  </p>
+                  <p className="text-slate-300">
+                    Approx Fuel Used:{" "}
+                    <span className="text-white">
+                      {detailValue(selectedJobCard.approximateFuelUsed)}
+                    </span>
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-slate-800/30 border border-slate-700/50 rounded-xl p-4 space-y-2">
+                  <p className="text-slate-300 font-semibold">
+                    Counts and Other Details
+                  </p>
+                  <p className="text-slate-300">
+                    Adults:{" "}
+                    <span className="text-white">
+                      {detailValue(selectedJobCard.adults)}
+                    </span>
+                  </p>
+                  <p className="text-slate-300">
+                    Children:{" "}
+                    <span className="text-white">
+                      {detailValue(selectedJobCard.children)}
+                    </span>
+                  </p>
+                  <p className="text-slate-300">
+                    Client Details:{" "}
+                    <span className="text-white">
+                      {detailValue(selectedJobCard.clientDetails)}
+                    </span>
+                  </p>
+                  <p className="text-slate-300">
+                    Location:{" "}
+                    <span className="text-white">
+                      {detailValue(selectedJobCard.location)}
+                    </span>
+                  </p>
+                  <p className="text-slate-300">
+                    KMs:{" "}
+                    <span className="text-white">
+                      {detailValue(selectedJobCard.kms)}
+                    </span>
+                  </p>
+                  <p className="text-slate-300">
+                    Reason:{" "}
+                    <span className="text-white">
+                      {detailValue(selectedJobCard.reason)}
+                    </span>
+                  </p>
+                  <p className="text-slate-300">
+                    Additional Details:{" "}
+                    <span className="text-white">
+                      {detailValue(selectedJobCard.additionalDetails)}
+                    </span>
+                  </p>
+                </div>
+
+                <div className="bg-slate-800/30 border border-slate-700/50 rounded-xl p-4 space-y-2">
+                  <p className="text-slate-300 font-semibold">System Info</p>
+                  <p className="text-slate-300">
+                    Lead ID:{" "}
+                    <span className="text-white">
+                      {detailValue(selectedJobCard.leadId)}
+                    </span>
+                  </p>
+                  <p className="text-slate-300">
+                    Vehicle ID:{" "}
+                    <span className="text-white">
+                      {detailValue(selectedJobCard.vehicleId)}
+                    </span>
+                  </p>
+                  <p className="text-slate-300">
+                    Created At:{" "}
+                    <span className="text-white">
+                      {formatDateTime(selectedJobCard.createdAt)}
+                    </span>
+                  </p>
+                  <p className="text-slate-300">
+                    Updated At:{" "}
+                    <span className="text-white">
+                      {formatDateTime(selectedJobCard.updatedAt)}
+                    </span>
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="px-6 py-4 border-t border-slate-800 flex justify-end">
+              <button
+                onClick={() => {
+                  setIsViewModalOpen(false);
+                  setSelectedJobCard(null);
+                }}
+                className="px-4 py-2.5 bg-slate-800 text-slate-300 rounded-lg text-sm hover:bg-slate-700 transition-colors"
+              >
+                Close
               </button>
             </div>
           </div>
