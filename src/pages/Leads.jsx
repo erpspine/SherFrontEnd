@@ -258,19 +258,22 @@ export default function Leads() {
     setIsModalOpen(true);
   };
 
-  const filteredClientSuggestions =
-    clientQuery.trim().length < 1
-      ? []
-      : clients
-          .filter((c) => {
-            const q = clientQuery.toLowerCase();
-            return (
-              c.company.toLowerCase().includes(q) ||
-              c.name.toLowerCase().includes(q) ||
-              c.email.toLowerCase().includes(q)
-            );
-          })
-          .slice(0, 8);
+  const activeClientQuery =
+    editingId !== null ? form.clientCompany : clientQuery;
+
+  const filteredClientSuggestions = clients
+    .filter((c) => {
+      const q = activeClientQuery.trim().toLowerCase();
+      if (!q) return true;
+
+      return (
+        c.company.toLowerCase().includes(q) ||
+        c.name.toLowerCase().includes(q) ||
+        c.email.toLowerCase().includes(q)
+      );
+    })
+    .sort((a, b) => a.company.localeCompare(b.company))
+    .slice(0, 30);
 
   const handleClientSelect = (client) => {
     setForm((prev) => ({
@@ -294,6 +297,7 @@ export default function Leads() {
       const l = normalizeLead(extractSingle(payload));
       setEditingId(l.id);
       setForm({ ...l });
+      setClientQuery(l.clientCompany);
       setIsModalOpen(true);
     } catch (err) {
       setErrorMessage(err.message || "Unable to open lead details.");
@@ -747,17 +751,11 @@ export default function Leads() {
                       }
                       onChange={(e) => {
                         const val = e.target.value;
-                        if (editingId !== null) {
-                          setField("clientCompany", val);
-                        } else {
-                          setClientQuery(val);
-                          setField("clientCompany", val);
-                          setShowClientSuggestions(true);
-                        }
+                        setClientQuery(val);
+                        setField("clientCompany", val);
+                        setShowClientSuggestions(true);
                       }}
-                      onFocus={() => {
-                        if (editingId === null) setShowClientSuggestions(true);
-                      }}
+                      onFocus={() => setShowClientSuggestions(true)}
                       onBlur={() =>
                         setTimeout(() => setShowClientSuggestions(false), 150)
                       }
