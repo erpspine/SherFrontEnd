@@ -19,8 +19,7 @@ import { apiFetch } from "../utils/api";
 
 const createFormState = () => ({
   leadId: "",
-  vehicleId: "",
-  driverId: "",
+  pairs: [{ vehicleId: "", driverId: "" }],
   notes: "",
   status: "Assigned",
 });
@@ -480,20 +479,17 @@ export default function SafariAllocations() {
       vehicles.filter(
         (vehicle) =>
           ["Available", "On Lease"].includes(vehicle.status) &&
-          (!assignedVehicleIds.has(String(vehicle.id)) ||
-            String(vehicle.id) === String(form.vehicleId)),
+          !assignedVehicleIds.has(String(vehicle.id)),
       ),
-    [vehicles, assignedVehicleIds, form.vehicleId],
+    [vehicles, assignedVehicleIds],
   );
 
   const availableDrivers = useMemo(
     () =>
       driverOptions.filter(
-        (driver) =>
-          !assignedDriverIds.has(String(driver.id)) ||
-          String(driver.id) === String(form.driverId),
+        (driver) => !assignedDriverIds.has(String(driver.id)),
       ),
-    [driverOptions, assignedDriverIds, form.driverId],
+    [driverOptions, assignedDriverIds],
   );
 
   const stats = useMemo(
@@ -508,6 +504,54 @@ export default function SafariAllocations() {
 
   const setField = (field, value) =>
     setForm((current) => ({ ...current, [field]: value }));
+
+  const addPair = () =>
+    setForm((f) => ({
+      ...f,
+      pairs: [...f.pairs, { vehicleId: "", driverId: "" }],
+    }));
+
+  const removePair = (idx) =>
+    setForm((f) => ({ ...f, pairs: f.pairs.filter((_, i) => i !== idx) }));
+
+  const updatePair = (idx, field, value) =>
+    setForm((f) => ({
+      ...f,
+      pairs: f.pairs.map((p, i) => (i === idx ? { ...p, [field]: value } : p)),
+    }));
+
+  const getVehiclesForRow = (idx) => {
+    const otherSelected = new Set(
+      form.pairs
+        .filter((_, i) => i !== idx)
+        .map((p) => p.vehicleId)
+        .filter(Boolean),
+    );
+    const current = form.pairs[idx]?.vehicleId || "";
+    return vehicles.filter(
+      (v) =>
+        (["Available", "On Lease"].includes(v.status) &&
+          !assignedVehicleIds.has(String(v.id)) &&
+          !otherSelected.has(String(v.id))) ||
+        String(v.id) === current,
+    );
+  };
+
+  const getDriversForRow = (idx) => {
+    const otherSelected = new Set(
+      form.pairs
+        .filter((_, i) => i !== idx)
+        .map((p) => p.driverId)
+        .filter(Boolean),
+    );
+    const current = form.pairs[idx]?.driverId || "";
+    return driverOptions.filter(
+      (d) =>
+        (!assignedDriverIds.has(String(d.id)) &&
+          !otherSelected.has(String(d.id))) ||
+        String(d.id) === current,
+    );
+  };
 
   const selectedSafariOption = useMemo(
     () =>
@@ -527,8 +571,12 @@ export default function SafariAllocations() {
     setErrorMessage("");
     setForm({
       leadId: String(allocation.leadId || ""),
-      vehicleId: String(allocation.vehicleId || ""),
-      driverId: String(allocation.driverId || ""),
+      pairs: [
+        {
+          vehicleId: String(allocation.vehicleId || ""),
+          driverId: String(allocation.driverId || ""),
+        },
+      ],
       notes: allocation.notes || "",
       status: allocation.status || "Assigned",
     });
@@ -593,11 +641,24 @@ export default function SafariAllocations() {
   };
 
   const handleSave = async () => {
-    if (!form.leadId || !form.vehicleId || !form.driverId) {
-      setErrorMessage("Please select safari, vehicle, and driver.");
+    if (!form.leadId) {
+      setErrorMessage("Please select a safari.");
       await Swal.fire({
         title: "Missing Required Fields",
-        text: "Please select safari, vehicle, and driver before saving.",
+        text: "Please select a safari before saving.",
+        icon: "warning",
+        background: "#0f172a",
+        color: "#e2e8f0",
+      });
+      return;
+    }
+
+    const invalidPair = form.pairs.some((p) => !p.vehicleId || !p.driverId);
+    if (invalidPair) {
+      setErrorMessage("Each row must have a vehicle and driver selected.");
+      await Swal.fire({
+        title: "Missing Required Fields",
+        text: "Each row must have a vehicle and driver selected.",
         icon: "warning",
         background: "#0f172a",
         color: "#e2e8f0",
@@ -610,20 +671,21 @@ export default function SafariAllocations() {
     const selectedLeadId = String(form.leadId || "");
     try {
       const safari = safariOptions.find(
-        (item) => item.leadId === String(form.leadId),
+        (item) => item.leadId === selectedLeadId,
       );
 
-      const payload = {
-        leadId: Number(form.leadId),
-        proformaInvoiceId: safari?.piId ? Number(safari.piId) : null,
-        vehicleId: Number(form.vehicleId),
-        driverId: Number(form.driverId),
-        notes: form.notes,
-        status: form.status,
-      };
-
       if (editingId) {
-        // PUT request for update
+        // PUT request for update (single pair)
+        const pair = form.pairs[0];
+        const payload = {
+          leadId: Number(form.leadId),
+          proformaInvoiceId: safari?.piId ? Number(safari.piId) : null,
+          vehicleId: Number(pair.vehicleId),
+          driverId: Number(pair.driverId),
+          notes: form.notes,
+          status: form.status,
+        };
+
         const response = await apiFetch(`/safari-allocations/${editingId}`, {
           method: "PUT",
           body: payload,
@@ -641,37 +703,45 @@ export default function SafariAllocations() {
           extractAllocation(responsePayload),
         );
 
-        const next = allocations.map((item) =>
-          item.id === editingId ? updatedAllocation : item,
+        setAllocations(
+          allocations.map((item) =>
+            item.id === editingId ? updatedAllocation : item,
+          ),
         );
-        setAllocations(next);
-      } else {
-        // POST request for create
-        const response = await apiFetch("/safari-allocations", {
-          method: "POST",
-          body: payload,
-        });
-
-        const responsePayload = await response.json().catch(() => ({}));
-
-        if (!response.ok) {
-          throw new Error(
-            responsePayload?.message || "Unable to create safari allocation.",
-          );
-        }
-
-        const newAllocation = normalizeAllocation(
-          extractAllocation(responsePayload),
-        );
-        setAllocations([newAllocation, ...allocations]);
-      }
-
-      if (editingId) {
         setIsModalOpen(false);
         setEditingId(null);
         setForm(createFormState());
       } else {
-        // Keep modal open to quickly add more vehicle/driver pairs for same safari.
+        // POST each pair sequentially
+        const created = [];
+        for (const pair of form.pairs) {
+          const payload = {
+            leadId: Number(form.leadId),
+            proformaInvoiceId: safari?.piId ? Number(safari.piId) : null,
+            vehicleId: Number(pair.vehicleId),
+            driverId: Number(pair.driverId),
+            notes: form.notes,
+            status: form.status,
+          };
+
+          const response = await apiFetch("/safari-allocations", {
+            method: "POST",
+            body: payload,
+          });
+
+          const responsePayload = await response.json().catch(() => ({}));
+
+          if (!response.ok) {
+            throw new Error(
+              responsePayload?.message || "Unable to create safari allocation.",
+            );
+          }
+
+          created.push(normalizeAllocation(extractAllocation(responsePayload)));
+        }
+
+        setAllocations([...created.reverse(), ...allocations]);
+        // Reset pairs but keep same safari selected
         setForm({
           ...createFormState(),
           leadId: selectedLeadId,
@@ -682,7 +752,7 @@ export default function SafariAllocations() {
         title: editingId ? "Updated" : "Created",
         text: editingId
           ? "Safari allocation updated successfully."
-          : "Safari allocation created. You can add another vehicle/driver for the same safari.",
+          : `${form.pairs.length} allocation${form.pairs.length > 1 ? "s" : ""} created successfully.`,
         icon: "success",
         timer: 1500,
         showConfirmButton: false,
@@ -977,8 +1047,8 @@ export default function SafariAllocations() {
                   )}
                   {!editingId && (
                     <p className="text-xs text-slate-500 mt-1">
-                      To allocate multiple vehicles/drivers, keep selecting the
-                      same safari and save each pair.
+                      Add multiple rows below to allocate several
+                      vehicles/drivers in one save.
                     </p>
                   )}
                   {editingId && (
@@ -988,47 +1058,89 @@ export default function SafariAllocations() {
                   )}
                 </div>
 
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                    Vehicle *
-                  </label>
-                  <select
-                    value={form.vehicleId}
-                    onChange={(event) =>
-                      setField("vehicleId", event.target.value)
-                    }
-                    className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
-                  >
-                    <option value="">Select vehicle</option>
-                    {vehicleOptions.map((vehicle) => (
-                      <option key={vehicle.id} value={vehicle.id}>
-                        {(vehicle.vehicleNo || vehicle.plateNo) +
-                          (vehicle.make
-                            ? ` - ${vehicle.make} ${vehicle.model}`
-                            : "")}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <div className="md:col-span-2 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-medium text-slate-300">
+                      Vehicles &amp; Drivers *
+                    </label>
+                    {!editingId && (
+                      <button
+                        type="button"
+                        onClick={addPair}
+                        disabled={isSaving}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs rounded-lg transition-colors disabled:opacity-50"
+                      >
+                        <Plus className="w-3 h-3" />
+                        Add Row
+                      </button>
+                    )}
+                  </div>
 
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                    Driver *
-                  </label>
-                  <select
-                    value={form.driverId}
-                    onChange={(event) =>
-                      setField("driverId", event.target.value)
-                    }
-                    className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
-                  >
-                    <option value="">Select driver</option>
-                    {availableDrivers.map((driver) => (
-                      <option key={driver.id} value={driver.id}>
-                        {driver.name} ({driver.role})
-                      </option>
-                    ))}
-                  </select>
+                  {form.pairs.map((pair, idx) => (
+                    <div
+                      key={idx}
+                      className="grid grid-cols-1 md:grid-cols-2 gap-3 p-3 bg-slate-800/40 border border-slate-700/50 rounded-xl"
+                    >
+                      <div>
+                        <label className="block text-xs text-slate-400 mb-1">
+                          Vehicle{form.pairs.length > 1 ? ` ${idx + 1}` : ""}
+                        </label>
+                        <select
+                          value={pair.vehicleId}
+                          onChange={(e) =>
+                            updatePair(idx, "vehicleId", e.target.value)
+                          }
+                          disabled={isSaving}
+                          className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
+                        >
+                          <option value="">Select vehicle</option>
+                          {getVehiclesForRow(idx).map((vehicle) => (
+                            <option key={vehicle.id} value={vehicle.id}>
+                              {(vehicle.vehicleNo || vehicle.plateNo) +
+                                (vehicle.make
+                                  ? ` - ${vehicle.make} ${vehicle.model}`
+                                  : "")}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="flex gap-2 items-end">
+                        <div className="flex-1">
+                          <label className="block text-xs text-slate-400 mb-1">
+                            Driver{form.pairs.length > 1 ? ` ${idx + 1}` : ""}
+                          </label>
+                          <select
+                            value={pair.driverId}
+                            onChange={(e) =>
+                              updatePair(idx, "driverId", e.target.value)
+                            }
+                            disabled={isSaving}
+                            className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
+                          >
+                            <option value="">Select driver</option>
+                            {getDriversForRow(idx).map((driver) => (
+                              <option key={driver.id} value={driver.id}>
+                                {driver.name} ({driver.role})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {!editingId && form.pairs.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => removePair(idx)}
+                            disabled={isSaving}
+                            className="p-2.5 text-slate-400 hover:text-red-400 hover:bg-slate-700 rounded-lg transition-colors"
+                            title="Remove row"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
                 </div>
 
                 <div>
@@ -1051,10 +1163,10 @@ export default function SafariAllocations() {
                     Notes
                   </label>
                   <textarea
-                    rows={4}
+                    rows={3}
                     value={form.notes}
                     onChange={(event) => setField("notes", event.target.value)}
-                    className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50 md:col-span-2"
+                    className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
                   />
                 </div>
               </div>
@@ -1140,7 +1252,9 @@ export default function SafariAllocations() {
                   ? "Saving..."
                   : editingId
                     ? "Update Allocation"
-                    : "Create Allocation"}
+                    : form.pairs.length > 1
+                      ? `Create ${form.pairs.length} Allocations`
+                      : "Create Allocation"}
               </button>
             </div>
           </div>
