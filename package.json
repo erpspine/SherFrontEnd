@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "deploy:safe": "npm run build && bash ./scripts/deploy-frontend.sh",
+    "deploy:safe:buildless": "bash ./scripts/deploy-frontend.sh",
     "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview"
   },

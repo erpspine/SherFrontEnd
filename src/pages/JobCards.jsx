@@ -190,7 +190,7 @@ const hasReturnDetails = (values) => {
 };
 
 const deriveJobCardStatus = (values) =>
-  hasReturnDetails(values) ? "Close" : "Open";
+  hasReturnDetails(values) ? "Closed" : "Open";
 
 const normalizeJobCard = (jobCard) => {
   const adultsFromCounts = Number(jobCard?.numberOfClients?.adults ?? 0);
@@ -1086,7 +1086,7 @@ export default function JobCards() {
                     <td className="py-3 px-3 text-sm whitespace-nowrap">
                       <span
                         className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border ${
-                          (card.status || "Open") === "Close"
+                          (card.status || "Open") === "Closed"
                             ? "text-emerald-300 border-emerald-500/40 bg-emerald-500/10"
                             : "text-amber-300 border-amber-500/40 bg-amber-500/10"
                         }`}
@@ -1300,7 +1300,7 @@ export default function JobCards() {
                     className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
                   >
                     <option value="Open">Open</option>
-                    <option value="Close">Close</option>
+                    <option value="Closed">Closed</option>
                   </select>
                 </div>
 
