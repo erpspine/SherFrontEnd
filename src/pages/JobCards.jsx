@@ -178,11 +178,26 @@ const calculateApproxFuelUsed = (fuelGaugeOut, fuelGaugeIn) => {
   return Math.max(0, out - inn);
 };
 
+const getNumberOfDaysBetween = (startDate, endDate) => {
+  if (!startDate || !endDate) return 1;
+
+  const start = parseDateValue(startDate);
+  const end = parseDateValue(endDate);
+  if (!start || !end) return 1;
+
+  const diffInMs = end.getTime() - start.getTime();
+  const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24)) + 1;
+  return Math.max(1, diffInDays);
+};
+
+const hasCapturedSafariDateRange = (values) =>
+  Boolean(values?.safariStartDate && values?.safariEndDate);
+
 const hasReturnDetails = (values) => {
   if (!values) return false;
 
   return Boolean(
-    values.safariEndDate ||
+    hasCapturedSafariDateRange(values) ||
     values.timeIn ||
     String(values.odometerIn ?? "").trim() !== "" ||
     String(values.fuelGaugeIn ?? "").trim() !== "",
@@ -800,7 +815,15 @@ export default function JobCards() {
       return;
     }
 
-    const selectedStatus = form.status || derivedStatus;
+    const shouldAutoCloseOnUpdate =
+      Boolean(editingId) && hasCapturedSafariDateRange(form);
+    const selectedStatus = shouldAutoCloseOnUpdate
+      ? "Close"
+      : form.status || derivedStatus;
+    const calculatedNumberOfDays =
+      isSafariType && hasCapturedSafariDateRange(form)
+        ? getNumberOfDaysBetween(form.safariStartDate, form.safariEndDate)
+        : Number(form.numberOfDays || 1);
     if (
       requiresVehicleRunSection &&
       String(form.odometerOut || "").trim() === ""
@@ -844,7 +867,7 @@ export default function JobCards() {
         safariEndDate: form.safariEndDate || null,
         timeOut: form.timeOut || null,
         timeIn: form.timeIn || null,
-        numberOfDays: isSafariType ? Number(form.numberOfDays || 1) : null,
+        numberOfDays: isSafariType ? calculatedNumberOfDays : null,
         pickupLocation: isSafariType ? form.pickupLocation || null : null,
         dropoffLocation: isSafariType ? form.dropoffLocation || null : null,
         routeSummary: form.routeSummary || null,
@@ -978,19 +1001,19 @@ export default function JobCards() {
       )}
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-xl p-4">
+        <div className="bg-slate-900/50 border border-slate-800/50 rounded-xl p-4">
           <p className="text-slate-400 text-sm">PI Job Cards</p>
           <p className="text-2xl font-bold text-white mt-1">
             {stats.totalCards}
           </p>
         </div>
-        <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-xl p-4">
+        <div className="bg-slate-900/50 border border-slate-800/50 rounded-xl p-4">
           <p className="text-slate-400 text-sm">Total Safari Pax</p>
           <p className="text-2xl font-bold text-amber-400 mt-1">
             {stats.totalPax}
           </p>
         </div>
-        <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-xl p-4">
+        <div className="bg-slate-900/50 border border-slate-800/50 rounded-xl p-4">
           <p className="text-slate-400 text-sm">PI Eligible Leads</p>
           <p className="text-2xl font-bold text-blue-400 mt-1">
             {stats.totalLeadsWithPI}
@@ -998,7 +1021,7 @@ export default function JobCards() {
         </div>
       </div>
 
-      <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-2xl p-4">
+      <div className="bg-slate-900/50 border border-slate-800/50 rounded-2xl p-4">
         <div className="flex items-center gap-3 bg-slate-800/50 rounded-xl px-4 py-2.5 border border-slate-700/50 focus-within:border-amber-500/50 transition-colors mb-4">
           <Search className="w-4 h-4 text-slate-400" />
           <input
@@ -1013,38 +1036,38 @@ export default function JobCards() {
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
-              <tr className="border-b border-slate-800/50">
-                <th className="text-left py-3 px-3 text-xs font-semibold text-slate-400 uppercase">
+              <tr className="border-b border-slate-200">
+                <th className="text-left py-3 px-3 text-xs font-semibold text-slate-600 uppercase">
                   Type
                 </th>
-                <th className="text-left py-3 px-3 text-xs font-semibold text-slate-400 uppercase">
+                <th className="text-left py-3 px-3 text-xs font-semibold text-slate-600 uppercase">
                   Job Card No
                 </th>
-                <th className="text-left py-3 px-3 text-xs font-semibold text-slate-400 uppercase">
+                <th className="text-left py-3 px-3 text-xs font-semibold text-slate-600 uppercase">
                   Status
                 </th>
-                <th className="text-left py-3 px-3 text-xs font-semibold text-slate-400 uppercase">
+                <th className="text-left py-3 px-3 text-xs font-semibold text-slate-600 uppercase">
                   Booking Ref
                 </th>
-                <th className="text-left py-3 px-3 text-xs font-semibold text-slate-400 uppercase">
+                <th className="text-left py-3 px-3 text-xs font-semibold text-slate-600 uppercase">
                   Client / Contact
                 </th>
-                <th className="text-left py-3 px-3 text-xs font-semibold text-slate-400 uppercase">
+                <th className="text-left py-3 px-3 text-xs font-semibold text-slate-600 uppercase">
                   Dates
                 </th>
-                <th className="text-left py-3 px-3 text-xs font-semibold text-slate-400 uppercase">
+                <th className="text-left py-3 px-3 text-xs font-semibold text-slate-600 uppercase">
                   Pax
                 </th>
-                <th className="text-left py-3 px-3 text-xs font-semibold text-slate-400 uppercase">
+                <th className="text-left py-3 px-3 text-xs font-semibold text-slate-600 uppercase">
                   Nationality
                 </th>
-                <th className="text-left py-3 px-3 text-xs font-semibold text-slate-400 uppercase">
+                <th className="text-left py-3 px-3 text-xs font-semibold text-slate-600 uppercase">
                   Route Summary
                 </th>
-                <th className="text-left py-3 px-3 text-xs font-semibold text-slate-400 uppercase">
+                <th className="text-left py-3 px-3 text-xs font-semibold text-slate-600 uppercase">
                   Created At
                 </th>
-                <th className="text-right py-3 px-3 text-xs font-semibold text-slate-400 uppercase">
+                <th className="text-right py-3 px-3 text-xs font-semibold text-slate-600 uppercase">
                   Actions
                 </th>
               </tr>
@@ -1072,14 +1095,14 @@ export default function JobCards() {
                 filteredCards.map((card) => (
                   <tr
                     key={card.id}
-                    className="border-b border-slate-800/40 hover:bg-slate-800/30 transition-colors"
+                    className="border-b border-slate-200 hover:bg-amber-50/70 transition-colors"
                   >
-                    <td className="py-3 px-3 text-sm text-slate-300 whitespace-nowrap">
+                    <td className="py-3 px-3 text-sm text-slate-700 whitespace-nowrap">
                       {card.type || "Safari"}
                     </td>
-                    <td className="py-3 px-3">
-                      <div className="flex items-center gap-2 text-slate-200 text-sm font-medium">
-                        <ClipboardList className="w-4 h-4 text-amber-400" />
+                    <td className="py-3 px-3 min-w-[160px]">
+                      <div className="flex items-center gap-2 text-slate-900 text-sm font-semibold">
+                        <ClipboardList className="w-4 h-4 text-amber-500" />
                         {card.jobCardNo}
                       </div>
                     </td>
@@ -1094,52 +1117,52 @@ export default function JobCards() {
                         {card.status || "Open"}
                       </span>
                     </td>
-                    <td className="py-3 px-3 text-sm text-slate-300">
+                    <td className="py-3 px-3 text-sm text-slate-700 font-medium">
                       {card.bookingReferenceNo}
                     </td>
-                    <td className="py-3 px-3">
+                    <td className="py-3 px-3 min-w-[220px]">
                       <div className="space-y-1">
-                        <div className="flex items-center gap-2 text-slate-200 text-sm">
-                          <User className="w-4 h-4 text-slate-400" />
+                        <div className="flex items-center gap-2 text-slate-900 text-sm font-semibold">
+                          <User className="w-4 h-4 text-amber-500" />
                           {card.tourOperatorClientName}
                         </div>
-                        <div className="flex items-center gap-2 text-slate-400 text-xs">
+                        <div className="flex items-center gap-2 text-slate-600 text-xs">
                           <span>{card.contactPerson}</span>
                         </div>
                       </div>
                     </td>
-                    <td className="py-3 px-3 text-sm text-slate-100 min-w-[170px]">
+                    <td className="py-3 px-3 text-sm text-slate-800 min-w-[170px]">
                       <div className="flex items-start gap-2">
-                        <Calendar className="w-4 h-4 text-slate-400 mt-0.5" />
+                        <Calendar className="w-4 h-4 text-slate-500 mt-0.5" />
                         <div>
                           <div className="font-medium">
                             Out: {formatDate(card.safariStartDate)}
                           </div>
-                          <div className="text-xs text-slate-300">
+                          <div className="text-xs text-slate-600">
                             In: {formatDate(card.safariEndDate)}
                           </div>
                         </div>
                       </div>
                     </td>
-                    <td className="py-3 px-3 text-sm text-slate-300">
+                    <td className="py-3 px-3 text-sm text-slate-700">
                       <div className="flex items-center gap-2">
-                        <Users className="w-4 h-4 text-slate-400" />
+                        <Users className="w-4 h-4 text-slate-500" />
                         {Number(card.adults || 0) + Number(card.children || 0)}
                       </div>
                     </td>
-                    <td className="py-3 px-3 text-sm text-slate-300">
+                    <td className="py-3 px-3 text-sm text-slate-700">
                       <div className="flex items-center gap-2">
-                        <Globe className="w-4 h-4 text-slate-400" />
+                        <Globe className="w-4 h-4 text-slate-500" />
                         {card.nationality || "-"}
                       </div>
                     </td>
-                    <td className="py-3 px-3 text-sm text-slate-300">
+                    <td className="py-3 px-3 text-sm text-slate-700">
                       <div className="flex items-start gap-2">
-                        <MapPin className="w-4 h-4 text-slate-400 mt-0.5" />
+                        <MapPin className="w-4 h-4 text-slate-500 mt-0.5" />
                         <span>{card.routeSummary || "-"}</span>
                       </div>
                     </td>
-                    <td className="py-3 px-3 text-sm text-slate-300">
+                    <td className="py-3 px-3 text-sm text-slate-700">
                       {formatDateTime(card.createdAt)}
                     </td>
                     <td className="py-3 px-3">
@@ -1147,7 +1170,7 @@ export default function JobCards() {
                         <button
                           onClick={() => handleDownloadPdf(card)}
                           disabled={downloadingJobCardId === card.id}
-                          className="p-2 text-slate-400 hover:text-blue-400 hover:bg-slate-700 rounded-lg transition-colors"
+                          className="p-2 text-slate-500 hover:text-blue-600 hover:bg-slate-100 rounded-lg transition-colors"
                           title={
                             downloadingJobCardId === card.id
                               ? "Downloading..."
@@ -1162,21 +1185,21 @@ export default function JobCards() {
                         </button>
                         <button
                           onClick={() => openView(card)}
-                          className="p-2 text-slate-400 hover:text-cyan-400 hover:bg-slate-700 rounded-lg transition-colors"
+                          className="p-2 text-slate-500 hover:text-cyan-600 hover:bg-slate-100 rounded-lg transition-colors"
                           title="View"
                         >
                           <Eye className="w-4 h-4" />
                         </button>
                         <button
                           onClick={() => openEdit(card)}
-                          className="p-2 text-slate-400 hover:text-amber-400 hover:bg-slate-700 rounded-lg transition-colors"
+                          className="p-2 text-slate-500 hover:text-amber-600 hover:bg-slate-100 rounded-lg transition-colors"
                           title="Edit"
                         >
                           <Edit className="w-4 h-4" />
                         </button>
                         <button
                           onClick={() => handleDelete(card.id)}
-                          className="p-2 text-slate-400 hover:text-red-400 hover:bg-slate-700 rounded-lg transition-colors"
+                          className="p-2 text-slate-500 hover:text-red-600 hover:bg-slate-100 rounded-lg transition-colors"
                           title="Delete"
                         >
                           <Trash2 className="w-4 h-4" />
