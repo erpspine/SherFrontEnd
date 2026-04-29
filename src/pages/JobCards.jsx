@@ -526,6 +526,28 @@ export default function JobCards() {
     [leads],
   );
 
+  const allocatedSafariLeadIds = useMemo(
+    () =>
+      new Set(
+        jobCards
+          .filter(
+            (card) =>
+              String(card.type || "Safari").toLowerCase() === "safari" &&
+              Number(card.leadId || 0) > 0,
+          )
+          .map((card) => String(card.leadId)),
+      ),
+    [jobCards],
+  );
+
+  const availableSafariLeads = useMemo(
+    () =>
+      eligibleLeads.filter(
+        (lead) => !allocatedSafariLeadIds.has(String(lead.id)),
+      ),
+    [eligibleLeads, allocatedSafariLeadIds],
+  );
+
   const filteredCards = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
     if (!query) return jobCards;
@@ -564,9 +586,9 @@ export default function JobCards() {
     return {
       totalCards: filteredCards.length,
       totalPax,
-      totalLeadsWithPI: eligibleLeads.length,
+      totalLeadsWithPI: availableSafariLeads.length,
     };
-  }, [filteredCards, eligibleLeads.length]);
+  }, [filteredCards, availableSafariLeads.length]);
 
   const setField = (field, value) =>
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -596,7 +618,9 @@ export default function JobCards() {
   };
 
   const onSelectLead = (leadIdValue) => {
-    const lead = eligibleLeads.find((item) => String(item.id) === leadIdValue);
+    const lead = availableSafariLeads.find(
+      (item) => String(item.id) === leadIdValue,
+    );
     if (!lead) {
       setField("leadId", leadIdValue);
       return;
@@ -1296,12 +1320,17 @@ export default function JobCards() {
                       className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
                     >
                       <option value="">Select lead</option>
-                      {eligibleLeads.map((lead) => (
+                      {availableSafariLeads.map((lead) => (
                         <option key={lead.id} value={lead.id}>
                           {lead.bookingRef} - {lead.clientCompany}
                         </option>
                       ))}
                     </select>
+                    {!editingId && availableSafariLeads.length === 0 && (
+                      <p className="text-xs text-slate-500 mt-1">
+                        All PI-sent safari leads already have job cards.
+                      </p>
+                    )}
                     {editingId && (
                       <p className="text-xs text-slate-500 mt-1">
                         Lead cannot be changed while editing.

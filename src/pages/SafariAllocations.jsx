@@ -58,6 +58,7 @@ const normalizePI = (pi) => ({
   id: Number(pi.id || 0),
   leadId: Number(pi.lead_id || pi.leadId || 0),
   piNo: pi.pi_no || pi.piNo || pi.invoice_no || pi.invoiceNo || `PI-${pi.id}`,
+  groupName: pi.group_name || pi.groupName || "",
   date:
     pi.quoteDate ||
     pi.quote_date ||
@@ -67,6 +68,19 @@ const normalizePI = (pi) => ({
     pi.createdAt ||
     "",
   status: pi.status || "Converted",
+});
+
+const normalizeQuotation = (quotation) => ({
+  id: Number(quotation.id || 0),
+  leadId: Number(quotation.lead_id || quotation.leadId || 0),
+  groupName: quotation.group_name || quotation.groupName || "",
+  quoteDate:
+    quotation.quoteDate ||
+    quotation.quote_date ||
+    quotation.date ||
+    quotation.created_at ||
+    quotation.createdAt ||
+    "",
 });
 
 const normalizeVehicle = (vehicle) => ({
@@ -187,6 +201,7 @@ const extractList = (payload, keys) => {
 export default function SafariAllocations() {
   const [leads, setLeads] = useState([]);
   const [proformas, setProformas] = useState([]);
+  const [quotations, setQuotations] = useState([]);
   const [vehicles, setVehicles] = useState([]);
   const [users, setUsers] = useState([]);
   const [allocations, setAllocations] = useState([]);
@@ -203,24 +218,33 @@ export default function SafariAllocations() {
     setIsLoading(true);
 
     try {
-      const [leadsRes, proformasRes, vehiclesRes, usersRes, allocationsRes] =
-        await Promise.all([
-          apiFetch("/leads"),
-          apiFetch("/proforma-invoices"),
-          apiFetch("/vehicles"),
-          apiFetch("/users"),
-          apiFetch("/safari-allocations"),
-        ]);
+      const [
+        leadsRes,
+        proformasRes,
+        quotationsRes,
+        vehiclesRes,
+        usersRes,
+        allocationsRes,
+      ] = await Promise.all([
+        apiFetch("/leads"),
+        apiFetch("/proforma-invoices"),
+        apiFetch("/quotations"),
+        apiFetch("/vehicles"),
+        apiFetch("/users"),
+        apiFetch("/safari-allocations"),
+      ]);
 
       const [
         leadsPayload,
         proformasPayload,
+        quotationsPayload,
         vehiclesPayload,
         usersPayload,
         allocationsPayload,
       ] = await Promise.all([
         leadsRes.json().catch(() => ({})),
         proformasRes.json().catch(() => ({})),
+        quotationsRes.json().catch(() => ({})),
         vehiclesRes.json().catch(() => ({})),
         usersRes.json().catch(() => ({})),
         allocationsRes.json().catch(() => ({})),
@@ -232,6 +256,11 @@ export default function SafariAllocations() {
       if (!proformasRes.ok) {
         throw new Error(
           proformasPayload?.message || "Unable to fetch proforma invoices.",
+        );
+      }
+      if (!quotationsRes.ok) {
+        throw new Error(
+          quotationsPayload?.message || "Unable to fetch quotations.",
         );
       }
       if (!vehiclesRes.ok) {
@@ -251,6 +280,9 @@ export default function SafariAllocations() {
       setLeads(extractList(leadsPayload, "leads").map(normalizeLead));
       setProformas(
         extractList(proformasPayload, "proformaInvoices").map(normalizePI),
+      );
+      setQuotations(
+        extractList(quotationsPayload, "quotations").map(normalizeQuotation),
       );
       setVehicles(
         extractList(vehiclesPayload, "vehicles").map(normalizeVehicle),
@@ -273,6 +305,33 @@ export default function SafariAllocations() {
   useEffect(() => {
     loadData();
   }, []);
+
+  const groupNameByLead = useMemo(() => {
+    const latestByLead = new Map();
+
+    quotations.forEach((quotation) => {
+      if (!quotation.leadId || !quotation.groupName) return;
+
+      const key = String(quotation.leadId);
+      const existing = latestByLead.get(key);
+      if (!existing) {
+        latestByLead.set(key, quotation);
+        return;
+      }
+
+      const currentTime = new Date(quotation.quoteDate || 0).getTime();
+      const existingTime = new Date(existing.quoteDate || 0).getTime();
+      if (currentTime >= existingTime) {
+        latestByLead.set(key, quotation);
+      }
+    });
+
+    const map = new Map();
+    latestByLead.forEach((quotation, leadId) => {
+      map.set(leadId, quotation.groupName);
+    });
+    return map;
+  }, [quotations]);
 
   const safariOptions = useMemo(() => {
     const latestProformaByLead = new Map();
@@ -300,6 +359,8 @@ export default function SafariAllocations() {
           piNo: pi?.piNo || "-",
           bookingRef: lead.bookingRef,
           clientCompany: lead.clientCompany,
+          groupName:
+            groupNameByLead.get(String(lead.id)) || pi?.groupName || "-",
           agentContact: lead.agentContact,
           routeParks: lead.routeParks,
           startDate: lead.startDate,
@@ -308,7 +369,7 @@ export default function SafariAllocations() {
           nationality: lead.clientCountry,
         };
       });
-  }, [leads, proformas]);
+  }, [leads, proformas, groupNameByLead]);
 
   const driverOptions = useMemo(() => {
     const activeUsers = users.filter(
@@ -344,6 +405,13 @@ export default function SafariAllocations() {
                 piNo: allocation.proformaInvoice?.piNo || "-",
                 bookingRef: allocation.lead.bookingRef || "-",
                 clientCompany: allocation.lead.clientCompany || "-",
+                groupName:
+                  groupNameByLead.get(
+                    String(allocation.lead.id || allocation.leadId || ""),
+                  ) ||
+                  allocation.lead.group_name ||
+                  allocation.lead.groupName ||
+                  "-",
                 agentContact: allocation.lead.agentContact || "-",
                 routeParks: allocation.lead.routeParks || "-",
                 startDate: allocation.lead.startDate || "",
@@ -356,7 +424,7 @@ export default function SafariAllocations() {
         driver: driver || allocation.driver || null,
       };
     });
-  }, [allocations, safariOptions, vehicles, driverOptions]);
+  }, [allocations, safariOptions, vehicles, driverOptions, groupNameByLead]);
 
   const filteredAllocations = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
@@ -367,6 +435,9 @@ export default function SafariAllocations() {
           .toLowerCase()
           .includes(query) ||
         String(allocation.safari?.clientCompany || "")
+          .toLowerCase()
+          .includes(query) ||
+        String(allocation.safari?.groupName || "")
           .toLowerCase()
           .includes(query) ||
         String(
@@ -437,6 +508,12 @@ export default function SafariAllocations() {
 
   const setField = (field, value) =>
     setForm((current) => ({ ...current, [field]: value }));
+
+  const selectedSafariOption = useMemo(
+    () =>
+      safariOptions.find((item) => String(item.leadId) === String(form.leadId)),
+    [safariOptions, form.leadId],
+  );
 
   const openCreate = () => {
     setEditingId(null);
@@ -528,24 +605,9 @@ export default function SafariAllocations() {
       return;
     }
 
-    const duplicateSafari = allocations.some(
-      (item) =>
-        item.id !== editingId && String(item.leadId) === String(form.leadId),
-    );
-    if (duplicateSafari) {
-      setErrorMessage("This safari already has an allocation.");
-      await Swal.fire({
-        title: "Already Allocated",
-        text: "This safari already has a vehicle and driver assignment.",
-        icon: "info",
-        background: "#0f172a",
-        color: "#e2e8f0",
-      });
-      return;
-    }
-
     setIsSaving(true);
     setErrorMessage("");
+    const selectedLeadId = String(form.leadId || "");
     try {
       const safari = safariOptions.find(
         (item) => item.leadId === String(form.leadId),
@@ -604,15 +666,23 @@ export default function SafariAllocations() {
         setAllocations([newAllocation, ...allocations]);
       }
 
-      setIsModalOpen(false);
-      setEditingId(null);
-      setForm(createFormState());
+      if (editingId) {
+        setIsModalOpen(false);
+        setEditingId(null);
+        setForm(createFormState());
+      } else {
+        // Keep modal open to quickly add more vehicle/driver pairs for same safari.
+        setForm({
+          ...createFormState(),
+          leadId: selectedLeadId,
+        });
+      }
 
       await Swal.fire({
         title: editingId ? "Updated" : "Created",
         text: editingId
           ? "Safari allocation updated successfully."
-          : "Safari allocation created successfully.",
+          : "Safari allocation created. You can add another vehicle/driver for the same safari.",
         icon: "success",
         timer: 1500,
         showConfirmButton: false,
@@ -639,8 +709,8 @@ export default function SafariAllocations() {
         <div>
           <h1 className="text-2xl font-bold text-white">Safari Allocations</h1>
           <p className="text-slate-400 mt-1">
-            Allocate one vehicle and one driver to safari bookings with proforma
-            invoices.
+            Allocate multiple vehicles and drivers to safari bookings with
+            proforma invoices.
           </p>
         </div>
         <button
@@ -693,7 +763,7 @@ export default function SafariAllocations() {
             type="text"
             value={searchTerm}
             onChange={(event) => setSearchTerm(event.target.value)}
-            placeholder="Search by safari, PI, vehicle, or driver"
+            placeholder="Search by safari, group name, PI, vehicle, or driver"
             className="w-full bg-transparent text-sm text-white placeholder-slate-500 outline-none"
           />
         </div>
@@ -704,6 +774,9 @@ export default function SafariAllocations() {
               <tr className="border-b border-slate-800/50">
                 <th className="text-left py-3 px-3 text-xs font-semibold text-slate-400 uppercase">
                   Safari
+                </th>
+                <th className="text-left py-3 px-3 text-xs font-semibold text-slate-400 uppercase">
+                  Group Name
                 </th>
                 <th className="text-left py-3 px-3 text-xs font-semibold text-slate-400 uppercase">
                   PI
@@ -732,7 +805,7 @@ export default function SafariAllocations() {
               {isLoading ? (
                 <tr>
                   <td
-                    colSpan={8}
+                    colSpan={9}
                     className="py-8 text-center text-slate-400 text-sm"
                   >
                     Loading safari allocations...
@@ -741,7 +814,7 @@ export default function SafariAllocations() {
               ) : filteredAllocations.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={8}
+                    colSpan={9}
                     className="py-8 text-center text-slate-400 text-sm"
                   >
                     No safari allocations yet.
@@ -763,6 +836,9 @@ export default function SafariAllocations() {
                           {allocation.safari?.clientCompany || "-"}
                         </div>
                       </div>
+                    </td>
+                    <td className="py-3 px-3 text-sm text-slate-300 whitespace-nowrap">
+                      {allocation.safari?.groupName || "-"}
                     </td>
                     <td className="py-3 px-3 text-sm text-slate-300">
                       <div className="flex items-center gap-2">
@@ -886,23 +962,25 @@ export default function SafariAllocations() {
                     className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
                   >
                     <option value="">Select safari</option>
-                    {safariOptions
-                      .filter(
-                        (item) =>
-                          String(item.leadId) === String(form.leadId) ||
-                          !allocations.some(
-                            (allocation) =>
-                              allocation.id !== editingId &&
-                              String(allocation.leadId) === String(item.leadId),
-                          ),
-                      )
-                      .map((safari) => (
-                        <option key={safari.leadId} value={safari.leadId}>
-                          {safari.bookingRef} - {safari.clientCompany} (
-                          {safari.piNo})
-                        </option>
-                      ))}
+                    {safariOptions.map((safari) => (
+                      <option key={safari.leadId} value={safari.leadId}>
+                        Group: {safari.groupName || "-"} | {safari.bookingRef} |{" "}
+                        {safari.clientCompany} | {safari.piNo}
+                      </option>
+                    ))}
                   </select>
+                  {form.leadId && (
+                    <p className="text-xs text-amber-300 mt-1.5">
+                      Selected Group Name:{" "}
+                      {selectedSafariOption?.groupName || "-"}
+                    </p>
+                  )}
+                  {!editingId && (
+                    <p className="text-xs text-slate-500 mt-1">
+                      To allocate multiple vehicles/drivers, keep selecting the
+                      same safari and save each pair.
+                    </p>
+                  )}
                   {editingId && (
                     <p className="text-xs text-slate-500 mt-1">
                       Safari cannot be changed while editing this allocation.
@@ -1004,6 +1082,12 @@ export default function SafariAllocations() {
                           <span className="text-slate-400">Client</span>
                           <span className="text-white">
                             {safari.clientCompany}
+                          </span>
+                        </div>
+                        <div className="flex justify-between gap-4">
+                          <span className="text-slate-400">Group Name</span>
+                          <span className="text-white">
+                            {safari.groupName || "-"}
                           </span>
                         </div>
                         <div className="flex justify-between gap-4">
