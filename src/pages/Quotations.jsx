@@ -652,7 +652,9 @@ export default function Quotations() {
         client: selectedQuotation.client,
         attention: selectedQuotation.attention,
         groupName: selectedQuotation.groupName,
-        quoteDate: selectedQuotation.quoteDate,
+        quoteDate: toIsoDate(
+          selectedQuotation.quoteDate || selectedQuotation.date,
+        ),
         notes: selectedQuotation.notes,
         daySections:
           selectedQuotation.daySections && selectedQuotation.daySections.length
@@ -1690,7 +1692,7 @@ export default function Quotations() {
                         quoteDate: newValue?.startDate || "",
                       })
                     }
-                    displayFormat="YYYY-MM-DD"
+                    displayFormat="DD/MM/YYYY"
                     inputClassName="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-amber-500"
                     toggleClassName="absolute right-0 h-full px-3 text-slate-400"
                     containerClassName="relative"

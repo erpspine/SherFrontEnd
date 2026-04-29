@@ -44,9 +44,14 @@ const formatCurrency = (n) => `USD ${Number(n || 0).toLocaleString()}`;
 
 const formatDate = (value) => {
   if (!value) return "-";
-  const parsed = new Date(value);
+  const isoDate = normalizeIsoDateOnly(value);
+  const parsed = new Date(isoDate || value);
   if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleDateString();
+
+  const day = String(parsed.getDate()).padStart(2, "0");
+  const month = String(parsed.getMonth() + 1).padStart(2, "0");
+  const year = parsed.getFullYear();
+  return `${day}/${month}/${year}`;
 };
 
 const normalizeIsoDateOnly = (value) => {
@@ -72,8 +77,8 @@ const getPIItineraryDatesLabel = (daySections = []) => {
     .sort();
 
   if (!dates.length) return "";
-  if (dates.length === 1) return dates[0];
-  return `${dates[0]} to ${dates[dates.length - 1]}`;
+  if (dates.length === 1) return formatDate(dates[0]);
+  return `${formatDate(dates[0])} to ${formatDate(dates[dates.length - 1])}`;
 };
 
 const getPIDestinationsLabel = (pi) => {
@@ -97,9 +102,12 @@ const addDays = (value, days) => {
   return parsed.toISOString().split("T")[0];
 };
 
-const extractList = (payload) => {
+const extractList = (payload, preferredKey) => {
   if (Array.isArray(payload)) return payload;
   if (Array.isArray(payload?.data)) return payload.data;
+  if (preferredKey && Array.isArray(payload?.[preferredKey])) {
+    return payload[preferredKey];
+  }
   if (Array.isArray(payload?.proformaInvoices)) return payload.proformaInvoices;
   if (Array.isArray(payload?.proforma_invoices))
     return payload.proforma_invoices;
@@ -136,6 +144,7 @@ const normalizePI = (pi) => {
     date: quoteDate,
     dueDate,
     client: pi.client || pi.client_name || pi.clientName || "",
+    groupName: pi.group_name || pi.groupName || "",
     attention: pi.attention || "",
     notes: pi.notes || "",
     serviceSummary:
@@ -179,6 +188,7 @@ const extractSingle = (payload) =>
 
 export default function ProformaInvoices() {
   const [allPIs, setAllPIs] = useState([]);
+  const [quotationMap, setQuotationMap] = useState({});
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [viewPI, setViewPI] = useState(null);
@@ -193,16 +203,47 @@ export default function ProformaInvoices() {
     setIsLoading(true);
 
     try {
-      const response = await apiFetch("/proforma-invoices");
-      const payload = await response.json();
+      const [piResponse, quotationsResponse] = await Promise.all([
+        apiFetch("/proforma-invoices"),
+        apiFetch("/quotations"),
+      ]);
+      const [piPayload, quotationsPayload] = await Promise.all([
+        piResponse.json(),
+        quotationsResponse.json().catch(() => ({})),
+      ]);
 
-      if (!response.ok) {
+      if (!piResponse.ok) {
         throw new Error(
-          payload?.message || "Unable to fetch proforma invoices.",
+          piPayload?.message || "Unable to fetch proforma invoices.",
         );
       }
 
-      setAllPIs(extractList(payload).map(normalizePI));
+      const quotations = extractList(quotationsPayload, "quotations");
+      const nextQuotationMap = quotations.reduce((acc, quotation) => {
+        const id = Number(quotation?.id || 0);
+        if (!id) return acc;
+
+        const quotationNumber =
+          quotation?.quotation_number ||
+          quotation?.quotationNumber ||
+          quotation?.quote_no ||
+          quotation?.quoteNo ||
+          quotation?.quotation_no ||
+          quotation?.quotationNo ||
+          "";
+
+        acc[id] = {
+          quotationNumber: String(quotationNumber || ""),
+          groupName: String(
+            quotation?.group_name || quotation?.groupName || "",
+          ),
+        };
+
+        return acc;
+      }, {});
+
+      setQuotationMap(nextQuotationMap);
+      setAllPIs(extractList(piPayload, "proformaInvoices").map(normalizePI));
     } catch (error) {
       setErrorMessage(error.message || "Failed to load proforma invoices.");
     } finally {
@@ -234,16 +275,21 @@ export default function ProformaInvoices() {
   const filtered = useMemo(
     () =>
       allPIs.filter((pi) => {
+        const linkedQuotation = quotationMap[Number(pi.quotationId)] || {};
+        const quoteNumber =
+          linkedQuotation.quotationNumber || pi.quoteRef || "";
+        const groupName = linkedQuotation.groupName || pi.groupName || "";
         const query = searchTerm.toLowerCase();
         const matchSearch =
           pi.piNo.toLowerCase().includes(query) ||
           pi.client.toLowerCase().includes(query) ||
-          pi.quoteRef.toLowerCase().includes(query);
+          quoteNumber.toLowerCase().includes(query) ||
+          groupName.toLowerCase().includes(query);
         const matchStatus =
           statusFilter === "All" || pi.status === statusFilter;
         return matchSearch && matchStatus;
       }),
-    [allPIs, searchTerm, statusFilter],
+    [allPIs, quotationMap, searchTerm, statusFilter],
   );
 
   const handleDownloadPdf = async (pi) => {
@@ -357,7 +403,7 @@ export default function ProformaInvoices() {
             <Search className="w-4 h-4 text-slate-500" />
             <input
               type="text"
-              placeholder="Search by PI #, quote ref, client..."
+              placeholder="Search by PI #, quotation #, client, group name..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full bg-transparent outline-none text-sm text-slate-300 placeholder-slate-500"
@@ -387,15 +433,16 @@ export default function ProformaInvoices() {
             <thead>
               <tr className="border-b border-slate-800">
                 {[
+                  "Actions",
                   "PI #",
-                  "Quote Ref",
+                  "Quotation #",
                   "Date",
                   "Due Date",
                   "Client",
+                  "Group Name",
                   "Service Summary",
                   "Total",
                   "Status",
-                  "Actions",
                 ].map((h) => (
                   <th
                     key={h}
@@ -408,6 +455,12 @@ export default function ProformaInvoices() {
             </thead>
             <tbody>
               {filtered.map((pi) => {
+                const linkedQuotation =
+                  quotationMap[Number(pi.quotationId)] || {};
+                const quotationNumber =
+                  linkedQuotation.quotationNumber || pi.quoteRef;
+                const groupName =
+                  linkedQuotation.groupName || pi.groupName || "-";
                 const sc = statusConfig[pi.status] || statusConfig.Converted;
                 return (
                   <tr
@@ -415,6 +468,34 @@ export default function ProformaInvoices() {
                     className="border-b border-slate-800/40 hover:bg-slate-800/30 transition-colors"
                   >
                     <td className="py-4 px-4">
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => handleViewPI(pi)}
+                          disabled={isViewLoading}
+                          className="p-1.5 text-slate-300 hover:text-amber-300 hover:bg-slate-800 rounded-lg transition-colors"
+                          title="View"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDownloadPdf(pi)}
+                          disabled={downloadingPiId === pi.id}
+                          className="p-1.5 text-slate-300 hover:text-green-300 hover:bg-slate-800 rounded-lg transition-colors"
+                          title={
+                            downloadingPiId === pi.id
+                              ? "Downloading..."
+                              : "Download PDF"
+                          }
+                        >
+                          {downloadingPiId === pi.id ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Download className="w-4 h-4" />
+                          )}
+                        </button>
+                      </div>
+                    </td>
+                    <td className="py-4 px-4 min-w-[180px]">
                       <div className="flex items-center gap-2">
                         <div className="w-8 h-8 rounded-lg bg-indigo-500/10 flex items-center justify-center">
                           <Receipt className="w-4 h-4 text-indigo-400" />
@@ -424,8 +505,8 @@ export default function ProformaInvoices() {
                         </span>
                       </div>
                     </td>
-                    <td className="py-4 px-4 text-sm text-amber-300">
-                      {pi.quoteRef}
+                    <td className="py-4 px-4 text-sm text-amber-300 font-medium whitespace-nowrap">
+                      {quotationNumber || "-"}
                     </td>
                     <td className="py-4 px-4 text-sm text-slate-300 whitespace-nowrap">
                       {formatDate(pi.date)}
@@ -440,6 +521,9 @@ export default function ProformaInvoices() {
                           {pi.client}
                         </span>
                       </div>
+                    </td>
+                    <td className="py-4 px-4 text-sm text-slate-300 whitespace-nowrap">
+                      {groupName}
                     </td>
                     <td className="py-4 px-4 text-sm max-w-sm">
                       <div className="space-y-1">
@@ -468,34 +552,6 @@ export default function ProformaInvoices() {
                         <sc.icon className="w-3 h-3" />
                         {pi.status}
                       </span>
-                    </td>
-                    <td className="py-4 px-4">
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => handleViewPI(pi)}
-                          disabled={isViewLoading}
-                          className="p-1.5 text-slate-300 hover:text-amber-300 hover:bg-slate-800 rounded-lg transition-colors"
-                          title="View"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDownloadPdf(pi)}
-                          disabled={downloadingPiId === pi.id}
-                          className="p-1.5 text-slate-300 hover:text-green-300 hover:bg-slate-800 rounded-lg transition-colors"
-                          title={
-                            downloadingPiId === pi.id
-                              ? "Downloading..."
-                              : "Download PDF"
-                          }
-                        >
-                          {downloadingPiId === pi.id ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                          ) : (
-                            <Download className="w-4 h-4" />
-                          )}
-                        </button>
-                      </div>
                     </td>
                   </tr>
                 );

@@ -91,15 +91,38 @@ const createEmptyForm = () => ({
   bookingStatus: "Pending",
 });
 
+const formatDateToIso = (dateValue) => {
+  const year = dateValue.getFullYear();
+  const month = String(dateValue.getMonth() + 1).padStart(2, "0");
+  const day = String(dateValue.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const formatDisplayDate = (value) => {
+  const iso = normalizeDateValue(value);
+  if (!iso) return value || "-";
+
+  const [year, month, day] = iso.split("-");
+  return `${day}/${month}/${year}`;
+};
+
 const normalizeDateValue = (value) => {
   if (!value) return "";
-  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    return value;
+  const asString = String(value).trim();
+
+  const directIso = asString.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (directIso) {
+    return directIso[1];
+  }
+
+  const dmy = asString.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (dmy) {
+    return `${dmy[3]}-${dmy[2]}-${dmy[1]}`;
   }
 
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return "";
-  return parsed.toISOString().slice(0, 10);
+  return formatDateToIso(parsed);
 };
 
 const toPickerValue = (value) => ({
@@ -121,7 +144,7 @@ const toApiDate = (value) => {
 
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return "";
-  return parsed.toISOString().slice(0, 10);
+  return formatDateToIso(parsed);
 };
 
 const formatDateTime = (value) => {
@@ -597,11 +620,11 @@ export default function Leads() {
                     </td>
                     {/* Start Date */}
                     <td className="py-3 px-4 text-sm text-slate-300 whitespace-nowrap">
-                      {lead.startDate}
+                      {formatDisplayDate(lead.startDate)}
                     </td>
                     {/* End Date */}
                     <td className="py-3 px-4 text-sm text-slate-300 whitespace-nowrap">
-                      {lead.endDate}
+                      {formatDisplayDate(lead.endDate)}
                     </td>
                     {/* Route / Parks */}
                     <td className="py-3 px-4">
