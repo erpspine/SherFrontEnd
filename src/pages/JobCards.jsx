@@ -193,6 +193,12 @@ const getNumberOfDaysBetween = (startDate, endDate) => {
 const hasCapturedSafariDateRange = (values) =>
   Boolean(values?.safariStartDate && values?.safariEndDate);
 
+const normalizeStatusValue = (status) => {
+  if (status === "Close") return "Closed";
+  if (status === "Open" || status === "Closed") return status;
+  return "Open";
+};
+
 const hasReturnDetails = (values) => {
   if (!values) return false;
 
@@ -226,7 +232,7 @@ const normalizeJobCard = (jobCard) => {
     odometerIn: odometerInRaw,
     fuelGaugeIn: fuelGaugeInRaw,
   })
-    ? "Close"
+    ? "Closed"
     : "Open";
 
   return {
@@ -290,11 +296,12 @@ const normalizeJobCard = (jobCard) => {
       jobCard.driver_details || jobCard.driverDetails || jobCard.driver || "",
     additionalDetails:
       jobCard.additional_details || jobCard.additionalDetails || "",
-    status:
+    status: normalizeStatusValue(
       jobCard.status ||
-      jobCard.job_status ||
-      jobCard.jobStatus ||
-      fallbackStatus,
+        jobCard.job_status ||
+        jobCard.jobStatus ||
+        fallbackStatus,
+    ),
     guideLanguage: jobCard.guide_language || jobCard.guideLanguage || "",
     vehicleNo:
       jobCard.vehicle_no ||
@@ -818,7 +825,7 @@ export default function JobCards() {
     const shouldAutoCloseOnUpdate =
       Boolean(editingId) && hasCapturedSafariDateRange(form);
     const selectedStatus = shouldAutoCloseOnUpdate
-      ? "Close"
+      ? "Closed"
       : form.status || derivedStatus;
     const calculatedNumberOfDays =
       isSafariType && hasCapturedSafariDateRange(form)
@@ -841,7 +848,7 @@ export default function JobCards() {
 
     if (
       requiresVehicleRunSection &&
-      selectedStatus === "Close" &&
+      selectedStatus === "Closed" &&
       String(form.odometerIn || "").trim() === ""
     ) {
       setErrorMessage("Please enter mileage in (odometer in) before closing.");
@@ -865,6 +872,8 @@ export default function JobCards() {
         type: form.type || "Safari",
         safariStartDate: form.safariStartDate || null,
         safariEndDate: form.safariEndDate || null,
+        safari_start_date: form.safariStartDate || null,
+        safari_end_date: form.safariEndDate || null,
         timeOut: form.timeOut || null,
         timeIn: form.timeIn || null,
         numberOfDays: isSafariType ? calculatedNumberOfDays : null,
@@ -941,7 +950,17 @@ export default function JobCards() {
       const saved = normalizeJobCard(extractSingle(data, "jobCard"));
       setJobCards((current) => {
         if (editingId) {
-          return current.map((item) => (item.id === editingId ? saved : item));
+          return current.map((item) => {
+            if (item.id !== editingId) return item;
+
+            return {
+              ...item,
+              ...saved,
+              // Some update responses are partial; keep existing dates when not returned.
+              safariStartDate: saved.safariStartDate || item.safariStartDate,
+              safariEndDate: saved.safariEndDate || item.safariEndDate,
+            };
+          });
         }
         return [saved, ...current];
       });
