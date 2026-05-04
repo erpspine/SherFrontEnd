@@ -105,6 +105,7 @@ const normalizeLead = (lead) => ({
 
 const normalizeVehicle = (vehicle) => ({
   id: Number(vehicle.id || 0),
+  status: vehicle.status || "Available",
   label: `${
     vehicle.vehicle_no ||
     vehicle.vehicleNo ||
@@ -609,6 +610,16 @@ export default function JobCards() {
   const calculatedFuelUsed = calculateApproxFuelUsed(
     form.fuelGaugeOut,
     form.fuelGaugeIn,
+  );
+
+  const selectableVehicles = useMemo(
+    () =>
+      vehicles.filter(
+        (vehicle) =>
+          vehicle.status !== "On Lease" ||
+          String(vehicle.id) === String(form.vehicleId),
+      ),
+    [vehicles, form.vehicleId],
   );
 
   const openCreate = () => {
@@ -1352,7 +1363,7 @@ export default function JobCards() {
                       className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
                     >
                       <option value="">Select vehicle</option>
-                      {vehicles.map((vehicle) => (
+                      {selectableVehicles.map((vehicle) => (
                         <option key={vehicle.id} value={vehicle.id}>
                           {vehicle.label}
                         </option>
@@ -1388,7 +1399,7 @@ export default function JobCards() {
                       className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
                     >
                       <option value="">Select vehicle</option>
-                      {vehicles.map((vehicle) => (
+                      {selectableVehicles.map((vehicle) => (
                         <option key={vehicle.id} value={vehicle.id}>
                           {vehicle.label}
                         </option>

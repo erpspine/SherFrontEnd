@@ -30,6 +30,8 @@ import VehicleServices from "./pages/VehicleServices";
 import VehicleView from "./pages/VehicleView";
 import VehicleAvailability from "./pages/VehicleAvailability";
 import RouteDistances from "./pages/RouteDistances";
+import Inspections from "./pages/Inspections";
+import LongTermLeasing from "./pages/LongTermLeasing";
 import { isAuthenticated } from "./utils/auth";
 
 function LoginRoute() {
@@ -48,6 +50,7 @@ function ProtectedRoutes() {
         <Route path="/vehicles" element={<Vehicles />} />
         <Route path="/vehicles/:id" element={<VehicleView />} />
         <Route path="/vehicle-availability" element={<VehicleAvailability />} />
+        <Route path="/long-term-leasing" element={<LongTermLeasing />} />
         <Route path="/clients" element={<Clients />} />
         <Route path="/job-cards" element={<JobCards />} />
         <Route path="/safari-allocations" element={<SafariAllocations />} />
@@ -67,6 +70,7 @@ function ProtectedRoutes() {
         />
         <Route path="/vehicle-services" element={<VehicleServices />} />
         <Route path="/route-distances" element={<RouteDistances />} />
+        <Route path="/inspections" element={<Inspections />} />
         <Route
           path="/fuel-requisitions/new"
           element={<FuelRequisitionCreate />}

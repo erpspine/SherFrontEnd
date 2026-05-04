@@ -39,9 +39,11 @@ const menuGroups = [
         icon: Calendar,
         label: "Vehicle Availability",
       },
+      { path: "/long-term-leasing", icon: Car, label: "Long Term Leasing" },
       { path: "/job-cards", icon: ClipboardList, label: "Job Cards" },
       { path: "/safari-allocations", icon: Car, label: "Safari Allocations" },
       { path: "/checklist", icon: ListChecks, label: "Checklist" },
+      { path: "/inspections", icon: ClipboardList, label: "Inspections" },
       { path: "/fuel-requisitions", icon: Fuel, label: "Fuel Requisitions" },
       { path: "/vehicle-services", icon: Wrench, label: "Vehicle Service" },
       {

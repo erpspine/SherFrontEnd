@@ -478,7 +478,7 @@ export default function SafariAllocations() {
     () =>
       vehicles.filter(
         (vehicle) =>
-          ["Available", "On Lease"].includes(vehicle.status) &&
+          ["Available"].includes(vehicle.status) &&
           !assignedVehicleIds.has(String(vehicle.id)),
       ),
     [vehicles, assignedVehicleIds],
@@ -530,7 +530,7 @@ export default function SafariAllocations() {
     const current = form.pairs[idx]?.vehicleId || "";
     return vehicles.filter(
       (v) =>
-        (["Available", "On Lease"].includes(v.status) &&
+        (["Available"].includes(v.status) &&
           !assignedVehicleIds.has(String(v.id)) &&
           !otherSelected.has(String(v.id))) ||
         String(v.id) === current,
