@@ -60,6 +60,10 @@ const normalizeInspection = (raw) => ({
         plateNo: raw.vehicle.plateNo || raw.vehicle.plate_no || "",
       }
     : null,
+  odometerOut:
+    raw.odometerOut ?? raw.odometer_out ?? raw.odometer ?? raw.odometer_reading,
+  odometerIn:
+    raw.odometerIn ?? raw.odometer_in ?? raw.odometer ?? raw.odometer_reading,
   items: Array.isArray(raw.items)
     ? raw.items.map((item) => ({
         id: Number(item.id || 0),
@@ -86,8 +90,30 @@ const normalizeInspection = (raw) => ({
 
 const resolveImageUrl = (path) => {
   if (!path) return null;
-  if (path.startsWith("data:image/") || path.startsWith("http")) return path;
-  return `${API_BASE}/storage/${path}`;
+  const value = String(path).trim();
+  if (!value) return null;
+
+  if (value.startsWith("data:image/") || /^https?:\/\//i.test(value)) {
+    return value;
+  }
+
+  if (value.startsWith("/storage/")) {
+    return `${API_BASE}${value}`;
+  }
+
+  if (value.startsWith("storage/")) {
+    return `${API_BASE}/${value}`;
+  }
+
+  if (value.startsWith("/inspection-images/")) {
+    return `${API_BASE}/storage${value}`;
+  }
+
+  if (value.startsWith("inspection-images/")) {
+    return `${API_BASE}/storage/${value}`;
+  }
+
+  return `${API_BASE}/storage/${value.replace(/^\/+/, "")}`;
 };
 
 export default function Inspections() {
@@ -243,9 +269,39 @@ export default function Inspections() {
     [selectedInspection],
   );
 
-  const handleDownloadPdf = (inspection) => {
-    const url = `${API_BASE}/api/inspections/${inspection.id}/pdf`;
-    window.open(url, "_blank", "noopener,noreferrer");
+  const handleDownloadPdf = async (inspection) => {
+    try {
+      const res = await apiFetch(`/inspections/${inspection.id}/pdf`, {
+        headers: {
+          Accept: "application/pdf",
+        },
+      });
+
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        throw new Error(payload?.message || "Failed to download PDF.");
+      }
+
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const filename = `inspection-checklist-${inspection.id}.pdf`;
+
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch (error) {
+      await Swal.fire({
+        title: "Error",
+        text: error.message || "Failed to download PDF.",
+        icon: "error",
+        background: "#0f172a",
+        color: "#e2e8f0",
+      });
+    }
   };
 
   return (
@@ -395,10 +451,10 @@ export default function Inspections() {
                         </span>
                       </td>
                       <td className="py-3 px-3">
-                        <div className="text-sm text-white font-medium">
+                        <div className="text-sm text-slate-900 dark:text-white font-medium">
                           {inspection.lead?.bookingRef || "-"}
                         </div>
-                        <div className="text-xs text-slate-400">
+                        <div className="text-xs text-slate-600 dark:text-slate-400">
                           {inspection.lead?.clientCompany || "-"}
                         </div>
                       </td>
@@ -414,6 +470,10 @@ export default function Inspections() {
                               ]
                                 .filter(Boolean)
                                 .join(" ") || ""}
+                            </div>
+                            <div className="text-xs text-slate-500">
+                              Odo Out: {inspection.odometerOut ?? "-"} | Odo In:{" "}
+                              {inspection.odometerIn ?? "-"}
                             </div>
                           </div>
                         </div>
@@ -535,14 +595,26 @@ export default function Inspections() {
                 </div>
                 <div className="flex justify-between gap-4">
                   <span className="text-slate-400">Date</span>
-                  <span className="text-white">
+                  <span className="text-slate-900 dark:text-white">
                     {formatDate(selectedInspection.createdAt)}
+                  </span>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <span className="text-slate-400">Odometer Out</span>
+                  <span className="text-slate-900 dark:text-white">
+                    {selectedInspection.odometerOut ?? "-"}
+                  </span>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <span className="text-slate-400">Odometer In</span>
+                  <span className="text-slate-900 dark:text-white">
+                    {selectedInspection.odometerIn ?? "-"}
                   </span>
                 </div>
                 {selectedInspection.remarks && (
                   <div className="md:col-span-2 flex justify-between gap-4">
                     <span className="text-slate-400">Remarks</span>
-                    <span className="text-white text-right">
+                    <span className="text-slate-900 dark:text-white text-right">
                       {selectedInspection.remarks}
                     </span>
                   </div>
