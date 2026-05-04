@@ -349,7 +349,7 @@ export default function Inspections() {
       </div>
 
       {/* Table card */}
-      <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-2xl p-4">
+      <div className="bg-slate-900 border border-slate-800/50 rounded-2xl p-4">
         {/* Tabs + Search */}
         <div className="flex flex-col sm:flex-row gap-3 mb-4">
           <div className="flex gap-1 bg-slate-800/60 rounded-lg p-1 self-start">
@@ -387,7 +387,7 @@ export default function Inspections() {
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
-              <tr className="border-b border-slate-800/50">
+              <tr className="border-b border-slate-800/50 bg-slate-800/60">
                 <th className="text-left py-3 px-3 text-xs font-semibold text-slate-400 uppercase">
                   Type
                 </th>
@@ -438,7 +438,7 @@ export default function Inspections() {
                   return (
                     <tr
                       key={inspection.id}
-                      className="border-b border-slate-800/40 hover:bg-slate-800/30 transition-colors"
+                      className="border-b border-slate-800/40 bg-slate-900 hover:bg-slate-800 transition-colors"
                     >
                       <td className="py-3 px-3">
                         <span
@@ -451,10 +451,10 @@ export default function Inspections() {
                         </span>
                       </td>
                       <td className="py-3 px-3">
-                        <div className="text-sm text-slate-900 dark:text-white font-medium">
+                        <div className="text-sm text-white font-medium">
                           {inspection.lead?.bookingRef || "-"}
                         </div>
-                        <div className="text-xs text-slate-600 dark:text-slate-400">
+                        <div className="text-xs text-slate-400">
                           {inspection.lead?.clientCompany || "-"}
                         </div>
                       </td>
@@ -595,26 +595,26 @@ export default function Inspections() {
                 </div>
                 <div className="flex justify-between gap-4">
                   <span className="text-slate-400">Date</span>
-                  <span className="text-slate-900 dark:text-white">
+                  <span className="text-white">
                     {formatDate(selectedInspection.createdAt)}
                   </span>
                 </div>
                 <div className="flex justify-between gap-4">
                   <span className="text-slate-400">Odometer Out</span>
-                  <span className="text-slate-900 dark:text-white">
+                  <span className="text-white">
                     {selectedInspection.odometerOut ?? "-"}
                   </span>
                 </div>
                 <div className="flex justify-between gap-4">
                   <span className="text-slate-400">Odometer In</span>
-                  <span className="text-slate-900 dark:text-white">
+                  <span className="text-white">
                     {selectedInspection.odometerIn ?? "-"}
                   </span>
                 </div>
                 {selectedInspection.remarks && (
                   <div className="md:col-span-2 flex justify-between gap-4">
                     <span className="text-slate-400">Remarks</span>
-                    <span className="text-slate-900 dark:text-white text-right">
+                    <span className="text-white text-right">
                       {selectedInspection.remarks}
                     </span>
                   </div>
@@ -679,7 +679,7 @@ export default function Inspections() {
                           )}
                         </button>
                         {isOpen && (
-                          <div className="divide-y divide-slate-800/50">
+                          <div className="divide-y divide-slate-800/50 bg-slate-900">
                             {items.map((item) => (
                               <div
                                 key={item.id}

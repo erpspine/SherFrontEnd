@@ -29,9 +29,11 @@ cp -f "${DIST_DIR}/index.html" "${TARGET_DIR}/index.html"
 ROUTE_DIRS=(
   checklist clients forgot-password
   "fuel-requisitions" "fuel-requisitions/new"
-  invoices job-cards leads login parks payments
+  inspections invoices job-cards leads login
+  long-term-leasing parks payments
   proforma-invoices quotations reset-password
-  roles-permissions safari-allocations settings users vehicles
+  roles-permissions route-distances safari-allocations
+  settings users vehicle-availability vehicle-services vehicles
 )
 for dir in "${ROUTE_DIRS[@]}"; do
   mkdir -p "${TARGET_DIR}/${dir}"
