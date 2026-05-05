@@ -418,8 +418,10 @@ export default function LongTermLeasing() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white">Long Term Leasing</h1>
-          <p className="text-slate-400 mt-1">
+          <h1 className="text-2xl font-bold text-slate-900">
+            Long Term Leasing
+          </h1>
+          <p className="text-slate-500 mt-1">
             Create lease contracts for one year or more and block leased
             vehicles from operational use.
           </p>
@@ -434,79 +436,73 @@ export default function LongTermLeasing() {
       </div>
 
       {errorMessage && (
-        <div className="bg-red-500/10 border border-red-500/30 text-red-300 rounded-xl px-4 py-3 text-sm flex items-start gap-2">
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 flex items-start gap-2">
           <AlertCircle className="w-4 h-4 mt-0.5" />
           <span>{errorMessage}</span>
         </div>
       )}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-xl p-4">
-          <p className="text-slate-400 text-sm">Long-Term Leased</p>
-          <p className="text-2xl font-bold text-white mt-1">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Long-Term Leased
+          </p>
+          <p className="text-2xl font-bold text-slate-900 mt-1">
             {stats.totalLeased}
           </p>
         </div>
-        <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-xl p-4">
-          <p className="text-slate-400 text-sm">Contracts</p>
-          <p className="text-2xl font-bold text-emerald-400 mt-1">
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+            Contracts
+          </p>
+          <p className="text-2xl font-bold text-emerald-700 mt-1">
             {stats.contracts}
           </p>
         </div>
-        <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-xl p-4">
-          <p className="text-slate-400 text-sm">Legacy Leased</p>
-          <p className="text-2xl font-bold text-amber-400 mt-1">
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">
+            Legacy Leased
+          </p>
+          <p className="text-2xl font-bold text-amber-700 mt-1">
             {stats.legacyLeased}
           </p>
         </div>
-        <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-xl p-4">
-          <p className="text-slate-400 text-sm">Avg Lease Days</p>
-          <p className="text-2xl font-bold text-blue-400 mt-1">
+        <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">
+            Avg Lease Days
+          </p>
+          <p className="text-2xl font-bold text-blue-700 mt-1">
             {stats.averageDays}
           </p>
         </div>
       </div>
 
-      <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-2xl p-4">
-        <div className="flex items-center gap-3 bg-slate-800/50 rounded-xl px-4 py-2.5 border border-slate-700/50 focus-within:border-amber-500/50 transition-colors mb-4">
-          <Search className="w-4 h-4 text-slate-400" />
+      <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="flex items-center gap-3 border-b border-slate-200 px-4 py-3 focus-within:border-amber-400 transition-colors">
+          <Search className="w-4 h-4 text-slate-400 shrink-0" />
           <input
             type="text"
             value={searchTerm}
             onChange={(event) => setSearchTerm(event.target.value)}
             placeholder="Search by contract no, client, vehicle or plate"
-            className="w-full bg-transparent text-sm text-white placeholder-slate-500 outline-none"
+            className="w-full bg-transparent text-sm text-slate-900 placeholder-slate-400 outline-none"
           />
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-slate-800/50">
-                <th className="text-left py-3 px-3 text-xs font-semibold text-slate-400 uppercase">
-                  Contract No
-                </th>
-                <th className="text-left py-3 px-3 text-xs font-semibold text-slate-400 uppercase">
-                  Vehicle
-                </th>
-                <th className="text-left py-3 px-3 text-xs font-semibold text-slate-400 uppercase">
-                  Client
-                </th>
-                <th className="text-left py-3 px-3 text-xs font-semibold text-slate-400 uppercase">
-                  Lease Start
-                </th>
-                <th className="text-left py-3 px-3 text-xs font-semibold text-slate-400 uppercase">
-                  Lease End
-                </th>
-                <th className="text-left py-3 px-3 text-xs font-semibold text-slate-400 uppercase">
-                  Duration
-                </th>
-                <th className="text-left py-3 px-3 text-xs font-semibold text-slate-400 uppercase">
-                  Monthly Rate
-                </th>
+          <table className="min-w-full divide-y divide-slate-200 text-sm">
+            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-4 py-3">Contract No</th>
+                <th className="px-4 py-3">Vehicle</th>
+                <th className="px-4 py-3">Client</th>
+                <th className="px-4 py-3">Lease Start</th>
+                <th className="px-4 py-3">Lease End</th>
+                <th className="px-4 py-3">Duration</th>
+                <th className="px-4 py-3">Monthly Rate</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y divide-slate-100">
               {isLoading ? (
                 <tr>
                   <td
@@ -529,12 +525,12 @@ export default function LongTermLeasing() {
                 filteredContracts.map((contract) => (
                   <tr
                     key={contract.id}
-                    className="border-b border-slate-800/40 hover:bg-slate-800/30 transition-colors"
+                    className="hover:bg-slate-50 transition-colors"
                   >
-                    <td className="py-3 px-3 text-sm text-white font-medium">
+                    <td className="px-4 py-3 text-sm text-slate-900 font-medium">
                       {contract.contractNo}
                     </td>
-                    <td className="py-3 px-3 text-sm text-slate-300">
+                    <td className="px-4 py-3 text-sm text-slate-700">
                       {(contract.contractVehicles || []).length === 0 ? (
                         <span className="text-slate-500">-</span>
                       ) : (
@@ -552,22 +548,22 @@ export default function LongTermLeasing() {
                         ))
                       )}
                     </td>
-                    <td className="py-3 px-3 text-sm text-slate-300">
+                    <td className="px-4 py-3 text-sm text-slate-700">
                       <div className="flex items-center gap-2">
                         <Users className="w-4 h-4 text-slate-400" />
                         {contract.clientName || "-"}
                       </div>
                     </td>
-                    <td className="py-3 px-3 text-sm text-slate-300">
+                    <td className="px-4 py-3 text-sm text-slate-700">
                       <div className="flex items-center gap-2">
                         <Calendar className="w-4 h-4 text-slate-400" />
                         {formatDate(contract.startDate)}
                       </div>
                     </td>
-                    <td className="py-3 px-3 text-sm text-slate-300">
+                    <td className="px-4 py-3 text-sm text-slate-700">
                       {formatDate(contract.endDate)}
                     </td>
-                    <td className="py-3 px-3 text-sm text-slate-300">
+                    <td className="px-4 py-3 text-sm text-slate-700">
                       <div className="flex items-center gap-2">
                         <Clock3 className="w-4 h-4 text-slate-400" />
                         {contract.durationDays === null
@@ -575,7 +571,7 @@ export default function LongTermLeasing() {
                           : `${contract.durationDays} days`}
                       </div>
                     </td>
-                    <td className="py-3 px-3 text-sm text-slate-300">
+                    <td className="px-4 py-3 text-sm text-slate-700">
                       {contract.monthlyRate
                         ? Number(contract.monthlyRate).toLocaleString()
                         : "-"}
@@ -586,7 +582,7 @@ export default function LongTermLeasing() {
             </tbody>
           </table>
         </div>
-      </div>
+      </section>
 
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">

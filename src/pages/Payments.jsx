@@ -126,62 +126,64 @@ export default function Payments() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white">Payments</h1>
-          <p className="text-slate-400 mt-1">
+          <h1 className="text-2xl font-bold text-slate-900">Payments</h1>
+          <p className="text-slate-500 mt-1">
             All invoice payments from <code>/api/invoice-payments</code>.
           </p>
         </div>
       </div>
 
       {errorMessage && (
-        <div className="bg-red-500/10 border border-red-500/30 text-red-300 rounded-xl px-4 py-3 text-sm">
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
           {errorMessage}
         </div>
       )}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-slate-900/50 border border-slate-800/50 rounded-xl p-4">
-          <p className="text-slate-400 text-sm">Total Payments</p>
-          <p className="text-2xl font-bold text-white mt-1">{stats.count}</p>
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <p className="text-slate-500 text-sm">Total Payments</p>
+          <p className="text-2xl font-bold text-slate-900 mt-1">
+            {stats.count}
+          </p>
         </div>
-        <div className="bg-slate-900/50 border border-slate-800/50 rounded-xl p-4">
-          <p className="text-slate-400 text-sm">Collected Amount</p>
-          <p className="text-xl font-bold text-emerald-400 mt-1">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <p className="text-slate-500 text-sm">Collected Amount</p>
+          <p className="text-xl font-bold text-emerald-600 mt-1">
             {formatCurrency(stats.totalAmount)}
           </p>
         </div>
-        <div className="bg-slate-900/50 border border-slate-800/50 rounded-xl p-4">
-          <p className="text-slate-400 text-sm">Today</p>
-          <p className="text-xl font-bold text-blue-300 mt-1">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <p className="text-slate-500 text-sm">Today</p>
+          <p className="text-xl font-bold text-blue-600 mt-1">
             {formatCurrency(stats.todayAmount)}
           </p>
         </div>
-        <div className="bg-slate-900/50 border border-slate-800/50 rounded-xl p-4">
-          <p className="text-slate-400 text-sm">Invoices Paid</p>
-          <p className="text-2xl font-bold text-amber-300 mt-1">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <p className="text-slate-500 text-sm">Invoices Paid</p>
+          <p className="text-2xl font-bold text-amber-600 mt-1">
             {stats.uniqueInvoices}
           </p>
         </div>
       </div>
 
-      <div className="bg-slate-900/50 border border-slate-800/50 rounded-2xl p-4">
-        <div className="flex items-center gap-3 bg-slate-800/50 rounded-xl px-4 py-2.5 border border-slate-700/50 focus-within:border-amber-500/50 transition-colors">
-          <Search className="w-4 h-4 text-slate-500" />
+      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4">
+        <div className="flex items-center gap-3 bg-slate-50 rounded-xl px-4 py-2.5 border border-slate-200 focus-within:border-amber-500 transition-colors">
+          <Search className="w-4 h-4 text-slate-400" />
           <input
             type="text"
             placeholder="Search by payment ID, invoice #, client, method, or reference"
             value={searchTerm}
             onChange={(event) => setSearchTerm(event.target.value)}
-            className="w-full bg-transparent outline-none text-sm text-slate-300 placeholder-slate-500"
+            className="w-full bg-transparent outline-none text-sm text-slate-900 placeholder-slate-400"
           />
         </div>
       </div>
 
-      <div className="bg-slate-900/50 border border-slate-800/50 rounded-2xl overflow-hidden">
+      <section className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead>
-              <tr className="border-b border-slate-800">
+            <thead className="bg-slate-50">
+              <tr className="border-b border-slate-200">
                 {[
                   "Payment ID",
                   "Invoice",
@@ -193,7 +195,7 @@ export default function Payments() {
                 ].map((header) => (
                   <th
                     key={header}
-                    className="text-left py-3 px-4 text-xs font-semibold text-slate-400 uppercase tracking-wider"
+                    className="text-left py-4 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wide"
                   >
                     {header}
                   </th>
@@ -216,39 +218,39 @@ export default function Payments() {
                 filteredPayments.map((payment) => (
                   <tr
                     key={payment.id}
-                    className="border-b border-slate-800/40 hover:bg-slate-800/30 transition-colors"
+                    className="border-b border-slate-100 hover:bg-slate-50 transition-colors"
                   >
-                    <td className="py-3 px-4 text-sm text-slate-300 font-mono">
+                    <td className="py-3 px-4 text-sm text-slate-700 font-mono">
                       #{payment.id}
                     </td>
                     <td className="py-3 px-4">
-                      <div className="flex items-center gap-2 text-sm text-slate-700 font-medium">
+                      <div className="flex items-center gap-2 text-sm text-slate-900 font-medium">
                         <FileText className="w-4 h-4 text-indigo-500" />
                         {payment.invoiceNo}
                       </div>
                     </td>
                     <td className="py-3 px-4">
-                      <div className="flex items-center gap-2 text-sm text-slate-300">
-                        <Building2 className="w-4 h-4 text-slate-500" />
+                      <div className="flex items-center gap-2 text-sm text-slate-700">
+                        <Building2 className="w-4 h-4 text-slate-400" />
                         {payment.client}
                       </div>
                     </td>
-                    <td className="py-3 px-4 text-sm text-slate-300">
+                    <td className="py-3 px-4 text-sm text-slate-700">
                       <div className="flex items-center gap-2">
-                        <Calendar className="w-4 h-4 text-slate-500" />
+                        <Calendar className="w-4 h-4 text-slate-400" />
                         {formatDate(payment.date)}
                       </div>
                     </td>
-                    <td className="py-3 px-4 text-sm font-semibold text-emerald-300">
+                    <td className="py-3 px-4 text-sm font-semibold text-emerald-600">
                       {formatCurrency(payment.amount)}
                     </td>
-                    <td className="py-3 px-4 text-sm text-slate-300">
+                    <td className="py-3 px-4 text-sm text-slate-700">
                       <div className="flex items-center gap-2">
-                        <Wallet className="w-4 h-4 text-slate-500" />
+                        <Wallet className="w-4 h-4 text-slate-400" />
                         {payment.method}
                       </div>
                     </td>
-                    <td className="py-3 px-4 text-sm text-slate-300">
+                    <td className="py-3 px-4 text-sm text-slate-700">
                       {payment.reference || "-"}
                     </td>
                   </tr>
@@ -267,7 +269,7 @@ export default function Payments() {
             </tbody>
           </table>
         </div>
-      </div>
+      </section>
     </div>
   );
 }

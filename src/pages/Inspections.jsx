@@ -227,6 +227,8 @@ export default function Inspections() {
   };
 
   const openDetail = async (inspection) => {
+    setExpandedSections({});
+
     // Fetch full detail if items might not be loaded
     if (inspection.items.length === 0 && inspection.images.length === 0) {
       try {
@@ -241,7 +243,6 @@ export default function Inspections() {
       }
     }
     setSelectedInspection(inspection);
-    setExpandedSections({});
   };
 
   const toggleSection = (title) =>
@@ -309,8 +310,8 @@ export default function Inspections() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white">Inspections</h1>
-          <p className="text-slate-400 mt-1">
+          <h1 className="text-2xl font-bold text-slate-900">Inspections</h1>
+          <p className="text-slate-500 mt-1">
             View pre and post departure vehicle inspection records.
           </p>
         </div>
@@ -318,7 +319,7 @@ export default function Inspections() {
 
       {/* Error */}
       {errorMessage && (
-        <div className="bg-red-500/10 border border-red-500/30 text-red-300 rounded-xl px-4 py-3 text-sm flex items-start gap-2">
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 flex items-start gap-2">
           <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
           <span>{errorMessage}</span>
         </div>
@@ -326,33 +327,43 @@ export default function Inspections() {
 
       {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-xl p-4">
-          <p className="text-slate-400 text-sm">Total Inspections</p>
-          <p className="text-2xl font-bold text-white mt-1">{stats.total}</p>
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Total
+          </p>
+          <p className="text-2xl font-bold text-slate-900 mt-1">
+            {stats.total}
+          </p>
         </div>
-        <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-xl p-4">
-          <p className="text-slate-400 text-sm">Pre Departure</p>
-          <p className="text-2xl font-bold text-blue-400 mt-1">{stats.pre}</p>
+        <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">
+            Pre Departure
+          </p>
+          <p className="text-2xl font-bold text-blue-700 mt-1">{stats.pre}</p>
         </div>
-        <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-xl p-4">
-          <p className="text-slate-400 text-sm">Post Departure</p>
-          <p className="text-2xl font-bold text-emerald-400 mt-1">
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+            Post Departure
+          </p>
+          <p className="text-2xl font-bold text-emerald-700 mt-1">
             {stats.post}
           </p>
         </div>
-        <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-xl p-4">
-          <p className="text-slate-400 text-sm">With Issues (NOK)</p>
-          <p className="text-2xl font-bold text-red-400 mt-1">
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-rose-700">
+            With Issues
+          </p>
+          <p className="text-2xl font-bold text-rose-700 mt-1">
             {stats.withIssues}
           </p>
         </div>
       </div>
 
       {/* Table card */}
-      <div className="bg-slate-900 border border-slate-800/50 rounded-2xl p-4">
+      <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
         {/* Tabs + Search */}
-        <div className="flex flex-col sm:flex-row gap-3 mb-4">
-          <div className="flex gap-1 bg-slate-800/60 rounded-lg p-1 self-start">
+        <div className="flex flex-col gap-3 border-b border-slate-200 p-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex gap-1 bg-slate-100 rounded-lg p-1 self-start">
             {[
               { key: "all", label: "All" },
               { key: "pre_departure", label: "Pre Departure" },
@@ -363,8 +374,8 @@ export default function Inspections() {
                 onClick={() => setActiveTab(key)}
                 className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
                   activeTab === key
-                    ? "bg-amber-500 text-white"
-                    : "text-slate-400 hover:text-white"
+                    ? "bg-amber-500 text-white shadow-sm"
+                    : "text-slate-500 hover:text-slate-900"
                 }`}
               >
                 {label}
@@ -372,50 +383,38 @@ export default function Inspections() {
             ))}
           </div>
 
-          <div className="flex-1 flex items-center gap-3 bg-slate-800/50 rounded-xl px-4 py-2.5 border border-slate-700/50 focus-within:border-amber-500/50 transition-colors">
+          <div className="flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 focus-within:border-amber-400 focus-within:ring-4 focus-within:ring-amber-400/20 transition-all lg:w-72">
             <Search className="w-4 h-4 text-slate-400 shrink-0" />
             <input
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search by booking ref, client, vehicle..."
-              className="w-full bg-transparent text-sm text-white placeholder-slate-500 outline-none"
+              placeholder="Search booking ref, client, vehicle…"
+              className="w-full bg-transparent text-sm text-slate-900 placeholder-slate-400 outline-none"
             />
           </div>
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-slate-800/50 bg-slate-800/60">
-                <th className="text-left py-3 px-3 text-xs font-semibold text-slate-400 uppercase">
-                  Type
-                </th>
-                <th className="text-left py-3 px-3 text-xs font-semibold text-slate-400 uppercase">
-                  Lead / Client
-                </th>
-                <th className="text-left py-3 px-3 text-xs font-semibold text-slate-400 uppercase">
-                  Vehicle
-                </th>
-                <th className="text-left py-3 px-3 text-xs font-semibold text-slate-400 uppercase">
-                  Items
-                </th>
-                <th className="text-left py-3 px-3 text-xs font-semibold text-slate-400 uppercase">
-                  Date
-                </th>
-                <th className="text-right py-3 px-3 text-xs font-semibold text-slate-400 uppercase">
-                  Actions
-                </th>
+          <table className="min-w-full divide-y divide-slate-200 text-sm">
+            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-4 py-3">Type</th>
+                <th className="px-4 py-3">Lead / Client</th>
+                <th className="px-4 py-3">Vehicle</th>
+                <th className="px-4 py-3">Items</th>
+                <th className="px-4 py-3">Date</th>
+                <th className="px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y divide-slate-100">
               {isLoading ? (
                 <tr>
                   <td
                     colSpan={6}
                     className="py-10 text-center text-slate-400 text-sm"
                   >
-                    Loading inspections...
+                    Loading inspections…
                   </td>
                 </tr>
               ) : filteredInspections.length === 0 ? (
@@ -438,31 +437,34 @@ export default function Inspections() {
                   return (
                     <tr
                       key={inspection.id}
-                      className="border-b border-slate-800/40 bg-slate-900 hover:bg-slate-800 transition-colors"
+                      className="hover:bg-slate-50 transition-colors"
                     >
-                      <td className="py-3 px-3">
+                      <td className="px-4 py-3">
                         <span
                           className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium border ${
-                            TYPE_COLORS[inspection.type] ||
-                            "bg-slate-700 text-slate-300 border-slate-600"
+                            inspection.type === "pre_departure"
+                              ? "border-blue-200 bg-blue-50 text-blue-700"
+                              : "border-emerald-200 bg-emerald-50 text-emerald-700"
                           }`}
                         >
                           {TYPE_LABELS[inspection.type] || inspection.type}
                         </span>
                       </td>
-                      <td className="py-3 px-3">
-                        <div className="text-sm text-white font-medium">
+                      <td className="px-4 py-3">
+                        <div className="inline-flex items-center rounded-md border border-amber-300 bg-amber-50 px-2 py-0.5 text-sm font-semibold text-amber-700">
                           {inspection.lead?.bookingRef || "-"}
                         </div>
-                        <div className="text-xs text-slate-400">
+                        <div className="text-xs text-slate-500 mt-0.5">
                           {inspection.lead?.clientCompany || "-"}
                         </div>
                       </td>
-                      <td className="py-3 px-3">
-                        <div className="flex items-center gap-2 text-sm text-slate-300">
-                          <Car className="w-4 h-4 text-slate-400" />
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2 text-sm text-slate-700">
+                          <Car className="w-4 h-4 text-slate-400 shrink-0" />
                           <div>
-                            <div>{inspection.vehicle?.plateNo || "-"}</div>
+                            <div className="font-medium">
+                              {inspection.vehicle?.plateNo || "-"}
+                            </div>
                             <div className="text-xs text-slate-500">
                               {[
                                 inspection.vehicle?.make,
@@ -478,38 +480,38 @@ export default function Inspections() {
                           </div>
                         </div>
                       </td>
-                      <td className="py-3 px-3">
+                      <td className="px-4 py-3">
                         <div className="flex items-center gap-2 text-xs">
-                          <span className="flex items-center gap-1 text-emerald-400">
+                          <span className="flex items-center gap-1 text-emerald-600 font-medium">
                             <CheckCircle2 className="w-3.5 h-3.5" />
                             {okCount} OK
                           </span>
                           {nokItems > 0 && (
-                            <span className="flex items-center gap-1 text-red-400">
+                            <span className="flex items-center gap-1 text-rose-600 font-medium">
                               <XCircle className="w-3.5 h-3.5" />
                               {nokItems} NOK
                             </span>
                           )}
                         </div>
                       </td>
-                      <td className="py-3 px-3">
-                        <div className="flex items-center gap-2 text-sm text-slate-300">
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2 text-sm text-slate-600">
                           <Calendar className="w-4 h-4 text-slate-400" />
                           {formatDate(inspection.createdAt)}
                         </div>
                       </td>
-                      <td className="py-3 px-3">
-                        <div className="flex justify-end gap-2">
+                      <td className="px-4 py-3">
+                        <div className="flex justify-end gap-1">
                           <button
                             onClick={() => openDetail(inspection)}
-                            className="p-2 text-slate-400 hover:text-amber-400 hover:bg-slate-700 rounded-lg transition-colors"
+                            className="p-2 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
                             title="View details"
                           >
                             <Eye className="w-4 h-4" />
                           </button>
                           <button
                             onClick={() => handleDownloadPdf(inspection)}
-                            className="p-2 text-slate-400 hover:text-blue-400 hover:bg-slate-700 rounded-lg transition-colors"
+                            className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                             title="Download PDF"
                           >
                             <Download className="w-4 h-4" />
@@ -517,7 +519,7 @@ export default function Inspections() {
                           <button
                             onClick={() => handleDelete(inspection)}
                             disabled={isDeleting}
-                            className="p-2 text-slate-400 hover:text-red-400 hover:bg-slate-700 rounded-lg transition-colors disabled:opacity-50"
+                            className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors disabled:opacity-50"
                             title="Delete"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -531,7 +533,7 @@ export default function Inspections() {
             </tbody>
           </table>
         </div>
-      </div>
+      </section>
 
       {/* Detail Modal */}
       {selectedInspection && (
@@ -574,7 +576,7 @@ export default function Inspections() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm bg-slate-800/40 border border-slate-700/50 rounded-xl p-4">
                 <div className="flex justify-between gap-4">
                   <span className="text-slate-400">Booking Ref</span>
-                  <span className="text-white">
+                  <span className="inline-flex items-center rounded-md border border-amber-400/30 bg-amber-500/10 px-2 py-0.5 font-semibold text-amber-300">
                     {selectedInspection.lead?.bookingRef || "-"}
                   </span>
                 </div>
@@ -679,12 +681,12 @@ export default function Inspections() {
                           )}
                         </button>
                         {isOpen && (
-                          <div className="divide-y divide-slate-800/50 bg-slate-900">
+                          <div className="divide-y divide-slate-200 bg-white">
                             {items.map((item) => (
                               <div
                                 key={item.id}
                                 className={`px-4 py-3 flex items-start gap-3 ${
-                                  item.status === "NOK" ? "bg-red-500/5" : ""
+                                  item.status === "NOK" ? "bg-red-50" : ""
                                 }`}
                               >
                                 <div className="mt-0.5">
@@ -695,16 +697,18 @@ export default function Inspections() {
                                   )}
                                 </div>
                                 <div className="flex-1 min-w-0">
-                                  <div className="text-sm text-white">
-                                    {item.name}
+                                  <div className="text-sm font-semibold text-slate-900">
+                                    {item.name?.trim() ||
+                                      item.text?.trim() ||
+                                      "Checklist item"}
                                   </div>
                                   {item.text && item.text !== item.name && (
-                                    <div className="text-xs text-slate-400 mt-0.5">
+                                    <div className="text-xs text-slate-700 mt-0.5">
                                       {item.text}
                                     </div>
                                   )}
                                   {item.status === "NOK" && item.issue && (
-                                    <div className="mt-1 text-xs text-red-300 bg-red-500/10 border border-red-500/20 rounded px-2 py-1">
+                                    <div className="mt-1 text-xs text-red-700 bg-red-100 border border-red-200 rounded px-2 py-1">
                                       Issue: {item.issue}
                                     </div>
                                   )}
@@ -712,8 +716,8 @@ export default function Inspections() {
                                 <span
                                   className={`shrink-0 px-2 py-0.5 rounded text-xs font-semibold ${
                                     item.status === "OK"
-                                      ? "bg-emerald-500/20 text-emerald-400"
-                                      : "bg-red-500/20 text-red-400"
+                                      ? "bg-emerald-100 text-emerald-700"
+                                      : "bg-red-100 text-red-700"
                                   }`}
                                 >
                                   {item.status}

@@ -300,7 +300,7 @@ export default function VehicleAvailability() {
       <div className="flex items-center justify-center py-20">
         <div className="text-center">
           <Loader className="mx-auto mb-3 h-8 w-8 animate-spin text-sher-teal" />
-          <p className="text-slate-300">Loading vehicle availability...</p>
+          <p className="text-slate-600">Loading vehicle availability...</p>
         </div>
       </div>
     );
@@ -310,33 +310,33 @@ export default function VehicleAvailability() {
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">
+          <h1 className="text-2xl font-bold text-slate-900">
             Vehicle Availability Calendar
           </h1>
-          <p className="mt-1 text-sm text-slate-400">
+          <p className="mt-1 text-sm text-slate-500">
             View all vehicles and their booking dates at a glance
           </p>
         </div>
       </div>
 
       {error && (
-        <div className="flex items-start gap-2 rounded-lg border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
+        <div className="flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
           <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0" />
           <span>{error}</span>
         </div>
       )}
 
       {vehicles.length > 0 && (
-        <div className="rounded-lg border border-slate-700 bg-slate-800/30 px-4 py-2 text-xs text-slate-400">
+        <div className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs text-slate-600">
           Loaded: {vehicles.length} vehicles, {allocations.length} bookings |
           Showing: {filteredVehicles.length} vehicles
         </div>
       )}
 
-      <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4 shadow-sm">
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
           <div>
-            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400">
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600">
               Search Vehicle
             </label>
             <input
@@ -344,12 +344,12 @@ export default function VehicleAvailability() {
               value={vehicleSearch}
               onChange={(event) => setVehicleSearch(event.target.value)}
               placeholder="Vehicle no, plate, make, model"
-              className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200 outline-none focus:border-sher-gold"
+              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-sher-gold"
             />
           </div>
 
           <div>
-            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400">
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600">
               Date From
             </label>
             <input
@@ -361,7 +361,7 @@ export default function VehicleAvailability() {
           </div>
 
           <div>
-            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400">
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600">
               Date To
             </label>
             <input
@@ -374,9 +374,9 @@ export default function VehicleAvailability() {
         </div>
       </div>
 
-      <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5 shadow-sm">
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="mb-6 flex items-center justify-between">
-          <h2 className="flex items-center gap-2 text-lg font-semibold text-white">
+          <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
             <Calendar className="h-5 w-5 text-sher-teal" />
             {monthYear}
           </h2>
@@ -391,7 +391,7 @@ export default function VehicleAvailability() {
                   ),
                 )
               }
-              className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-300 transition hover:bg-slate-700"
+              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-600 transition hover:bg-slate-50"
             >
               <ChevronLeft className="h-4 w-4" />
             </button>
@@ -405,7 +405,7 @@ export default function VehicleAvailability() {
                   ),
                 )
               }
-              className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-300 transition hover:bg-slate-700"
+              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-600 transition hover:bg-slate-50"
             >
               <ChevronRight className="h-4 w-4" />
             </button>
@@ -414,20 +414,20 @@ export default function VehicleAvailability() {
 
         {vehicles.length === 0 ? (
           <div className="space-y-3 py-10 text-center">
-            <AlertCircle className="mx-auto h-10 w-10 text-slate-500" />
-            <p className="font-medium text-slate-300">No Vehicles Found</p>
+            <AlertCircle className="mx-auto h-10 w-10 text-slate-400" />
+            <p className="font-medium text-slate-700">No Vehicles Found</p>
           </div>
         ) : visibleCalendarDates.length === 0 ? (
           <div className="space-y-3 py-10 text-center">
-            <AlertCircle className="mx-auto h-10 w-10 text-slate-500" />
-            <p className="font-medium text-slate-300">
+            <AlertCircle className="mx-auto h-10 w-10 text-slate-400" />
+            <p className="font-medium text-slate-700">
               No dates in selected range
             </p>
           </div>
         ) : filteredVehicles.length === 0 ? (
           <div className="space-y-3 py-10 text-center">
-            <AlertCircle className="mx-auto h-10 w-10 text-slate-500" />
-            <p className="font-medium text-slate-300">
+            <AlertCircle className="mx-auto h-10 w-10 text-slate-400" />
+            <p className="font-medium text-slate-700">
               No vehicles match your search
             </p>
           </div>
@@ -437,13 +437,13 @@ export default function VehicleAvailability() {
               <table className="min-w-full text-sm">
                 <thead>
                   <tr>
-                    <th className="sticky left-0 z-10 min-w-[180px] border-b border-slate-800 bg-slate-800/50 px-3 py-3 text-left font-semibold text-slate-300">
+                    <th className="sticky left-0 z-10 min-w-[180px] border-b border-slate-200 bg-slate-50 px-3 py-3 text-left font-semibold text-slate-700">
                       Vehicle
                     </th>
                     {visibleCalendarDates.map((date, idx) => (
                       <th
                         key={idx}
-                        className="min-w-[60px] border-b border-slate-800 px-2 py-3 text-center text-xs font-semibold text-slate-300"
+                        className="min-w-[60px] border-b border-slate-200 px-2 py-3 text-center text-xs font-semibold text-slate-700"
                       >
                         <div className="font-medium">
                           {date.toLocaleDateString("en-US", { day: "numeric" })}
@@ -461,14 +461,14 @@ export default function VehicleAvailability() {
                   {filteredVehicles.map((vehicle) => (
                     <tr
                       key={vehicle.id}
-                      className="border-b border-slate-800 transition hover:bg-slate-800/30"
+                      className="border-b border-slate-200 transition hover:bg-slate-50"
                     >
-                      <td className="sticky left-0 z-10 border-r border-slate-800 bg-slate-900 px-3 py-3 font-medium text-white">
+                      <td className="sticky left-0 z-10 border-r border-slate-200 bg-white px-3 py-3 font-medium text-slate-900">
                         <div className="flex flex-col">
                           <span className="font-semibold">
                             {vehicle.vehicleNo}
                           </span>
-                          <span className="text-xs text-slate-400">
+                          <span className="text-xs text-slate-500">
                             {vehicle.plateNo}
                           </span>
                           <span className="text-xs text-slate-500">
@@ -505,7 +505,7 @@ export default function VehicleAvailability() {
                               setSelectedVehicleId(nextVehicleId);
                               setSelectedDateKey(dateKey);
                             }}
-                            className={`group relative border-r border-slate-800 px-2 py-3 text-center transition ${
+                            className={`group relative border-r border-slate-200 px-2 py-3 text-center transition ${
                               isBooked
                                 ? "cursor-pointer bg-rose-500/20 hover:bg-rose-500/35"
                                 : "hover:bg-slate-800/50"
@@ -521,8 +521,8 @@ export default function VehicleAvailability() {
                           >
                             {isBooked ? (
                               <div className="flex items-center justify-center">
-                                <div className="w-full rounded-md border border-rose-300 bg-rose-500/45 px-2 py-1">
-                                  <span className="text-xs font-semibold text-rose-100">
+                                <div className="w-full rounded-md border border-rose-300 bg-rose-100 px-2 py-1">
+                                  <span className="text-xs font-semibold text-rose-700">
                                     {bookings.length > 1
                                       ? `Booked (${bookings.length})`
                                       : "Booked"}
@@ -531,8 +531,8 @@ export default function VehicleAvailability() {
                               </div>
                             ) : (
                               <div className="flex items-center justify-center">
-                                <div className="w-full rounded-md border border-emerald-500/40 bg-emerald-500/20 px-2 py-1">
-                                  <CheckCircle2 className="mx-auto h-3 w-3 text-emerald-300" />
+                                <div className="w-full rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1">
+                                  <CheckCircle2 className="mx-auto h-3 w-3 text-emerald-600" />
                                 </div>
                               </div>
                             )}
@@ -660,39 +660,45 @@ export default function VehicleAvailability() {
         )}
       </div>
 
-      <div className="flex items-center gap-6 rounded-lg border border-slate-800 bg-slate-800/50 p-4">
+      <div className="flex items-center gap-6 rounded-lg border border-slate-200 bg-white p-4">
         <div className="flex items-center gap-2">
-          <div className="rounded-md border border-emerald-500/40 bg-emerald-500/20 px-3 py-1.5">
-            <CheckCircle2 className="h-3 w-3 text-emerald-300" />
+          <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-1.5">
+            <CheckCircle2 className="h-3 w-3 text-emerald-600" />
           </div>
-          <span className="text-sm text-slate-300">Available</span>
+          <span className="text-sm text-slate-700">Available</span>
         </div>
         <div className="flex items-center gap-2">
-          <div className="rounded-md border border-rose-300 bg-rose-500/45 px-3 py-1.5">
-            <span className="text-xs font-semibold text-rose-100">Booked</span>
+          <div className="rounded-md border border-rose-300 bg-rose-100 px-3 py-1.5">
+            <span className="text-xs font-semibold text-rose-700">Booked</span>
           </div>
-          <span className="text-sm text-slate-300">Booked</span>
+          <span className="text-sm text-slate-700">Booked</span>
         </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <div className="rounded-lg border border-slate-800 bg-slate-800/50 p-4">
-          <div className="text-sm text-slate-400">Total Vehicles</div>
-          <div className="mt-1 text-2xl font-bold text-white">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Total Vehicles
+          </div>
+          <div className="mt-1 text-2xl font-bold text-slate-900">
             {vehicles.length}
           </div>
         </div>
 
-        <div className="rounded-lg border border-slate-800 bg-slate-800/50 p-4">
-          <div className="text-sm text-slate-400">Total Bookings</div>
-          <div className="mt-1 text-2xl font-bold text-white">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Total Bookings
+          </div>
+          <div className="mt-1 text-2xl font-bold text-slate-900">
             {allocations.length}
           </div>
         </div>
 
-        <div className="rounded-lg border border-slate-800 bg-slate-800/50 p-4">
-          <div className="text-sm text-slate-400">Currently Booked</div>
-          <div className="mt-1 text-2xl font-bold text-amber-300">
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
+          <div className="text-xs font-semibold uppercase tracking-wide text-amber-700">
+            Currently Booked
+          </div>
+          <div className="mt-1 text-2xl font-bold text-amber-700">
             {
               new Set(
                 allocations

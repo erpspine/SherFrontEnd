@@ -23,27 +23,27 @@ import Swal from "sweetalert2";
 
 const statusConfig = {
   Pending: {
-    color: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
+    color: "bg-amber-50 text-amber-700 border-amber-200",
     icon: Clock,
   },
   Confirmed: {
-    color: "bg-green-500/20 text-green-400 border-green-500/30",
+    color: "bg-emerald-50 text-emerald-700 border-emerald-200",
     icon: CheckCircle,
   },
   Cancelled: {
-    color: "bg-red-500/20 text-red-400 border-red-500/30",
+    color: "bg-rose-50 text-rose-700 border-rose-200",
     icon: XCircle,
   },
   Completed: {
-    color: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+    color: "bg-blue-50 text-blue-700 border-blue-200",
     icon: FileCheck,
   },
   "Quotation Sent": {
-    color: "bg-amber-500/20 text-amber-400 border-amber-500/30",
+    color: "bg-amber-50 text-amber-700 border-amber-200",
     icon: Mail,
   },
   "PI Sent": {
-    color: "bg-purple-500/20 text-purple-400 border-purple-500/30",
+    color: "bg-purple-50 text-purple-700 border-purple-200",
     icon: FileCheck,
   },
 };
@@ -442,8 +442,8 @@ export default function Leads() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white">Leads</h1>
-          <p className="text-slate-400 mt-1">
+          <h1 className="text-2xl font-bold text-slate-900">Leads</h1>
+          <p className="text-slate-500 mt-1">
             Track incoming booking enquiries and manage lead conversions.
           </p>
         </div>
@@ -457,7 +457,7 @@ export default function Leads() {
       </div>
 
       {errorMessage && !isModalOpen && (
-        <div className="bg-red-500/10 border border-red-500/30 text-red-300 rounded-xl px-4 py-3 text-sm">
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
           {errorMessage}
         </div>
       )}
@@ -465,35 +465,39 @@ export default function Leads() {
       {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-7 gap-4">
         {[
-          { label: "Total", value: stats.total, color: "text-white" },
-          { label: "Pending", value: stats.pending, color: "text-yellow-400" },
+          { label: "Total", value: stats.total, color: "text-slate-900" },
+          { label: "Pending", value: stats.pending, color: "text-amber-600" },
           {
             label: "Confirmed",
             value: stats.confirmed,
-            color: "text-green-400",
+            color: "text-emerald-600",
           },
           {
             label: "Completed",
             value: stats.completed,
-            color: "text-blue-400",
+            color: "text-blue-600",
           },
           {
             label: "Quotation Sent",
             value: stats.quotationSent,
-            color: "text-amber-400",
+            color: "text-amber-600",
           },
           {
             label: "PI Sent",
             value: stats.piSent,
-            color: "text-purple-400",
+            color: "text-purple-600",
           },
-          { label: "Cancelled", value: stats.cancelled, color: "text-red-400" },
+          {
+            label: "Cancelled",
+            value: stats.cancelled,
+            color: "text-rose-600",
+          },
         ].map((item) => (
           <div
             key={item.label}
-            className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-xl p-4 text-center"
+            className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm text-center"
           >
-            <p className="text-slate-400 text-sm">{item.label}</p>
+            <p className="text-slate-500 text-sm">{item.label}</p>
             <p className={`text-2xl font-bold mt-1 ${item.color}`}>
               {item.value}
             </p>
@@ -502,16 +506,16 @@ export default function Leads() {
       </div>
 
       {/* Search & Filter */}
-      <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-2xl p-4">
+      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4">
         <div className="flex flex-col sm:flex-row gap-4">
-          <div className="flex-1 flex items-center gap-3 bg-slate-800/50 rounded-xl px-4 py-2.5 border border-slate-700/50 focus-within:border-amber-500/50 transition-colors">
-            <Search className="w-5 h-5 text-slate-500 flex-shrink-0" />
+          <div className="flex-1 flex items-center gap-3 bg-slate-50 rounded-xl px-4 py-2.5 border border-slate-200 focus-within:border-amber-500 transition-colors">
+            <Search className="w-5 h-5 text-slate-400 flex-shrink-0" />
             <input
               type="text"
               placeholder="Search by ref, company, agent, country, or route..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="bg-transparent border-none outline-none text-sm text-slate-300 placeholder-slate-500 w-full"
+              className="bg-transparent border-none outline-none text-sm text-slate-900 placeholder-slate-400 w-full"
             />
           </div>
           <div className="flex flex-wrap gap-2">
@@ -522,7 +526,7 @@ export default function Leads() {
                 className={`px-3 py-2 rounded-xl text-sm font-medium transition-all ${
                   statusFilter === status
                     ? "bg-amber-500 text-white"
-                    : "bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700"
+                    : "bg-slate-100 text-slate-600 hover:text-slate-900 hover:bg-slate-200"
                 }`}
               >
                 {status}
@@ -533,11 +537,11 @@ export default function Leads() {
       </div>
 
       {/* Table */}
-      <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-2xl overflow-hidden">
+      <section className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1760px]">
-            <thead>
-              <tr className="border-b border-slate-800">
+            <thead className="bg-slate-50">
+              <tr className="border-b border-slate-200">
                 {[
                   "Booking Ref",
                   "Client Company",
@@ -560,7 +564,7 @@ export default function Leads() {
                 ].map((h) => (
                   <th
                     key={h}
-                    className="text-left py-4 px-4 text-xs font-semibold text-slate-400 whitespace-nowrap"
+                    className="text-left py-4 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap"
                   >
                     {h}
                   </th>
@@ -574,7 +578,7 @@ export default function Leads() {
                 return (
                   <tr
                     key={lead.id}
-                    className="border-b border-slate-800/50 hover:bg-slate-800/20 transition-colors"
+                    className="border-b border-slate-100 hover:bg-slate-50 transition-colors"
                   >
                     {/* Booking Ref */}
                     <td className="py-3 px-4">
@@ -588,47 +592,47 @@ export default function Leads() {
                         <div className="w-7 h-7 rounded-lg bg-indigo-500/10 flex items-center justify-center flex-shrink-0">
                           <UserCheck className="w-3.5 h-3.5 text-indigo-400" />
                         </div>
-                        <span className="text-sm text-white font-medium whitespace-nowrap">
+                        <span className="text-sm text-slate-900 font-medium whitespace-nowrap">
                           {lead.clientCompany}
                         </span>
                       </div>
                     </td>
                     {/* Agent Contact */}
-                    <td className="py-3 px-4 text-sm text-slate-300 whitespace-nowrap">
+                    <td className="py-3 px-4 text-sm text-slate-700 whitespace-nowrap">
                       {lead.agentContact}
                     </td>
                     {/* Agent Email */}
                     <td className="py-3 px-4">
                       <a
                         href={`mailto:${lead.agentEmail}`}
-                        className="text-sm text-amber-400 hover:text-amber-300 flex items-center gap-1 whitespace-nowrap"
+                        className="text-sm text-amber-600 hover:text-amber-500 flex items-center gap-1 whitespace-nowrap"
                       >
                         <Mail className="w-3 h-3" />
                         {lead.agentEmail}
                       </a>
                     </td>
                     {/* Agent Phone */}
-                    <td className="py-3 px-4 text-sm text-slate-300 whitespace-nowrap">
+                    <td className="py-3 px-4 text-sm text-slate-700 whitespace-nowrap">
                       {lead.agentPhone}
                     </td>
                     {/* Country */}
                     <td className="py-3 px-4">
-                      <div className="flex items-center gap-1 text-sm text-slate-300 whitespace-nowrap">
+                      <div className="flex items-center gap-1 text-sm text-slate-700 whitespace-nowrap">
                         <Globe className="w-3.5 h-3.5 text-slate-500" />
                         {lead.clientCountry}
                       </div>
                     </td>
                     {/* Start Date */}
-                    <td className="py-3 px-4 text-sm text-slate-300 whitespace-nowrap">
+                    <td className="py-3 px-4 text-sm text-slate-700 whitespace-nowrap">
                       {formatDisplayDate(lead.startDate)}
                     </td>
                     {/* End Date */}
-                    <td className="py-3 px-4 text-sm text-slate-300 whitespace-nowrap">
+                    <td className="py-3 px-4 text-sm text-slate-700 whitespace-nowrap">
                       {formatDisplayDate(lead.endDate)}
                     </td>
                     {/* Route / Parks */}
                     <td className="py-3 px-4">
-                      <div className="flex items-center gap-1 text-sm text-slate-300">
+                      <div className="flex items-center gap-1 text-sm text-slate-700">
                         <MapPin className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
                         <span
                           className="max-w-[160px] truncate"
@@ -639,16 +643,16 @@ export default function Leads() {
                       </div>
                     </td>
                     {/* Pax Adults */}
-                    <td className="py-3 px-4 text-center text-sm text-slate-300">
+                    <td className="py-3 px-4 text-center text-sm text-slate-700">
                       {lead.paxAdults}
                     </td>
                     {/* Pax Children */}
-                    <td className="py-3 px-4 text-center text-sm text-slate-300">
+                    <td className="py-3 px-4 text-center text-sm text-slate-700">
                       {lead.paxChildren}
                     </td>
                     {/* Vehicles */}
                     <td className="py-3 px-4">
-                      <div className="flex items-center justify-center gap-1 text-sm text-slate-300">
+                      <div className="flex items-center justify-center gap-1 text-sm text-slate-700">
                         <Car className="w-3.5 h-3.5 text-slate-500" />
                         {lead.noOfVehicles}
                       </div>
@@ -656,7 +660,7 @@ export default function Leads() {
                     {/* Special Requirements */}
                     <td className="py-3 px-4">
                       <span
-                        className="text-sm text-slate-400 max-w-[180px] block truncate"
+                        className="text-sm text-slate-500 max-w-[180px] block truncate"
                         title={lead.specialRequirements}
                       >
                         {lead.specialRequirements || "—"}
@@ -672,15 +676,15 @@ export default function Leads() {
                       </span>
                     </td>
                     {/* Sent By */}
-                    <td className="py-3 px-4 text-sm text-slate-300 whitespace-nowrap">
+                    <td className="py-3 px-4 text-sm text-slate-700 whitespace-nowrap">
                       {lead.sentBy || "-"}
                     </td>
                     {/* Quotation Sent At */}
-                    <td className="py-3 px-4 text-sm text-slate-300 whitespace-nowrap">
+                    <td className="py-3 px-4 text-sm text-slate-700 whitespace-nowrap">
                       {formatDateTime(lead.quotationSentAt)}
                     </td>
                     {/* PI Sent At */}
-                    <td className="py-3 px-4 text-sm text-slate-300 whitespace-nowrap">
+                    <td className="py-3 px-4 text-sm text-slate-700 whitespace-nowrap">
                       {formatDateTime(lead.piSentAt)}
                     </td>
                     {/* Actions */}
@@ -688,14 +692,14 @@ export default function Leads() {
                       <div className="flex items-center gap-1">
                         <button
                           onClick={() => openEdit(lead)}
-                          className="p-1.5 text-slate-400 hover:text-amber-400 hover:bg-amber-500/10 rounded-lg transition-colors"
+                          className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
                           title="Edit"
                         >
                           <Edit className="w-4 h-4" />
                         </button>
                         <button
                           onClick={() => handleDelete(lead.id)}
-                          className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
                           title="Delete"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -718,12 +722,12 @@ export default function Leads() {
             </div>
           )}
         </div>
-        <div className="px-6 py-4 border-t border-slate-800/50 flex items-center justify-between">
-          <p className="text-sm text-slate-400">
+        <div className="px-6 py-4 border-t border-slate-200 flex items-center justify-between">
+          <p className="text-sm text-slate-600">
             Showing {filtered.length} of {leads.length} leads
           </p>
         </div>
-      </div>
+      </section>
 
       {/* Modal */}
       {isModalOpen && (

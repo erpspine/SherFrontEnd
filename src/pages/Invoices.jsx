@@ -41,10 +41,10 @@ const calcStatus = (invoice) => {
 };
 
 const statusBadge = {
-  Open: "bg-blue-500/15 text-blue-300 border-blue-500/30",
-  "Partially Paid": "bg-amber-500/15 text-amber-300 border-amber-500/30",
-  Paid: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
-  Overdue: "bg-red-500/15 text-red-300 border-red-500/30",
+  Open: "bg-blue-50 text-blue-700 border-blue-200",
+  "Partially Paid": "bg-amber-50 text-amber-700 border-amber-200",
+  Paid: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  Overdue: "bg-rose-50 text-rose-700 border-rose-200",
 };
 
 const emptyInvoiceForm = {
@@ -610,8 +610,8 @@ export default function Invoices() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white">Invoices</h1>
-          <p className="text-slate-400 mt-1">
+          <h1 className="text-2xl font-bold text-slate-900">Invoices</h1>
+          <p className="text-slate-500 mt-1">
             Capture QuickBooks invoices and track payments received.
           </p>
         </div>
@@ -625,52 +625,52 @@ export default function Invoices() {
       </div>
 
       {errorMessage && (
-        <div className="bg-red-500/10 border border-red-500/30 text-red-300 rounded-xl px-4 py-3 text-sm">
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
           {errorMessage}
         </div>
       )}
 
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        <div className="bg-slate-900/50 border border-slate-800/50 rounded-xl p-4">
-          <p className="text-slate-400 text-sm">Invoice Value</p>
-          <p className="text-xl font-bold text-white mt-1">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <p className="text-slate-500 text-sm">Invoice Value</p>
+          <p className="text-xl font-bold text-slate-900 mt-1">
             {formatCurrency(stats.total)}
           </p>
         </div>
-        <div className="bg-slate-900/50 border border-slate-800/50 rounded-xl p-4">
-          <p className="text-slate-400 text-sm">Paid</p>
-          <p className="text-xl font-bold text-emerald-400 mt-1">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <p className="text-slate-500 text-sm">Paid</p>
+          <p className="text-xl font-bold text-emerald-600 mt-1">
             {formatCurrency(stats.paid)}
           </p>
         </div>
-        <div className="bg-slate-900/50 border border-slate-800/50 rounded-xl p-4">
-          <p className="text-slate-400 text-sm">Outstanding</p>
-          <p className="text-xl font-bold text-amber-400 mt-1">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <p className="text-slate-500 text-sm">Outstanding</p>
+          <p className="text-xl font-bold text-amber-600 mt-1">
             {formatCurrency(stats.balance)}
           </p>
         </div>
-        <div className="bg-slate-900/50 border border-slate-800/50 rounded-xl p-4">
-          <p className="text-slate-400 text-sm">Open</p>
-          <p className="text-2xl font-bold text-blue-300 mt-1">{stats.open}</p>
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <p className="text-slate-500 text-sm">Open</p>
+          <p className="text-2xl font-bold text-blue-600 mt-1">{stats.open}</p>
         </div>
-        <div className="bg-slate-900/50 border border-slate-800/50 rounded-xl p-4">
-          <p className="text-slate-400 text-sm">Overdue</p>
-          <p className="text-2xl font-bold text-red-300 mt-1">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <p className="text-slate-500 text-sm">Overdue</p>
+          <p className="text-2xl font-bold text-rose-600 mt-1">
             {stats.overdue}
           </p>
         </div>
       </div>
 
-      <div className="bg-slate-900/50 border border-slate-800/50 rounded-2xl p-4">
+      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4">
         <div className="flex flex-col sm:flex-row gap-3">
-          <div className="flex-1 flex items-center gap-3 bg-slate-800/50 rounded-xl px-4 py-2.5 border border-slate-700/50 focus-within:border-amber-500/50 transition-colors">
-            <Search className="w-4 h-4 text-slate-500" />
+          <div className="flex-1 flex items-center gap-3 bg-slate-50 rounded-xl px-4 py-2.5 border border-slate-200 focus-within:border-amber-500 transition-colors">
+            <Search className="w-4 h-4 text-slate-400" />
             <input
               type="text"
               value={searchTerm}
               onChange={(event) => setSearchTerm(event.target.value)}
               placeholder="Search invoice #, QB ref, or client"
-              className="w-full bg-transparent outline-none text-sm text-slate-300 placeholder-slate-500"
+              className="w-full bg-transparent outline-none text-sm text-slate-900 placeholder-slate-400"
             />
           </div>
           <div className="flex items-center gap-2">
@@ -682,7 +682,7 @@ export default function Invoices() {
                   className={`px-3 py-2 rounded-xl text-sm font-medium transition-colors ${
                     statusFilter === status
                       ? "bg-amber-500 text-white"
-                      : "bg-slate-800 text-slate-400 hover:text-white"
+                      : "bg-slate-100 text-slate-600 hover:text-slate-900 hover:bg-slate-200"
                   }`}
                 >
                   {status}
@@ -693,11 +693,11 @@ export default function Invoices() {
         </div>
       </div>
 
-      <div className="bg-slate-900/50 border border-slate-800/50 rounded-2xl overflow-hidden">
+      <section className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead>
-              <tr className="border-b border-slate-800">
+            <thead className="bg-slate-50">
+              <tr className="border-b border-slate-200">
                 {[
                   "Invoice",
                   "Proforma",
@@ -711,7 +711,7 @@ export default function Invoices() {
                 ].map((header) => (
                   <th
                     key={header}
-                    className="text-left py-3 px-4 text-xs font-semibold text-slate-400 uppercase tracking-wider"
+                    className="text-left py-4 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wide"
                   >
                     {header}
                   </th>
@@ -722,15 +722,15 @@ export default function Invoices() {
               {filteredInvoices.map((invoice) => (
                 <tr
                   key={invoice.id}
-                  className="border-b border-slate-800/40 hover:bg-slate-800/30 transition-colors"
+                  className="border-b border-slate-100 hover:bg-slate-50 transition-colors"
                 >
                   <td className="py-3 px-4">
                     <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-lg bg-indigo-500/10 flex items-center justify-center">
-                        <FileSpreadsheet className="w-4 h-4 text-indigo-400" />
+                      <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center">
+                        <FileSpreadsheet className="w-4 h-4 text-indigo-500" />
                       </div>
                       <div>
-                        <p className="text-sm text-white font-medium">
+                        <p className="text-sm text-slate-900 font-medium">
                           {invoice.invoiceNo}
                         </p>
                         <p className="text-xs text-slate-500">
@@ -739,23 +739,23 @@ export default function Invoices() {
                       </div>
                     </div>
                   </td>
-                  <td className="py-3 px-4 text-sm text-slate-300">
+                  <td className="py-3 px-4 text-sm text-slate-700">
                     {invoice.proformaNo || "-"}
                   </td>
-                  <td className="py-3 px-4 text-sm text-slate-300">
+                  <td className="py-3 px-4 text-sm text-slate-700">
                     {invoice.client}
                   </td>
-                  <td className="py-3 px-4 text-xs text-slate-400">
+                  <td className="py-3 px-4 text-xs text-slate-500">
                     <p>Issued: {formatDate(invoice.issueDate)}</p>
                     <p>Due: {formatDate(invoice.dueDate)}</p>
                   </td>
-                  <td className="py-3 px-4 text-sm text-white">
+                  <td className="py-3 px-4 text-sm text-slate-900">
                     {formatCurrency(invoice.total)}
                   </td>
-                  <td className="py-3 px-4 text-sm text-emerald-300">
+                  <td className="py-3 px-4 text-sm text-emerald-600">
                     {formatCurrency(invoice.paid)}
                   </td>
-                  <td className="py-3 px-4 text-sm text-amber-300">
+                  <td className="py-3 px-4 text-sm text-amber-600">
                     {formatCurrency(invoice.balance)}
                   </td>
                   <td className="py-3 px-4">
@@ -777,7 +777,7 @@ export default function Invoices() {
                       <button
                         onClick={() => openRecordPayment(invoice.id)}
                         disabled={invoice.balance <= 0 || isSaving}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-200 hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <Wallet className="w-3.5 h-3.5" />
                         Pay
@@ -785,7 +785,7 @@ export default function Invoices() {
                       <button
                         onClick={() => openViewPayments(invoice.id)}
                         disabled={isSaving}
-                        className="p-2 rounded-lg text-slate-300 hover:text-blue-300 hover:bg-slate-800 disabled:opacity-50"
+                        className="p-2 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 disabled:opacity-50"
                         title="View Payments"
                       >
                         <Eye className="w-4 h-4" />
@@ -793,7 +793,7 @@ export default function Invoices() {
                       <button
                         onClick={() => openEditInvoice(invoice.id)}
                         disabled={isSaving}
-                        className="p-2 rounded-lg text-slate-300 hover:text-amber-300 hover:bg-slate-800 disabled:opacity-50"
+                        className="p-2 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 disabled:opacity-50"
                         title="Edit Invoice"
                       >
                         <Edit className="w-4 h-4" />
@@ -801,7 +801,7 @@ export default function Invoices() {
                       <button
                         onClick={() => deleteInvoice(invoice.id)}
                         disabled={isSaving}
-                        className="p-2 rounded-lg text-slate-300 hover:text-red-300 hover:bg-slate-800 disabled:opacity-50"
+                        className="p-2 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 disabled:opacity-50"
                         title="Delete Invoice"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -833,7 +833,7 @@ export default function Invoices() {
             </tbody>
           </table>
         </div>
-      </div>
+      </section>
 
       {isInvoiceModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">

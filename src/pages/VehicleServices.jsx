@@ -20,15 +20,15 @@ const serviceStatuses = ["In Service", "Returned", "Cancelled"];
 
 const statusConfig = {
   "In Service": {
-    color: "bg-amber-500/20 text-amber-400 border-amber-500/30",
+    color: "bg-amber-50 text-amber-700 border-amber-200",
     icon: Clock,
   },
   Returned: {
-    color: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
+    color: "bg-emerald-50 text-emerald-700 border-emerald-200",
     icon: CheckCircle,
   },
   Cancelled: {
-    color: "bg-red-500/20 text-red-400 border-red-500/30",
+    color: "bg-rose-50 text-rose-700 border-rose-200",
     icon: AlertTriangle,
   },
 };
@@ -406,8 +406,8 @@ export default function VehicleServices() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white">Vehicle Service</h1>
-          <p className="text-slate-400 mt-1">
+          <h1 className="text-2xl font-bold text-slate-900">Vehicle Service</h1>
+          <p className="text-slate-500 mt-1">
             Record when vehicles go for service and when they return with
             odometer and fuel levels.
           </p>
@@ -428,40 +428,42 @@ export default function VehicleServices() {
       )}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-xl p-4 text-center">
-          <p className="text-slate-400 text-sm">Total</p>
-          <p className="text-2xl font-bold mt-1 text-white">{stats.total}</p>
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm text-center">
+          <p className="text-slate-500 text-sm">Total</p>
+          <p className="text-2xl font-bold mt-1 text-slate-900">
+            {stats.total}
+          </p>
         </div>
-        <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-xl p-4 text-center">
-          <p className="text-slate-400 text-sm">In Service</p>
-          <p className="text-2xl font-bold mt-1 text-amber-400">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm text-center">
+          <p className="text-slate-500 text-sm">In Service</p>
+          <p className="text-2xl font-bold mt-1 text-amber-600">
             {stats.inService}
           </p>
         </div>
-        <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-xl p-4 text-center">
-          <p className="text-slate-400 text-sm">Returned</p>
-          <p className="text-2xl font-bold mt-1 text-emerald-400">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm text-center">
+          <p className="text-slate-500 text-sm">Returned</p>
+          <p className="text-2xl font-bold mt-1 text-emerald-600">
             {stats.returned}
           </p>
         </div>
-        <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-xl p-4 text-center">
-          <p className="text-slate-400 text-sm">Cancelled</p>
-          <p className="text-2xl font-bold mt-1 text-red-400">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm text-center">
+          <p className="text-slate-500 text-sm">Cancelled</p>
+          <p className="text-2xl font-bold mt-1 text-rose-600">
             {stats.cancelled}
           </p>
         </div>
       </div>
 
-      <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-2xl p-4">
+      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4">
         <div className="flex flex-col sm:flex-row gap-4">
-          <div className="flex-1 flex items-center gap-3 bg-slate-800/50 rounded-xl px-4 py-2.5 border border-slate-700/50 focus-within:border-amber-500/50 transition-colors">
-            <Search className="w-5 h-5 text-slate-500 flex-shrink-0" />
+          <div className="flex-1 flex items-center gap-3 bg-slate-50 rounded-xl px-4 py-2.5 border border-slate-200 focus-within:border-amber-500 transition-colors">
+            <Search className="w-5 h-5 text-slate-400 flex-shrink-0" />
             <input
               type="text"
               placeholder="Search by vehicle, service center, type, notes..."
               value={searchTerm}
               onChange={(event) => setSearchTerm(event.target.value)}
-              className="bg-transparent border-none outline-none text-sm text-slate-300 placeholder-slate-500 w-full"
+              className="bg-transparent border-none outline-none text-sm text-slate-900 placeholder-slate-400 w-full"
             />
           </div>
 
@@ -473,7 +475,7 @@ export default function VehicleServices() {
                 className={`px-3 py-2 rounded-xl text-sm font-medium transition-all ${
                   statusFilter === status
                     ? "bg-amber-500 text-white"
-                    : "bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700"
+                    : "bg-slate-100 text-slate-600 hover:text-slate-900 hover:bg-slate-200"
                 }`}
               >
                 {status}
@@ -483,11 +485,11 @@ export default function VehicleServices() {
         </div>
       </div>
 
-      <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-2xl overflow-hidden">
+      <section className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1460px]">
-            <thead>
-              <tr className="border-b border-slate-800">
+            <thead className="bg-slate-50">
+              <tr className="border-b border-slate-200">
                 {[
                   "Vehicle",
                   "Service Center",
@@ -505,7 +507,7 @@ export default function VehicleServices() {
                 ].map((heading) => (
                   <th
                     key={heading}
-                    className="text-left py-4 px-4 text-xs font-semibold text-slate-400 whitespace-nowrap"
+                    className="text-left py-4 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap"
                   >
                     {heading}
                   </th>
@@ -542,49 +544,49 @@ export default function VehicleServices() {
                   return (
                     <tr
                       key={service.id}
-                      className="border-b border-slate-800/50 hover:bg-slate-800/20 transition-colors"
+                      className="border-b border-slate-100 hover:bg-slate-50 transition-colors"
                     >
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-2">
-                          <div className="w-7 h-7 rounded-lg bg-cyan-500/10 flex items-center justify-center flex-shrink-0">
-                            <Car className="w-3.5 h-3.5 text-cyan-400" />
+                          <div className="w-7 h-7 rounded-lg bg-cyan-50 flex items-center justify-center flex-shrink-0">
+                            <Car className="w-3.5 h-3.5 text-cyan-600" />
                           </div>
                           <div>
-                            <p className="text-sm text-white font-medium whitespace-nowrap">
+                            <p className="text-sm text-slate-900 font-medium whitespace-nowrap">
                               {vehicle?.vehicleNo || "Unknown"}
                             </p>
-                            <p className="text-xs text-slate-400 whitespace-nowrap">
+                            <p className="text-xs text-slate-500 whitespace-nowrap">
                               {vehicle?.plateNo || "-"} · {vehicle?.make || ""}{" "}
                               {vehicle?.model || ""}
                             </p>
                           </div>
                         </div>
                       </td>
-                      <td className="py-3 px-4 text-sm text-slate-300 whitespace-nowrap">
+                      <td className="py-3 px-4 text-sm text-slate-700 whitespace-nowrap">
                         {service.serviceCenter || "-"}
                       </td>
-                      <td className="py-3 px-4 text-sm text-slate-300 whitespace-nowrap">
+                      <td className="py-3 px-4 text-sm text-slate-700 whitespace-nowrap">
                         {service.serviceType || "-"}
                       </td>
-                      <td className="py-3 px-4 text-sm text-slate-300 whitespace-nowrap">
+                      <td className="py-3 px-4 text-sm text-slate-700 whitespace-nowrap">
                         {formatDate(service.serviceDateOut)}
                       </td>
-                      <td className="py-3 px-4 text-sm text-slate-300 whitespace-nowrap">
+                      <td className="py-3 px-4 text-sm text-slate-700 whitespace-nowrap">
                         {formatDate(service.serviceDateIn)}
                       </td>
-                      <td className="py-3 px-4 text-sm text-slate-300 whitespace-nowrap">
+                      <td className="py-3 px-4 text-sm text-slate-700 whitespace-nowrap">
                         {service.odometerOut}
                       </td>
-                      <td className="py-3 px-4 text-sm text-slate-300 whitespace-nowrap">
+                      <td className="py-3 px-4 text-sm text-slate-700 whitespace-nowrap">
                         {service.odometerIn === "" ? "-" : service.odometerIn}
                       </td>
-                      <td className="py-3 px-4 text-sm text-slate-300 whitespace-nowrap">
+                      <td className="py-3 px-4 text-sm text-slate-700 whitespace-nowrap">
                         {service.fuelOut}%
                       </td>
-                      <td className="py-3 px-4 text-sm text-slate-300 whitespace-nowrap">
+                      <td className="py-3 px-4 text-sm text-slate-700 whitespace-nowrap">
                         {service.fuelIn === "" ? "-" : `${service.fuelIn}%`}
                       </td>
-                      <td className="py-3 px-4 text-sm text-slate-300 whitespace-nowrap">
+                      <td className="py-3 px-4 text-sm text-slate-700 whitespace-nowrap">
                         {service.cost === ""
                           ? "-"
                           : formatCurrency(service.cost)}
@@ -597,7 +599,7 @@ export default function VehicleServices() {
                           {service.status}
                         </span>
                       </td>
-                      <td className="py-3 px-4 text-sm text-slate-400 max-w-[220px]">
+                      <td className="py-3 px-4 text-sm text-slate-500 max-w-[220px]">
                         <span className="block truncate" title={service.notes}>
                           {service.notes || "-"}
                         </span>
@@ -606,14 +608,14 @@ export default function VehicleServices() {
                         <div className="flex items-center gap-1">
                           <button
                             onClick={() => openEdit(service)}
-                            className="p-1.5 text-slate-400 hover:text-amber-400 hover:bg-amber-500/10 rounded-lg transition-colors"
+                            className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
                             title="Edit"
                           >
                             <Edit className="w-4 h-4" />
                           </button>
                           <button
                             onClick={() => handleDelete(service.id)}
-                            className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
                             title="Delete"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -627,7 +629,7 @@ export default function VehicleServices() {
             </tbody>
           </table>
         </div>
-      </div>
+      </section>
 
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">

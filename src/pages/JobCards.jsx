@@ -1033,8 +1033,8 @@ export default function JobCards() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white">Job Cards</h1>
-          <p className="text-slate-400 mt-1">
+          <h1 className="text-2xl font-bold text-slate-900">Job Cards</h1>
+          <p className="text-slate-500 mt-1">
             Safari operations issued to fleet manager, generated from PI leads.
           </p>
         </div>
@@ -1048,42 +1048,48 @@ export default function JobCards() {
       </div>
 
       {errorMessage && !isModalOpen && (
-        <div className="bg-red-500/10 border border-red-500/30 text-red-300 rounded-xl px-4 py-3 text-sm flex items-start gap-2">
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 flex items-start gap-2">
           <AlertCircle className="w-4 h-4 mt-0.5" />
           <span>{errorMessage}</span>
         </div>
       )}
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-slate-900/50 border border-slate-800/50 rounded-xl p-4">
-          <p className="text-slate-400 text-sm">PI Job Cards</p>
-          <p className="text-2xl font-bold text-white mt-1">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            PI Job Cards
+          </p>
+          <p className="text-2xl font-bold text-slate-900 mt-1">
             {stats.totalCards}
           </p>
         </div>
-        <div className="bg-slate-900/50 border border-slate-800/50 rounded-xl p-4">
-          <p className="text-slate-400 text-sm">Total Safari Pax</p>
-          <p className="text-2xl font-bold text-amber-400 mt-1">
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">
+            Total Safari Pax
+          </p>
+          <p className="text-2xl font-bold text-amber-700 mt-1">
             {stats.totalPax}
           </p>
         </div>
-        <div className="bg-slate-900/50 border border-slate-800/50 rounded-xl p-4">
-          <p className="text-slate-400 text-sm">PI Eligible Leads</p>
-          <p className="text-2xl font-bold text-blue-400 mt-1">
+        <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">
+            PI Eligible Leads
+          </p>
+          <p className="text-2xl font-bold text-blue-700 mt-1">
             {stats.totalLeadsWithPI}
           </p>
         </div>
       </div>
 
-      <div className="bg-slate-900/50 border border-slate-800/50 rounded-2xl p-4">
-        <div className="flex items-center gap-3 bg-slate-800/50 rounded-xl px-4 py-2.5 border border-slate-700/50 focus-within:border-amber-500/50 transition-colors mb-4">
-          <Search className="w-4 h-4 text-slate-400" />
+      <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="flex items-center gap-3 border-b border-slate-200 px-4 py-3 focus-within:border-amber-400 transition-colors">
+          <Search className="w-4 h-4 text-slate-400 shrink-0" />
           <input
             type="text"
             value={searchTerm}
             onChange={(event) => setSearchTerm(event.target.value)}
             placeholder="Search by booking ref, company, contact, park route"
-            className="w-full bg-transparent text-sm text-white placeholder-slate-500 outline-none"
+            className="w-full bg-transparent text-sm text-slate-900 placeholder-slate-400 outline-none"
           />
         </div>
 
@@ -1164,8 +1170,8 @@ export default function JobCards() {
                       <span
                         className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border ${
                           (card.status || "Open") === "Closed"
-                            ? "text-emerald-300 border-emerald-500/40 bg-emerald-500/10"
-                            : "text-amber-300 border-amber-500/40 bg-amber-500/10"
+                            ? "text-emerald-700 border-emerald-200 bg-emerald-50"
+                            : "text-amber-700 border-amber-200 bg-amber-50"
                         }`}
                       >
                         {card.status || "Open"}
@@ -1266,7 +1272,7 @@ export default function JobCards() {
             </tbody>
           </table>
         </div>
-      </div>
+      </section>
 
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">

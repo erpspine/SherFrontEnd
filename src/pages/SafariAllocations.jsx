@@ -777,8 +777,10 @@ export default function SafariAllocations() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white">Safari Allocations</h1>
-          <p className="text-slate-400 mt-1">
+          <h1 className="text-2xl font-bold text-slate-900">
+            Safari Allocations
+          </h1>
+          <p className="text-slate-500 mt-1">
             Allocate multiple vehicles and drivers to safari bookings with
             proforma invoices.
           </p>
@@ -793,85 +795,75 @@ export default function SafariAllocations() {
       </div>
 
       {errorMessage && !isModalOpen && (
-        <div className="bg-red-500/10 border border-red-500/30 text-red-300 rounded-xl px-4 py-3 text-sm flex items-start gap-2">
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 flex items-start gap-2">
           <AlertCircle className="w-4 h-4 mt-0.5" />
           <span>{errorMessage}</span>
         </div>
       )}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-xl p-4">
-          <p className="text-slate-400 text-sm">Eligible Safaris</p>
-          <p className="text-2xl font-bold text-white mt-1">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Eligible Safaris
+          </p>
+          <p className="text-2xl font-bold text-slate-900 mt-1">
             {stats.eligibleSafaris}
           </p>
         </div>
-        <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-xl p-4">
-          <p className="text-slate-400 text-sm">Allocated</p>
-          <p className="text-2xl font-bold text-emerald-400 mt-1">
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+            Allocated
+          </p>
+          <p className="text-2xl font-bold text-emerald-700 mt-1">
             {stats.allocated}
           </p>
         </div>
-        <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-xl p-4">
-          <p className="text-slate-400 text-sm">Pending</p>
-          <p className="text-2xl font-bold text-amber-400 mt-1">
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">
+            Pending
+          </p>
+          <p className="text-2xl font-bold text-amber-700 mt-1">
             {stats.pending}
           </p>
         </div>
-        <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-xl p-4">
-          <p className="text-slate-400 text-sm">Available Vehicles</p>
-          <p className="text-2xl font-bold text-blue-400 mt-1">
+        <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">
+            Available Vehicles
+          </p>
+          <p className="text-2xl font-bold text-blue-700 mt-1">
             {stats.availableVehicles}
           </p>
         </div>
       </div>
 
-      <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-2xl p-4">
-        <div className="flex items-center gap-3 bg-slate-800/50 rounded-xl px-4 py-2.5 border border-slate-700/50 focus-within:border-amber-500/50 transition-colors mb-4">
-          <Search className="w-4 h-4 text-slate-400" />
+      <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="flex items-center gap-3 border-b border-slate-200 px-4 py-3 focus-within:border-amber-400 transition-colors">
+          <Search className="w-4 h-4 text-slate-400 shrink-0" />
           <input
             type="text"
             value={searchTerm}
             onChange={(event) => setSearchTerm(event.target.value)}
             placeholder="Search by safari, group name, PI, vehicle, or driver"
-            className="w-full bg-transparent text-sm text-white placeholder-slate-500 outline-none"
+            className="w-full bg-transparent text-sm text-slate-900 placeholder-slate-400 outline-none"
           />
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-slate-800/50">
-                <th className="text-left py-3 px-3 text-xs font-semibold text-slate-400 uppercase">
-                  Safari
-                </th>
-                <th className="text-left py-3 px-3 text-xs font-semibold text-slate-400 uppercase">
-                  Group Name
-                </th>
-                <th className="text-left py-3 px-3 text-xs font-semibold text-slate-400 uppercase">
-                  PI
-                </th>
-                <th className="text-left py-3 px-3 text-xs font-semibold text-slate-400 uppercase">
-                  Route
-                </th>
-                <th className="text-left py-3 px-3 text-xs font-semibold text-slate-400 uppercase">
-                  Dates
-                </th>
-                <th className="text-left py-3 px-3 text-xs font-semibold text-slate-400 uppercase">
-                  Vehicle
-                </th>
-                <th className="text-left py-3 px-3 text-xs font-semibold text-slate-400 uppercase">
-                  Driver
-                </th>
-                <th className="text-left py-3 px-3 text-xs font-semibold text-slate-400 uppercase">
-                  Status
-                </th>
-                <th className="text-right py-3 px-3 text-xs font-semibold text-slate-400 uppercase">
-                  Actions
-                </th>
+          <table className="min-w-full divide-y divide-slate-200 text-sm">
+            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-4 py-3">Safari</th>
+                <th className="px-4 py-3">Group Name</th>
+                <th className="px-4 py-3">PI</th>
+                <th className="px-4 py-3">Route</th>
+                <th className="px-4 py-3">Dates</th>
+                <th className="px-4 py-3">Vehicle</th>
+                <th className="px-4 py-3">Driver</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y divide-slate-100">
               {isLoading ? (
                 <tr>
                   <td
@@ -894,37 +886,37 @@ export default function SafariAllocations() {
                 filteredAllocations.map((allocation) => (
                   <tr
                     key={allocation.id}
-                    className="border-b border-slate-800/40 hover:bg-slate-800/30 transition-colors"
+                    className="hover:bg-slate-50 transition-colors"
                   >
-                    <td className="py-3 px-3">
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2 text-white text-sm font-medium">
-                          <ClipboardList className="w-4 h-4 text-amber-400" />
+                    <td className="px-4 py-3">
+                      <div className="space-y-0.5">
+                        <div className="inline-flex items-center gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-2 py-0.5 text-sm font-semibold text-amber-700">
+                          <ClipboardList className="w-3.5 h-3.5" />
                           {allocation.safari?.bookingRef || "Unknown Safari"}
                         </div>
-                        <div className="text-xs text-slate-400">
+                        <div className="text-xs text-slate-500">
                           {allocation.safari?.clientCompany || "-"}
                         </div>
                       </div>
                     </td>
-                    <td className="py-3 px-3 text-sm text-slate-300 whitespace-nowrap">
+                    <td className="px-4 py-3 text-sm text-slate-700 whitespace-nowrap">
                       {allocation.safari?.groupName || "-"}
                     </td>
-                    <td className="py-3 px-3 text-sm text-slate-300">
+                    <td className="px-4 py-3 text-sm text-slate-700">
                       <div className="flex items-center gap-2">
                         <FileText className="w-4 h-4 text-slate-400" />
                         {allocation.safari?.piNo || "-"}
                       </div>
                     </td>
-                    <td className="py-3 px-3 text-sm text-slate-300 max-w-xs">
+                    <td className="px-4 py-3 text-sm text-slate-700 max-w-xs">
                       <div className="flex items-start gap-2">
-                        <MapPin className="w-4 h-4 text-slate-400 mt-0.5" />
+                        <MapPin className="w-4 h-4 text-slate-400 mt-0.5 shrink-0" />
                         <span>{allocation.safari?.routeParks || "-"}</span>
                       </div>
                     </td>
-                    <td className="py-3 px-3 text-sm text-slate-300">
+                    <td className="px-4 py-3 text-sm text-slate-700">
                       <div className="flex items-start gap-2">
-                        <Calendar className="w-4 h-4 text-slate-400 mt-0.5" />
+                        <Calendar className="w-4 h-4 text-slate-400 mt-0.5 shrink-0" />
                         <div>
                           <div>{formatDate(allocation.safari?.startDate)}</div>
                           <div className="text-xs text-slate-500">
@@ -933,7 +925,7 @@ export default function SafariAllocations() {
                         </div>
                       </div>
                     </td>
-                    <td className="py-3 px-3 text-sm text-slate-300">
+                    <td className="px-4 py-3 text-sm text-slate-700">
                       <div className="flex items-center gap-2">
                         <Car className="w-4 h-4 text-slate-400" />
                         {allocation.vehicle
@@ -941,30 +933,30 @@ export default function SafariAllocations() {
                           : "-"}
                       </div>
                     </td>
-                    <td className="py-3 px-3 text-sm text-slate-300">
+                    <td className="px-4 py-3 text-sm text-slate-700">
                       <div className="flex items-center gap-2">
                         <UserCheck className="w-4 h-4 text-slate-400" />
                         {allocation.driver?.name || "-"}
                       </div>
                     </td>
-                    <td className="py-3 px-3">
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border bg-blue-500/20 text-blue-400 border-blue-500/30">
+                    <td className="px-4 py-3">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border border-blue-200 bg-blue-50 text-blue-700">
                         <Users className="w-3 h-3" />
                         {allocation.status}
                       </span>
                     </td>
-                    <td className="py-3 px-3">
-                      <div className="flex justify-end gap-2">
+                    <td className="px-4 py-3">
+                      <div className="flex justify-end gap-1">
                         <button
                           onClick={() => openEdit(allocation)}
-                          className="p-2 text-slate-400 hover:text-amber-400 hover:bg-slate-700 rounded-lg transition-colors"
+                          className="p-2 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
                           title="Edit"
                         >
                           <Edit className="w-4 h-4" />
                         </button>
                         <button
                           onClick={() => handleDelete(allocation.id)}
-                          className="p-2 text-slate-400 hover:text-red-400 hover:bg-slate-700 rounded-lg transition-colors"
+                          className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
                           title="Delete"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -979,12 +971,12 @@ export default function SafariAllocations() {
         </div>
 
         {!isLoading && safariOptions.length === 0 && (
-          <div className="mt-4 rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+          <div className="m-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
             No eligible safaris found. A safari becomes eligible when a lead has
             a proforma invoice.
           </div>
         )}
-      </div>
+      </section>
 
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">

@@ -42,9 +42,9 @@ const createTransportRateState = () => ({
 });
 
 const statusStyles = {
-  Active: "bg-green-500/20 text-green-400 border-green-500/30",
-  Seasonal: "bg-amber-500/20 text-amber-400 border-amber-500/30",
-  Restricted: "bg-red-500/20 text-red-400 border-red-500/30",
+  Active: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  Seasonal: "bg-amber-50 text-amber-700 border-amber-200",
+  Restricted: "bg-rose-50 text-rose-700 border-rose-200",
 };
 
 const normalizePark = (park) => ({
@@ -938,8 +938,8 @@ export default function Parks() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white">Parks</h1>
-          <p className="text-slate-400 mt-1">
+          <h1 className="text-2xl font-bold text-slate-900">Parks</h1>
+          <p className="text-slate-500 mt-1">
             Manage park destinations, access status, and concession rates.
           </p>
         </div>
@@ -953,17 +953,19 @@ export default function Parks() {
       </div>
 
       {errorMessage && (
-        <div className="bg-red-500/10 border border-red-500/30 text-red-300 rounded-xl px-4 py-3 text-sm">
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
           {errorMessage}
         </div>
       )}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-xl p-4">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-slate-400 text-sm">Total Parks</p>
-              <p className="text-2xl font-bold text-white mt-1">{totals.all}</p>
+              <p className="text-slate-500 text-sm">Total Parks</p>
+              <p className="text-2xl font-bold text-slate-900 mt-1">
+                {totals.all}
+              </p>
             </div>
             <div className="p-3 bg-blue-500/10 rounded-xl">
               <Trees className="w-6 h-6 text-blue-400" />
@@ -971,11 +973,11 @@ export default function Parks() {
           </div>
         </div>
 
-        <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-xl p-4">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-slate-400 text-sm">Active</p>
-              <p className="text-2xl font-bold text-green-400 mt-1">
+              <p className="text-slate-500 text-sm">Active</p>
+              <p className="text-2xl font-bold text-emerald-600 mt-1">
                 {totals.active}
               </p>
             </div>
@@ -985,11 +987,11 @@ export default function Parks() {
           </div>
         </div>
 
-        <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-xl p-4">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-slate-400 text-sm">Seasonal</p>
-              <p className="text-2xl font-bold text-amber-400 mt-1">
+              <p className="text-slate-500 text-sm">Seasonal</p>
+              <p className="text-2xl font-bold text-amber-600 mt-1">
                 {totals.seasonal}
               </p>
             </div>
@@ -999,11 +1001,11 @@ export default function Parks() {
           </div>
         </div>
 
-        <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-xl p-4">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-slate-400 text-sm">Restricted</p>
-              <p className="text-2xl font-bold text-red-400 mt-1">
+              <p className="text-slate-500 text-sm">Restricted</p>
+              <p className="text-2xl font-bold text-rose-600 mt-1">
                 {totals.restricted}
               </p>
             </div>
@@ -1014,16 +1016,16 @@ export default function Parks() {
         </div>
       </div>
 
-      <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-2xl p-4">
+      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4">
         <div className="flex flex-col sm:flex-row gap-4">
-          <div className="flex-1 flex items-center gap-3 bg-slate-800/50 rounded-xl px-4 py-2.5 border border-slate-700/50 focus-within:border-amber-500/50 transition-colors">
-            <Search className="w-5 h-5 text-slate-500" />
+          <div className="flex-1 flex items-center gap-3 bg-slate-50 rounded-xl px-4 py-2.5 border border-slate-200 focus-within:border-amber-500 transition-colors">
+            <Search className="w-5 h-5 text-slate-400" />
             <input
               type="text"
               placeholder="Search by park or region..."
               value={searchTerm}
               onChange={(event) => setSearchTerm(event.target.value)}
-              className="bg-transparent border-none outline-none text-sm text-slate-300 placeholder-slate-500 w-full"
+              className="bg-transparent border-none outline-none text-sm text-slate-900 placeholder-slate-400 w-full"
             />
           </div>
 
@@ -1035,7 +1037,7 @@ export default function Parks() {
                 className={`px-3 py-2 rounded-xl text-sm font-medium transition-all ${
                   statusFilter === status
                     ? "bg-amber-500 text-white"
-                    : "bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700"
+                    : "bg-slate-100 text-slate-600 hover:text-slate-900 hover:bg-slate-200"
                 }`}
               >
                 {status}
@@ -1045,15 +1047,15 @@ export default function Parks() {
         </div>
       </div>
 
-      <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-2xl overflow-hidden">
+      <section className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead>
-              <tr className="border-b border-slate-800">
+            <thead className="bg-slate-50">
+              <tr className="border-b border-slate-200">
                 {["Park", "Region", "Status", "Actions"].map((header) => (
                   <th
                     key={header}
-                    className="text-left py-4 px-6 text-sm font-semibold text-slate-400"
+                    className="text-left py-4 px-6 text-xs font-semibold text-slate-500 uppercase tracking-wide"
                   >
                     {header}
                   </th>
@@ -1064,24 +1066,24 @@ export default function Parks() {
               {filteredParks.map((park) => (
                 <tr
                   key={park.id}
-                  className="border-b border-slate-800/50 hover:bg-slate-800/20 transition-colors"
+                  className="border-b border-slate-100 hover:bg-slate-50 transition-colors"
                 >
                   <td className="py-4 px-6">
                     <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center">
-                        <MapPin className="w-4 h-4 text-blue-400" />
+                      <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center">
+                        <MapPin className="w-4 h-4 text-blue-600" />
                       </div>
-                      <span className="text-white font-medium text-sm">
+                      <span className="text-slate-900 font-medium text-sm">
                         {park.name}
                       </span>
                     </div>
                   </td>
-                  <td className="py-4 px-6 text-sm text-slate-300">
+                  <td className="py-4 px-6 text-sm text-slate-700">
                     {park.region}
                   </td>
                   <td className="py-4 px-6">
                     <span
-                      className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium border ${statusStyles[park.status] || "bg-slate-500/20 text-slate-300 border-slate-500/30"}`}
+                      className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium border ${statusStyles[park.status] || "bg-slate-100 text-slate-600 border-slate-200"}`}
                     >
                       {park.status}
                     </span>
@@ -1090,14 +1092,14 @@ export default function Parks() {
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => openEditPark(park)}
-                        className="p-2 rounded-lg bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 transition-colors"
+                        className="p-2 rounded-lg bg-slate-100 text-slate-600 hover:text-slate-900 hover:bg-slate-200 transition-colors"
                         title="Edit park"
                       >
                         <Edit className="w-4 h-4" />
                       </button>
                       <button
                         onClick={() => handleDeletePark(park.id)}
-                        className="p-2 rounded-lg bg-red-500/10 text-red-300 hover:text-red-200 hover:bg-red-500/20 transition-colors"
+                        className="p-2 rounded-lg bg-rose-50 text-rose-600 hover:text-rose-700 hover:bg-rose-100 transition-colors"
                         title="Delete park"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -1121,19 +1123,19 @@ export default function Parks() {
             </div>
           )}
         </div>
-      </div>
+      </section>
 
-      <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-2xl overflow-hidden">
-        <div className="p-4 sm:p-6 border-b border-slate-800 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      <section className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        <div className="p-4 sm:p-6 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold text-white">Rates</h2>
-            <p className="text-sm text-slate-400 mt-1">Park Fee Rates</p>
+            <h2 className="text-lg font-semibold text-slate-900">Rates</h2>
+            <p className="text-sm text-slate-500 mt-1">Park Fee Rates</p>
           </div>
           <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
             <select
               value={selectedRateParkId}
               onChange={(event) => setSelectedRateParkId(event.target.value)}
-              className="bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500"
+              className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-emerald-500"
             >
               <option value="all">All Parks Rates</option>
               {parks.map((park) => (
@@ -1154,20 +1156,20 @@ export default function Parks() {
         </div>
 
         {rateError && (
-          <div className="mx-4 sm:mx-6 mt-4 bg-red-500/10 border border-red-500/30 text-red-300 rounded-xl px-4 py-3 text-sm">
+          <div className="mx-4 sm:mx-6 mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
             {rateError}
           </div>
         )}
 
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead>
-              <tr className="border-b border-slate-800">
+            <thead className="bg-slate-50">
+              <tr className="border-b border-slate-200">
                 {["Park", "type", "category", "rate", "Actions"].map(
                   (header) => (
                     <th
                       key={header}
-                      className="text-left py-4 px-6 text-sm font-semibold text-slate-400"
+                      className="text-left py-4 px-6 text-xs font-semibold text-slate-500 uppercase tracking-wide"
                     >
                       {header}
                     </th>
@@ -1179,34 +1181,34 @@ export default function Parks() {
               {parkFeeRates.map((row) => (
                 <tr
                   key={row.id}
-                  className="border-b border-slate-800/50 hover:bg-slate-800/20 transition-colors"
+                  className="border-b border-slate-100 hover:bg-slate-50 transition-colors"
                 >
-                  <td className="py-4 px-6 text-sm text-white font-medium">
+                  <td className="py-4 px-6 text-sm text-slate-900 font-medium">
                     {parkNameById[row.park_id] ||
                       row.park_name ||
                       "Unknown Park"}
                   </td>
-                  <td className="py-4 px-6 text-sm text-slate-300">
+                  <td className="py-4 px-6 text-sm text-slate-700">
                     {formatRateType(row.type)}
                   </td>
-                  <td className="py-4 px-6 text-sm text-slate-300">
+                  <td className="py-4 px-6 text-sm text-slate-700">
                     {row.category}
                   </td>
-                  <td className="py-4 px-6 text-sm text-slate-300">
+                  <td className="py-4 px-6 text-sm text-slate-700">
                     USD {row.rate.toLocaleString()}
                   </td>
                   <td className="py-4 px-6">
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => openEditRate(row)}
-                        className="p-2 rounded-lg bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 transition-colors"
+                        className="p-2 rounded-lg bg-slate-100 text-slate-600 hover:text-slate-900 hover:bg-slate-200 transition-colors"
                         title="Edit rate"
                       >
                         <Edit className="w-4 h-4" />
                       </button>
                       <button
                         onClick={() => handleDeleteRate(row.id)}
-                        className="p-2 rounded-lg bg-red-500/10 text-red-300 hover:text-red-200 hover:bg-red-500/20 transition-colors"
+                        className="p-2 rounded-lg bg-rose-50 text-rose-600 hover:text-rose-700 hover:bg-rose-100 transition-colors"
                         title="Delete rate"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -1230,15 +1232,15 @@ export default function Parks() {
             </div>
           )}
         </div>
-      </div>
+      </section>
 
-      <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-2xl overflow-hidden">
-        <div className="p-4 sm:p-6 border-b border-slate-800 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      <section className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        <div className="p-4 sm:p-6 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold text-white">
+            <h2 className="text-lg font-semibold text-slate-900">
               Concession Rates
             </h2>
-            <p className="text-sm text-slate-400 mt-1">
+            <p className="text-sm text-slate-500 mt-1">
               Rates for resident, non resident, and citizen categories.
             </p>
           </div>
@@ -1248,7 +1250,7 @@ export default function Parks() {
               onChange={(event) =>
                 setSelectedConcessionParkId(event.target.value)
               }
-              className="bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500"
+              className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-cyan-500"
             >
               <option value="all">All Concession Rates</option>
               {parks.map((park) => (
@@ -1269,20 +1271,20 @@ export default function Parks() {
         </div>
 
         {concessionError && (
-          <div className="mx-4 sm:mx-6 mt-4 bg-red-500/10 border border-red-500/30 text-red-300 rounded-xl px-4 py-3 text-sm">
+          <div className="mx-4 sm:mx-6 mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
             {concessionError}
           </div>
         )}
 
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead>
-              <tr className="border-b border-slate-800">
+            <thead className="bg-slate-50">
+              <tr className="border-b border-slate-200">
                 {["Park", "type", "category", "rate", "Actions"].map(
                   (header) => (
                     <th
                       key={header}
-                      className="text-left py-4 px-6 text-sm font-semibold text-slate-400"
+                      className="text-left py-4 px-6 text-xs font-semibold text-slate-500 uppercase tracking-wide"
                     >
                       {header}
                     </th>
@@ -1294,34 +1296,34 @@ export default function Parks() {
               {concessionRates.map((row) => (
                 <tr
                   key={row.id}
-                  className="border-b border-slate-800/50 hover:bg-slate-800/20 transition-colors"
+                  className="border-b border-slate-100 hover:bg-slate-50 transition-colors"
                 >
-                  <td className="py-4 px-6 text-sm text-white font-medium">
+                  <td className="py-4 px-6 text-sm text-slate-900 font-medium">
                     {parkNameById[row.park_id] ||
                       row.park_name ||
                       "Unknown Park"}
                   </td>
-                  <td className="py-4 px-6 text-sm text-slate-300">
+                  <td className="py-4 px-6 text-sm text-slate-700">
                     {formatRateType(row.type)}
                   </td>
-                  <td className="py-4 px-6 text-sm text-slate-300">
+                  <td className="py-4 px-6 text-sm text-slate-700">
                     {row.category}
                   </td>
-                  <td className="py-4 px-6 text-sm text-slate-300">
+                  <td className="py-4 px-6 text-sm text-slate-700">
                     USD {row.rate.toLocaleString()}
                   </td>
                   <td className="py-4 px-6">
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => openEditConcessionRate(row)}
-                        className="p-2 rounded-lg bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 transition-colors"
+                        className="p-2 rounded-lg bg-slate-100 text-slate-600 hover:text-slate-900 hover:bg-slate-200 transition-colors"
                         title="Edit concession rate"
                       >
                         <Edit className="w-4 h-4" />
                       </button>
                       <button
                         onClick={() => handleDeleteConcessionRate(row.id)}
-                        className="p-2 rounded-lg bg-red-500/10 text-red-300 hover:text-red-200 hover:bg-red-500/20 transition-colors"
+                        className="p-2 rounded-lg bg-rose-50 text-rose-600 hover:text-rose-700 hover:bg-rose-100 transition-colors"
                         title="Delete concession rate"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -1345,15 +1347,15 @@ export default function Parks() {
             </div>
           )}
         </div>
-      </div>
+      </section>
 
-      <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-2xl overflow-hidden">
-        <div className="p-4 sm:p-6 border-b border-slate-800 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      <section className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        <div className="p-4 sm:p-6 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold text-white">
+            <h2 className="text-lg font-semibold text-slate-900">
               Transport Rates
             </h2>
-            <p className="text-sm text-slate-400 mt-1">
+            <p className="text-sm text-slate-500 mt-1">
               Standard transport pricing by service particular.
             </p>
           </div>
@@ -1367,19 +1369,19 @@ export default function Parks() {
         </div>
 
         {transportError && (
-          <div className="mx-4 sm:mx-6 mt-4 bg-red-500/10 border border-red-500/30 text-red-300 rounded-xl px-4 py-3 text-sm">
+          <div className="mx-4 sm:mx-6 mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
             {transportError}
           </div>
         )}
 
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead>
-              <tr className="border-b border-slate-800">
+            <thead className="bg-slate-50">
+              <tr className="border-b border-slate-200">
                 {["Particular", "Rate", "Actions"].map((header) => (
                   <th
                     key={header}
-                    className="text-left py-4 px-6 text-sm font-semibold text-slate-400"
+                    className="text-left py-4 px-6 text-xs font-semibold text-slate-500 uppercase tracking-wide"
                   >
                     {header}
                   </th>
@@ -1390,26 +1392,26 @@ export default function Parks() {
               {transportRates.map((row) => (
                 <tr
                   key={row.id}
-                  className="border-b border-slate-800/50 hover:bg-slate-800/20 transition-colors"
+                  className="border-b border-slate-100 hover:bg-slate-50 transition-colors"
                 >
-                  <td className="py-4 px-6 text-sm text-white font-medium">
+                  <td className="py-4 px-6 text-sm text-slate-900 font-medium">
                     {row.particular}
                   </td>
-                  <td className="py-4 px-6 text-sm text-slate-300">
+                  <td className="py-4 px-6 text-sm text-slate-700">
                     USD {row.rate.toLocaleString()}
                   </td>
                   <td className="py-4 px-6">
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => openEditTransportRate(row)}
-                        className="p-2 rounded-lg bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 transition-colors"
+                        className="p-2 rounded-lg bg-slate-100 text-slate-600 hover:text-slate-900 hover:bg-slate-200 transition-colors"
                         title="Edit transport rate"
                       >
                         <Edit className="w-4 h-4" />
                       </button>
                       <button
                         onClick={() => handleDeleteTransportRate(row.id)}
-                        className="p-2 rounded-lg bg-red-500/10 text-red-300 hover:text-red-200 hover:bg-red-500/20 transition-colors"
+                        className="p-2 rounded-lg bg-rose-50 text-rose-600 hover:text-rose-700 hover:bg-rose-100 transition-colors"
                         title="Delete transport rate"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -1433,7 +1435,7 @@ export default function Parks() {
             </div>
           )}
         </div>
-      </div>
+      </section>
 
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">

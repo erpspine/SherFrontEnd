@@ -24,27 +24,27 @@ import Select from "react-select";
 
 const statusConfig = {
   Pending: {
-    color: "bg-amber-500/20 text-amber-400 border-amber-500/30",
+    color: "bg-amber-50 text-amber-700 border-amber-200",
     icon: Clock,
   },
   Draft: {
-    color: "bg-slate-500/20 text-slate-400 border-slate-500/30",
+    color: "bg-slate-100 text-slate-600 border-slate-200",
     icon: Clock,
   },
   Sent: {
-    color: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+    color: "bg-blue-50 text-blue-700 border-blue-200",
     icon: Send,
   },
   Approved: {
-    color: "bg-green-500/20 text-green-400 border-green-500/30",
+    color: "bg-emerald-50 text-emerald-700 border-emerald-200",
     icon: CheckCircle,
   },
   Rejected: {
-    color: "bg-red-500/20 text-red-400 border-red-500/30",
+    color: "bg-rose-50 text-rose-700 border-rose-200",
     icon: XCircle,
   },
   Converted: {
-    color: "bg-purple-500/20 text-purple-400 border-purple-500/30",
+    color: "bg-purple-50 text-purple-700 border-purple-200",
     icon: Receipt,
   },
 };
@@ -1305,8 +1305,8 @@ export default function Quotations() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white">Quotations</h1>
-          <p className="text-slate-400 mt-1">
+          <h1 className="text-2xl font-bold text-slate-900">Quotations</h1>
+          <p className="text-slate-500 mt-1">
             Create and manage dynamic quotation templates for transport
             services.
           </p>
@@ -1321,32 +1321,36 @@ export default function Quotations() {
       </div>
 
       {errorMessage && !isModalOpen && (
-        <div className="bg-red-500/10 border border-red-500/30 text-red-300 rounded-xl px-4 py-3 text-sm">
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
           {errorMessage}
         </div>
       )}
 
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         {[
-          { label: "Total", value: stats.total, color: "text-white" },
+          { label: "Total", value: stats.total, color: "text-slate-900" },
           {
             label: "Pending",
             value: stats.pending,
-            color: "text-amber-400",
+            color: "text-amber-600",
           },
-          { label: "Sent", value: stats.sent, color: "text-blue-400" },
-          { label: "Approved", value: stats.approved, color: "text-green-400" },
+          { label: "Sent", value: stats.sent, color: "text-blue-600" },
+          {
+            label: "Approved",
+            value: stats.approved,
+            color: "text-emerald-600",
+          },
           {
             label: "Converted",
             value: stats.converted,
-            color: "text-purple-400",
+            color: "text-purple-600",
           },
         ].map((item) => (
           <div
             key={item.label}
-            className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-xl p-4 text-center"
+            className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm text-center"
           >
-            <p className="text-slate-400 text-sm">{item.label}</p>
+            <p className="text-slate-500 text-sm">{item.label}</p>
             <p className={`text-2xl font-bold mt-1 ${item.color}`}>
               {item.value}
             </p>
@@ -1354,16 +1358,16 @@ export default function Quotations() {
         ))}
       </div>
 
-      <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-2xl p-4">
+      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4">
         <div className="flex flex-col sm:flex-row gap-4">
-          <div className="flex-1 flex items-center gap-3 bg-slate-800/50 rounded-xl px-4 py-2.5 border border-slate-700/50 focus-within:border-amber-500/50 transition-colors">
-            <Search className="w-5 h-5 text-slate-500" />
+          <div className="flex-1 flex items-center gap-3 bg-slate-50 rounded-xl px-4 py-2.5 border border-slate-200 focus-within:border-amber-500 transition-colors">
+            <Search className="w-5 h-5 text-slate-400" />
             <input
               type="text"
               placeholder="Search by quote #, client, or service summary..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="bg-transparent border-none outline-none text-sm text-slate-300 placeholder-slate-500 w-full"
+              className="bg-transparent border-none outline-none text-sm text-slate-900 placeholder-slate-400 w-full"
             />
           </div>
           <div className="flex flex-wrap gap-2">
@@ -1381,7 +1385,7 @@ export default function Quotations() {
                 className={`px-3 py-2 rounded-xl text-sm font-medium transition-all ${
                   statusFilter === status
                     ? "bg-amber-500 text-white"
-                    : "bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700"
+                    : "bg-slate-100 text-slate-600 hover:text-slate-900 hover:bg-slate-200"
                 }`}
               >
                 {status}
@@ -1391,11 +1395,11 @@ export default function Quotations() {
         </div>
       </div>
 
-      <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-2xl overflow-hidden">
+      <section className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead>
-              <tr className="border-b border-slate-800">
+            <thead className="bg-slate-50">
+              <tr className="border-b border-slate-200">
                 {[
                   "Actions",
                   "Quote #",
@@ -1411,7 +1415,7 @@ export default function Quotations() {
                 ].map((header) => (
                   <th
                     key={header}
-                    className={`text-left py-4 px-6 text-sm font-semibold text-slate-400 ${
+                    className={`text-left py-4 px-6 text-xs font-semibold text-slate-500 uppercase tracking-wide ${
                       header === "Quote #" ? "min-w-[180px]" : ""
                     }`}
                   >
@@ -1427,17 +1431,17 @@ export default function Quotations() {
                 return (
                   <tr
                     key={quotation.id}
-                    className={`border-b border-slate-800/50 transition-colors ${
+                    className={`border-b border-slate-100 transition-colors ${
                       index % 2 === 0
-                        ? "bg-amber-300/[0.04] hover:bg-amber-300/[0.09]"
-                        : "bg-sky-300/[0.04] hover:bg-sky-300/[0.09]"
+                        ? "hover:bg-amber-50/60"
+                        : "hover:bg-sky-50/60"
                     }`}
                   >
                     <td className="py-4 px-6">
                       <div className="flex items-center justify-start gap-1 whitespace-nowrap">
                         <button
                           onClick={() => openEditQuotation(quotation)}
-                          className="p-1.5 text-slate-400 hover:text-amber-400 hover:bg-amber-500/10 rounded-lg transition-colors"
+                          className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
                           title="Edit"
                         >
                           <Edit className="w-4 h-4" />
@@ -1445,7 +1449,7 @@ export default function Quotations() {
                         <button
                           onClick={() => handleDownloadPdf(quotation)}
                           disabled={downloadingId === quotation.id}
-                          className="p-1.5 text-slate-400 hover:text-green-400 hover:bg-green-500/10 rounded-lg transition-colors"
+                          className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
                           title={
                             downloadingId === quotation.id
                               ? "Downloading..."
@@ -1462,7 +1466,7 @@ export default function Quotations() {
                           <button
                             onClick={() => handleConvertToPI(quotation)}
                             disabled={convertingId === quotation.id}
-                            className="px-2 py-1 text-xs font-medium text-purple-400 bg-purple-500/10 hover:bg-purple-500/20 rounded-lg transition-colors"
+                            className="px-2 py-1 text-xs font-medium text-purple-700 bg-purple-50 hover:bg-purple-100 rounded-lg transition-colors border border-purple-200"
                             title="Convert to PI"
                           >
                             {convertingId === quotation.id
@@ -1474,7 +1478,7 @@ export default function Quotations() {
                           <button
                             onClick={() => handleRegeneratePI(quotation)}
                             disabled={convertingId === quotation.id}
-                            className="px-2 py-1 text-xs font-medium text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 rounded-lg transition-colors"
+                            className="px-2 py-1 text-xs font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors border border-amber-200"
                             title="Regenerate PI"
                           >
                             {convertingId === quotation.id
@@ -1484,7 +1488,7 @@ export default function Quotations() {
                         )}
                         <button
                           onClick={() => handleDeleteQuotation(quotation.id)}
-                          className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
                           title="Delete"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -1493,10 +1497,10 @@ export default function Quotations() {
                     </td>
                     <td className="py-4 px-6 min-w-[180px] whitespace-nowrap">
                       <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center">
-                          <FileText className="w-4 h-4 text-amber-400" />
+                        <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center">
+                          <FileText className="w-4 h-4 text-amber-600" />
                         </div>
-                        <span className="text-white font-medium text-sm">
+                        <span className="text-slate-900 font-medium text-sm">
                           {quotation.quotationNumber ||
                             quotation.quoteNo ||
                             formatQuotationNumberFromId(
@@ -1506,18 +1510,18 @@ export default function Quotations() {
                         </span>
                       </div>
                     </td>
-                    <td className="py-4 px-6 text-sm text-slate-400">
+                    <td className="py-4 px-6 text-sm text-slate-500">
                       {formatDisplayDate(quotation.date)}
                     </td>
                     <td className="py-4 px-6">
                       <div className="flex items-center gap-2">
-                        <Building2 className="w-4 h-4 text-slate-500 flex-shrink-0" />
-                        <span className="text-sm text-slate-300">
+                        <Building2 className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                        <span className="text-sm text-slate-700">
                           {quotation.client}
                         </span>
                       </div>
                     </td>
-                    <td className="py-4 px-6 text-sm text-slate-300 whitespace-nowrap">
+                    <td className="py-4 px-6 text-sm text-slate-700 whitespace-nowrap">
                       {quotation.groupName || "-"}
                     </td>
                     <td className="py-4 px-6 text-sm max-w-xs">
@@ -1536,7 +1540,7 @@ export default function Quotations() {
                       </div>
                     </td>
                     <td className="py-4 px-6">
-                      <span className="text-white font-semibold text-sm">
+                      <span className="text-slate-900 font-semibold text-sm">
                         {formatCurrency(quotation.total)}
                       </span>
                     </td>
@@ -1548,10 +1552,10 @@ export default function Quotations() {
                         {quotation.status}
                       </span>
                     </td>
-                    <td className="py-4 px-6 text-sm text-slate-300 whitespace-nowrap">
+                    <td className="py-4 px-6 text-sm text-slate-700 whitespace-nowrap">
                       {quotation.sentBy || "-"}
                     </td>
-                    <td className="py-4 px-6 text-xs text-slate-400 whitespace-nowrap">
+                    <td className="py-4 px-6 text-xs text-slate-500 whitespace-nowrap">
                       {formatDateTime(quotation.sentAt)}
                     </td>
                     <td className="py-4 px-6">
@@ -1559,7 +1563,7 @@ export default function Quotations() {
                         <button
                           onClick={() => handleMarkSent(quotation)}
                           disabled={markingSentId === quotation.id}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-500/15 text-blue-400 border border-blue-500/30 hover:bg-blue-500/25 disabled:opacity-50"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 disabled:opacity-50"
                         >
                           {markingSentId === quotation.id ? (
                             <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -1588,15 +1592,15 @@ export default function Quotations() {
             </div>
           )}
         </div>
-        <div className="px-6 py-4 border-t border-slate-800/50 flex items-center justify-between">
-          <p className="text-sm text-slate-400">
+        <div className="px-6 py-4 border-t border-slate-200 flex items-center justify-between">
+          <p className="text-sm text-slate-500">
             Showing {filtered.length} of {quotations.length} quotations
           </p>
-          <p className="text-sm font-semibold text-white">
+          <p className="text-sm font-semibold text-slate-900">
             Total Value: {formatCurrency(totalValue)}
           </p>
         </div>
-      </div>
+      </section>
 
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">

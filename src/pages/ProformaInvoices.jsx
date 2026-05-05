@@ -19,23 +19,23 @@ import { apiFetch } from "../utils/api";
 
 const statusConfig = {
   Draft: {
-    color: "bg-slate-500/20 text-slate-600 border-slate-500/30",
+    color: "bg-slate-100 text-slate-600 border-slate-200",
     icon: Clock,
   },
   Sent: {
-    color: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+    color: "bg-blue-50 text-blue-700 border-blue-200",
     icon: Send,
   },
   Paid: {
-    color: "bg-green-500/20 text-green-400 border-green-500/30",
+    color: "bg-emerald-50 text-emerald-700 border-emerald-200",
     icon: CheckCircle,
   },
   Overdue: {
-    color: "bg-red-500/20 text-red-400 border-red-500/30",
+    color: "bg-rose-50 text-rose-700 border-rose-200",
     icon: AlertTriangle,
   },
   Converted: {
-    color: "bg-purple-500/20 text-purple-400 border-purple-500/30",
+    color: "bg-purple-50 text-purple-700 border-purple-200",
     icon: Receipt,
   },
 };
@@ -353,8 +353,10 @@ export default function ProformaInvoices() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white">Proforma Invoices</h1>
-          <p className="text-slate-400 mt-1">
+          <h1 className="text-2xl font-bold text-slate-900">
+            Proforma Invoices
+          </h1>
+          <p className="text-slate-500 mt-1">
             Manage and track proforma invoices.
           </p>
         </div>
@@ -368,45 +370,45 @@ export default function ProformaInvoices() {
       </div>
 
       {errorMessage && (
-        <div className="bg-red-500/10 border border-red-500/30 text-red-300 rounded-xl px-4 py-3 text-sm">
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
           {errorMessage}
         </div>
       )}
 
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-        <div className="bg-slate-900/50 border border-slate-800/50 rounded-xl p-4">
-          <p className="text-slate-400 text-sm">Total PI Value</p>
-          <p className="text-xl font-bold text-white mt-1">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <p className="text-slate-500 text-sm">Total PI Value</p>
+          <p className="text-xl font-bold text-slate-900 mt-1">
             {formatCurrency(stats.totalAmount)}
           </p>
           <p className="text-xs text-slate-500 mt-1">{stats.total} invoices</p>
         </div>
-        <div className="bg-slate-900/50 border border-slate-800/50 rounded-xl p-4">
-          <p className="text-slate-400 text-sm">Converted</p>
-          <p className="text-2xl font-bold text-purple-400 mt-1">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <p className="text-slate-500 text-sm">Converted</p>
+          <p className="text-2xl font-bold text-purple-600 mt-1">
             {stats.converted}
           </p>
           <p className="text-xs text-slate-500 mt-1">from quotations</p>
         </div>
-        <div className="bg-slate-900/50 border border-slate-800/50 rounded-xl p-4">
-          <p className="text-slate-400 text-sm">Average PI</p>
-          <p className="text-xl font-bold text-amber-400 mt-1">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <p className="text-slate-500 text-sm">Average PI</p>
+          <p className="text-xl font-bold text-amber-600 mt-1">
             {formatCurrency(stats.total ? stats.totalAmount / stats.total : 0)}
           </p>
           <p className="text-xs text-slate-500 mt-1">per invoice</p>
         </div>
       </div>
 
-      <div className="bg-slate-900/50 border border-slate-800/50 rounded-2xl p-4">
+      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4">
         <div className="flex flex-col sm:flex-row gap-3">
-          <div className="flex-1 flex items-center gap-3 bg-slate-800/50 rounded-xl px-4 py-2.5 border border-slate-700/50 focus-within:border-amber-500/50 transition-colors">
-            <Search className="w-4 h-4 text-slate-500" />
+          <div className="flex-1 flex items-center gap-3 bg-slate-50 rounded-xl px-4 py-2.5 border border-slate-200 focus-within:border-amber-500 transition-colors">
+            <Search className="w-4 h-4 text-slate-400" />
             <input
               type="text"
               placeholder="Search by PI #, quotation #, client, group name..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full bg-transparent outline-none text-sm text-slate-300 placeholder-slate-500"
+              className="w-full bg-transparent outline-none text-sm text-slate-900 placeholder-slate-400"
             />
           </div>
           <div className="flex flex-wrap gap-2">
@@ -417,7 +419,7 @@ export default function ProformaInvoices() {
                 className={`px-3 py-2 rounded-xl text-sm font-medium transition-all ${
                   statusFilter === status
                     ? "bg-amber-500 text-white"
-                    : "bg-slate-800 text-slate-400 hover:text-white"
+                    : "bg-slate-100 text-slate-600 hover:text-slate-900 hover:bg-slate-200"
                 }`}
               >
                 {status}
@@ -427,11 +429,11 @@ export default function ProformaInvoices() {
         </div>
       </div>
 
-      <div className="bg-slate-900/50 border border-slate-800/50 rounded-2xl overflow-hidden">
+      <section className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead>
-              <tr className="border-b border-slate-800">
+            <thead className="bg-slate-50">
+              <tr className="border-b border-slate-200">
                 {[
                   "Actions",
                   "PI #",
@@ -446,7 +448,7 @@ export default function ProformaInvoices() {
                 ].map((h) => (
                   <th
                     key={h}
-                    className="text-left py-3 px-4 text-xs font-semibold text-slate-400 uppercase tracking-wider whitespace-nowrap"
+                    className="text-left py-4 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap"
                   >
                     {h}
                   </th>
@@ -465,14 +467,14 @@ export default function ProformaInvoices() {
                 return (
                   <tr
                     key={pi.id}
-                    className="border-b border-slate-800/40 hover:bg-slate-800/30 transition-colors"
+                    className="border-b border-slate-100 hover:bg-slate-50 transition-colors"
                   >
                     <td className="py-4 px-4">
                       <div className="flex items-center gap-1">
                         <button
                           onClick={() => handleViewPI(pi)}
                           disabled={isViewLoading}
-                          className="p-1.5 text-slate-300 hover:text-amber-300 hover:bg-slate-800 rounded-lg transition-colors"
+                          className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
                           title="View"
                         >
                           <Eye className="w-4 h-4" />
@@ -480,7 +482,7 @@ export default function ProformaInvoices() {
                         <button
                           onClick={() => handleDownloadPdf(pi)}
                           disabled={downloadingPiId === pi.id}
-                          className="p-1.5 text-slate-300 hover:text-green-300 hover:bg-slate-800 rounded-lg transition-colors"
+                          className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
                           title={
                             downloadingPiId === pi.id
                               ? "Downloading..."
@@ -497,38 +499,38 @@ export default function ProformaInvoices() {
                     </td>
                     <td className="py-4 px-4 min-w-[180px]">
                       <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-lg bg-indigo-500/10 flex items-center justify-center">
-                          <Receipt className="w-4 h-4 text-indigo-400" />
+                        <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center">
+                          <Receipt className="w-4 h-4 text-indigo-500" />
                         </div>
-                        <span className="text-white font-medium text-sm">
+                        <span className="text-slate-900 font-medium text-sm">
                           {pi.piNo}
                         </span>
                       </div>
                     </td>
-                    <td className="py-4 px-4 text-sm text-amber-300 font-medium whitespace-nowrap">
+                    <td className="py-4 px-4 text-sm text-amber-600 font-medium whitespace-nowrap">
                       {quotationNumber || "-"}
                     </td>
-                    <td className="py-4 px-4 text-sm text-slate-300 whitespace-nowrap">
+                    <td className="py-4 px-4 text-sm text-slate-700 whitespace-nowrap">
                       {formatDate(pi.date)}
                     </td>
-                    <td className="py-4 px-4 text-sm text-slate-300 whitespace-nowrap">
+                    <td className="py-4 px-4 text-sm text-slate-700 whitespace-nowrap">
                       {formatDate(pi.dueDate)}
                     </td>
                     <td className="py-4 px-4">
                       <div className="flex items-center gap-1.5">
-                        <Building2 className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
-                        <span className="text-sm text-slate-300 whitespace-nowrap">
+                        <Building2 className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                        <span className="text-sm text-slate-700 whitespace-nowrap">
                           {pi.client}
                         </span>
                       </div>
                     </td>
-                    <td className="py-4 px-4 text-sm text-slate-300 whitespace-nowrap">
+                    <td className="py-4 px-4 text-sm text-slate-700 whitespace-nowrap">
                       {groupName}
                     </td>
                     <td className="py-4 px-4 text-sm max-w-sm">
                       <div className="space-y-1">
                         <p
-                          className="text-slate-300 truncate"
+                          className="text-slate-700 truncate"
                           title={getPIDestinationsLabel(pi)}
                         >
                           {getPIDestinationsLabel(pi) || "-"}
@@ -541,7 +543,7 @@ export default function ProformaInvoices() {
                       </div>
                     </td>
                     <td className="py-4 px-4">
-                      <span className="text-white font-semibold text-sm whitespace-nowrap">
+                      <span className="text-slate-900 font-semibold text-sm whitespace-nowrap">
                         {formatCurrency(pi.total)}
                       </span>
                     </td>
@@ -570,18 +572,18 @@ export default function ProformaInvoices() {
             </div>
           )}
         </div>
-        <div className="px-6 py-4 border-t border-slate-800 flex items-center justify-between">
-          <p className="text-sm text-slate-500">
+        <div className="px-6 py-4 border-t border-slate-200 flex items-center justify-between">
+          <p className="text-sm text-slate-600">
             Showing {filtered.length} of {allPIs.length} invoices
           </p>
-          <p className="text-sm font-semibold text-white">
+          <p className="text-sm font-semibold text-slate-900">
             Total:{" "}
             {formatCurrency(
               filtered.reduce((s, pi) => s + Number(pi.total || 0), 0),
             )}
           </p>
         </div>
-      </div>
+      </section>
 
       {viewPI && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
