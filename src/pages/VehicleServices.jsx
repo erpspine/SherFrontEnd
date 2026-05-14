@@ -488,7 +488,7 @@ export default function VehicleServices() {
       <section className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1460px]">
-            <thead className="bg-slate-50">
+            <thead className="table-head-gradient">
               <tr className="border-b border-slate-200">
                 {[
                   "Vehicle",

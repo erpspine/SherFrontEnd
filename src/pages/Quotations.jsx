@@ -4,6 +4,7 @@ import {
   Plus,
   FileText,
   Building2,
+  Car,
   Edit,
   Trash2,
   X,
@@ -201,6 +202,87 @@ const toPickerValue = (value) => ({
 
 const calculateItemTotal = (item) => toNumber(item.qty) * toNumber(item.rate);
 
+const filenameFromHeader = (disposition, fallback) => {
+  if (!disposition) return fallback;
+
+  const utfMatch = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utfMatch?.[1]) {
+    return decodeURIComponent(utfMatch[1]);
+  }
+
+  const basicMatch = disposition.match(/filename="?([^";]+)"?/i);
+  if (basicMatch?.[1]) {
+    return basicMatch[1];
+  }
+
+  return fallback;
+};
+
+const normalizeAvailabilityVehicle = (vehicle) => ({
+  id: Number(vehicle?.id || 0),
+  vehicleNo:
+    vehicle?.vehicle_no || vehicle?.vehicleNo || `Vehicle ${vehicle?.id || ""}`,
+  plateNo: vehicle?.plate_no || vehicle?.plateNo || "-",
+  make: vehicle?.make || "",
+  model: vehicle?.model || "",
+  status: vehicle?.status || "Available",
+  assignedDriverId:
+    vehicle?.assigned_driver_id ||
+    vehicle?.assignedDriverId ||
+    vehicle?.assigned_driver?.id ||
+    vehicle?.assignedDriver?.id ||
+    null,
+  assignedDriverName:
+    vehicle?.assigned_driver?.name || vehicle?.assignedDriver?.name || "",
+});
+
+const normalizeAvailabilityAllocation = (allocation) => ({
+  id: allocation?.id,
+  vehicleId: Number(
+    allocation?.vehicleId ||
+      allocation?.vehicle_id ||
+      allocation?.vehicle?.id ||
+      0,
+  ),
+  startDate:
+    allocation?.lead?.startDate ||
+    allocation?.lead?.start_date ||
+    allocation?.startDate ||
+    allocation?.start_date ||
+    "",
+  endDate:
+    allocation?.lead?.endDate ||
+    allocation?.lead?.end_date ||
+    allocation?.endDate ||
+    allocation?.end_date ||
+    "",
+  bookingRef:
+    allocation?.lead?.bookingRef ||
+    allocation?.lead?.booking_ref ||
+    allocation?.bookingRef ||
+    allocation?.booking_ref ||
+    "-",
+  status: allocation?.status || "Assigned",
+});
+
+const rangesOverlap = (startA, endA, startB, endB) => {
+  const fromA = toIsoDate(startA);
+  const toA = toIsoDate(endA);
+  const fromB = toIsoDate(startB);
+  const toB = toIsoDate(endB);
+
+  if (!fromA || !toA || !fromB || !toB) return false;
+
+  return fromA <= toB && toA >= fromB;
+};
+
+const extractApiList = (payload, key) => {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.data)) return payload.data;
+  if (Array.isArray(payload?.[key])) return payload[key];
+  return [];
+};
+
 const normalizeLead = (lead) => ({
   id: lead.id,
   bookingRef: lead.booking_ref || lead.bookingRef || "",
@@ -380,7 +462,16 @@ export default function Quotations() {
   const [isSaving, setIsSaving] = useState(false);
   const [markingSentId, setMarkingSentId] = useState(null);
   const [convertingId, setConvertingId] = useState(null);
+  const [isConvertModalOpen, setIsConvertModalOpen] = useState(false);
+  const [convertTarget, setConvertTarget] = useState(null);
+  const [convertLead, setConvertLead] = useState(null);
+  const [availableVehicles, setAvailableVehicles] = useState([]);
+  const [activeAllocations, setActiveAllocations] = useState([]);
+  const [selectedVehicleIds, setSelectedVehicleIds] = useState([]);
+  const [isLoadingAvailability, setIsLoadingAvailability] = useState(false);
+  const [convertError, setConvertError] = useState("");
   const [downloadingId, setDownloadingId] = useState(null);
+  const [exportType, setExportType] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [pickerCategory, setPickerCategory] = useState("Transport");
@@ -522,6 +613,46 @@ export default function Quotations() {
     (sum, quotation) => sum + quotation.total,
     0,
   );
+  const requestedVehicles = Math.max(0, Number(convertLead?.noOfVehicles || 0));
+  const vehicleAvailabilityRows = availableVehicles.map((vehicle) => {
+    const overlappingAllocations = activeAllocations.filter(
+      (allocation) =>
+        allocation.vehicleId === vehicle.id &&
+        rangesOverlap(
+          allocation.startDate,
+          allocation.endDate,
+          convertLead?.startDate,
+          convertLead?.endDate,
+        ) &&
+        String(allocation.status || "").toLowerCase() !== "cancelled",
+    );
+
+    const isStatusAvailable = vehicle.status === "Available";
+    const hasAssignedDriver = Boolean(vehicle.assignedDriverId);
+    const isAvailableNow =
+      Boolean(convertLead?.startDate && convertLead?.endDate) &&
+      isStatusAvailable &&
+      overlappingAllocations.length === 0 &&
+      hasAssignedDriver;
+
+    return {
+      ...vehicle,
+      overlappingAllocations,
+      isStatusAvailable,
+      hasAssignedDriver,
+      isAvailableNow,
+      reason:
+        !convertLead?.startDate || !convertLead?.endDate
+          ? "Lead dates missing"
+          : !isStatusAvailable
+            ? vehicle.status
+            : !hasAssignedDriver
+              ? "Assign a driver to this vehicle first"
+              : overlappingAllocations.length > 0
+                ? `Booked for ${overlappingAllocations[0].bookingRef}`
+                : "Available now",
+    };
+  });
   const allItems = form.daySections.flatMap((section) => section.items);
   const subtotal = allItems.reduce(
     (sum, item) => sum + calculateItemTotal(item),
@@ -991,48 +1122,191 @@ export default function Quotations() {
     }
   };
 
-  const handleConvertToPI = async (quotation) => {
-    const confirmation = await Swal.fire({
-      title: "Convert to PI?",
-      text: "This quotation will be marked as Converted and appear in Proforma Invoices.",
-      icon: "question",
-      showCancelButton: true,
-      confirmButtonText: "Convert",
-      cancelButtonText: "Cancel",
-      background: "#0f172a",
-      color: "#e2e8f0",
-      confirmButtonColor: "#d97706",
-    });
-
-    if (!confirmation.isConfirmed) return;
-
-    setConvertingId(quotation.id);
+  const handleExportQuotations = async (type) => {
     setErrorMessage("");
+    setExportType(type);
+
+    try {
+      const params = new URLSearchParams();
+      if (searchTerm.trim()) params.set("search", searchTerm.trim());
+      if (statusFilter && statusFilter !== "All") {
+        params.set("status", statusFilter);
+      }
+
+      const query = params.toString();
+      const response = await apiFetch(
+        `/quotations/export/${type}${query ? `?${query}` : ""}`,
+      );
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload?.message || `Unable to export ${type}.`);
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = filenameFromHeader(
+        response.headers.get("content-disposition"),
+        `quotations-report.${type === "pdf" ? "pdf" : "csv"}`,
+      );
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      setErrorMessage(error.message || `Failed to export ${type}.`);
+    } finally {
+      setExportType("");
+    }
+  };
+
+  const closeConvertModal = (force = false) => {
+    if (!force && convertingId !== null) return;
+    setIsConvertModalOpen(false);
+    setConvertTarget(null);
+    setConvertLead(null);
+    setAvailableVehicles([]);
+    setActiveAllocations([]);
+    setSelectedVehicleIds([]);
+    setConvertError("");
+  };
+
+  const handleConvertToPI = async (quotation) => {
+    setConvertTarget(quotation);
+    setConvertLead(
+      leads.find((lead) => String(lead.id) === String(quotation.leadId)) ||
+        null,
+    );
+    setAvailableVehicles([]);
+    setActiveAllocations([]);
+    setSelectedVehicleIds([]);
+    setConvertError("");
+    setIsConvertModalOpen(true);
+    setIsLoadingAvailability(true);
+
+    try {
+      const [vehiclesResponse, allocationsResponse] = await Promise.all([
+        apiFetch("/vehicles"),
+        apiFetch("/safari-allocations"),
+      ]);
+
+      const vehiclesPayload = await vehiclesResponse.json().catch(() => ({}));
+      const allocationsPayload = await allocationsResponse
+        .json()
+        .catch(() => ({}));
+
+      if (!vehiclesResponse.ok) {
+        throw new Error(
+          vehiclesPayload?.message || "Unable to load vehicles for allocation.",
+        );
+      }
+
+      if (!allocationsResponse.ok) {
+        throw new Error(
+          allocationsPayload?.message ||
+            "Unable to load current safari allocations.",
+        );
+      }
+
+      setAvailableVehicles(
+        extractApiList(vehiclesPayload, "vehicles").map(
+          normalizeAvailabilityVehicle,
+        ),
+      );
+      setActiveAllocations(
+        extractApiList(allocationsPayload, "allocations").map(
+          normalizeAvailabilityAllocation,
+        ),
+      );
+    } catch (error) {
+      setConvertError(
+        error.message || "Failed to load vehicle availability for conversion.",
+      );
+    } finally {
+      setIsLoadingAvailability(false);
+    }
+  };
+
+  const toggleVehicleSelection = (vehicleId) => {
+    const nextVehicleId = Number(vehicleId);
+    const isSelected = selectedVehicleIds.includes(nextVehicleId);
+
+    if (
+      !isSelected &&
+      requestedVehicles > 0 &&
+      selectedVehicleIds.length >= requestedVehicles
+    ) {
+      setConvertError(
+        `This lead requests ${requestedVehicles} vehicle(s). Remove one before adding another.`,
+      );
+      return;
+    }
+
+    setConvertError("");
+    setSelectedVehicleIds((current) =>
+      current.includes(nextVehicleId)
+        ? current.filter((value) => value !== nextVehicleId)
+        : [...current, nextVehicleId],
+    );
+  };
+
+  const submitQuotationConversion = async (allocationMode) => {
+    if (!convertTarget) return;
+
+    if (allocationMode === "now" && selectedVehicleIds.length === 0) {
+      setConvertError(
+        "Select at least one available vehicle or choose Allocate Later.",
+      );
+      return;
+    }
+
+    setConvertingId(convertTarget.id);
+    setErrorMessage("");
+    setConvertError("");
 
     try {
       const response = await apiFetch(
-        `/quotations/${quotation.id}/convert-to-pi`,
+        `/quotations/${convertTarget.id}/convert-to-pi`,
         {
           method: "POST",
+          body: {
+            allocationMode,
+            vehicleIds: allocationMode === "now" ? selectedVehicleIds : [],
+          },
         },
       );
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data?.message || "Unable to convert quotation to PI.");
+        const fieldError = data?.errors
+          ? Object.values(data.errors).flat().find(Boolean)
+          : null;
+        throw new Error(
+          fieldError || data?.message || "Unable to convert quotation to PI.",
+        );
       }
 
       setQuotations((current) =>
         current.map((q) =>
-          q.id === quotation.id ? { ...q, status: "Converted" } : q,
+          q.id === convertTarget.id ? { ...q, status: "Converted" } : q,
         ),
       );
 
+      closeConvertModal(true);
+
+      const allocationSummary = data?.allocationSummary || {};
+      const successText =
+        allocationMode === "later"
+          ? "Quotation converted to PI. Vehicle allocation can be completed later."
+          : `Quotation converted to PI. ${allocationSummary.allocationsCreated || 0} safari allocation(s) and ${allocationSummary.jobCardsCreated || 0} job card(s) are ready.`;
+
       await Swal.fire({
         title: "Converted",
-        text: "Quotation converted to PI successfully.",
+        text: successText,
         icon: "success",
-        timer: 1800,
+        timer: 2400,
         showConfirmButton: false,
         background: "#0f172a",
         color: "#e2e8f0",
@@ -1040,10 +1314,12 @@ export default function Quotations() {
 
       navigate("/proforma-invoices");
     } catch (error) {
-      setErrorMessage(error.message || "Failed to convert quotation to PI.");
+      const message = error.message || "Failed to convert quotation to PI.";
+      setErrorMessage(message);
+      setConvertError(message);
       await Swal.fire({
         title: "Conversion Failed",
-        text: error.message || "Failed to convert quotation to PI.",
+        text: message,
         icon: "error",
         background: "#0f172a",
         color: "#e2e8f0",
@@ -1311,13 +1587,49 @@ export default function Quotations() {
             services.
           </p>
         </div>
-        <button
-          onClick={openNewQuotation}
-          className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-amber-400 to-amber-600 text-white rounded-xl font-medium text-sm hover:opacity-90 transition-opacity shadow-lg shadow-amber-500/25"
-        >
-          <Plus className="w-4 h-4" />
-          New Quotation
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => handleExportQuotations("excel")}
+            disabled={Boolean(exportType)}
+            className="flex items-center gap-2 px-4 py-2.5 bg-white text-slate-700 rounded-xl font-medium text-sm border border-slate-200 hover:bg-slate-50 transition-colors disabled:cursor-wait disabled:opacity-60"
+          >
+            {exportType === "excel" ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Exporting Excel...
+              </>
+            ) : (
+              <>
+                <FileDown className="w-4 h-4" />
+                Export Excel
+              </>
+            )}
+          </button>
+          <button
+            onClick={() => handleExportQuotations("pdf")}
+            disabled={Boolean(exportType)}
+            className="flex items-center gap-2 px-4 py-2.5 bg-white text-slate-700 rounded-xl font-medium text-sm border border-slate-200 hover:bg-slate-50 transition-colors disabled:cursor-wait disabled:opacity-60"
+          >
+            {exportType === "pdf" ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Exporting PDF...
+              </>
+            ) : (
+              <>
+                <FileDown className="w-4 h-4" />
+                Export PDF
+              </>
+            )}
+          </button>
+          <button
+            onClick={openNewQuotation}
+            className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-amber-400 to-amber-600 text-white rounded-xl font-medium text-sm hover:opacity-90 transition-opacity shadow-lg shadow-amber-500/25"
+          >
+            <Plus className="w-4 h-4" />
+            New Quotation
+          </button>
+        </div>
       </div>
 
       {errorMessage && !isModalOpen && (
@@ -1398,7 +1710,7 @@ export default function Quotations() {
       <section className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead className="bg-slate-50">
+            <thead className="table-head-gradient">
               <tr className="border-b border-slate-200">
                 {[
                   "Actions",
@@ -1601,6 +1913,205 @@ export default function Quotations() {
           </p>
         </div>
       </section>
+
+      {isConvertModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-5xl rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden max-h-[92vh] flex flex-col">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-slate-200">
+              <div>
+                <h2 className="text-xl font-bold text-slate-900">
+                  Convert Quotation to PI
+                </h2>
+                <p className="text-sm text-slate-500 mt-1">
+                  Review vehicle availability, allocate now, or continue with
+                  Allocate Later.
+                </p>
+              </div>
+              <button
+                onClick={closeConvertModal}
+                className="p-2 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto space-y-5">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Quotation
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900">
+                    {convertTarget?.quotationNumber ||
+                      convertTarget?.quoteNo ||
+                      "-"}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Lead Dates
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900">
+                    {convertLead?.startDate && convertLead?.endDate
+                      ? `${formatDisplayDate(convertLead.startDate)} - ${formatDisplayDate(convertLead.endDate)}`
+                      : "Not available"}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Requested Vehicles
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900">
+                    {requestedVehicles || "Not specified"}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Selected Now
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900">
+                    {selectedVehicleIds.length}
+                  </p>
+                </div>
+              </div>
+
+              {convertLead?.routeParks && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                  Route: {convertLead.routeParks}
+                </div>
+              )}
+
+              {convertError && (
+                <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                  {convertError}
+                </div>
+              )}
+
+              <div className="rounded-2xl border border-slate-200 overflow-hidden">
+                <div className="px-5 py-4 border-b border-slate-200 bg-slate-50 flex items-center gap-2">
+                  <Car className="w-4 h-4 text-slate-600" />
+                  <h3 className="text-sm font-semibold text-slate-900">
+                    Vehicle Availability
+                  </h3>
+                </div>
+
+                {isLoadingAvailability ? (
+                  <div className="px-5 py-12 text-center text-slate-500">
+                    Loading vehicle availability...
+                  </div>
+                ) : vehicleAvailabilityRows.length === 0 ? (
+                  <div className="px-5 py-12 text-center text-slate-500">
+                    No vehicles found.
+                  </div>
+                ) : (
+                  <div className="divide-y divide-slate-200 max-h-[420px] overflow-y-auto">
+                    {vehicleAvailabilityRows.map((vehicle) => {
+                      const isChecked = selectedVehicleIds.includes(vehicle.id);
+                      return (
+                        <label
+                          key={vehicle.id}
+                          className={`flex items-start gap-4 px-5 py-4 ${
+                            vehicle.isAvailableNow
+                              ? "cursor-pointer hover:bg-amber-50/50"
+                              : "bg-slate-50"
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            disabled={
+                              !vehicle.isAvailableNow ||
+                              convertingId === convertTarget?.id
+                            }
+                            onChange={() => toggleVehicleSelection(vehicle.id)}
+                            className="mt-1 h-4 w-4 rounded border-slate-300 text-amber-500 focus:ring-amber-500"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2">
+                              <div>
+                                <p className="text-sm font-semibold text-slate-900">
+                                  {vehicle.vehicleNo} ({vehicle.plateNo})
+                                </p>
+                                <p className="text-xs text-slate-500 mt-1">
+                                  {[vehicle.make, vehicle.model]
+                                    .filter(Boolean)
+                                    .join(" ") || "Vehicle"}
+                                </p>
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                <span
+                                  className={`inline-flex items-center rounded-lg border px-2.5 py-1 text-xs font-medium ${vehicle.isAvailableNow ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-amber-200 bg-amber-50 text-amber-700"}`}
+                                >
+                                  {vehicle.reason}
+                                </span>
+                                <span
+                                  className={`inline-flex items-center rounded-lg border px-2.5 py-1 text-xs font-medium ${vehicle.hasAssignedDriver ? "border-blue-200 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-500"}`}
+                                >
+                                  {vehicle.hasAssignedDriver
+                                    ? `Driver: ${vehicle.assignedDriverName}`
+                                    : "No assigned driver"}
+                                </span>
+                              </div>
+                            </div>
+
+                            {vehicle.overlappingAllocations.length > 0 && (
+                              <div className="mt-2 text-xs text-slate-500">
+                                Current booking:{" "}
+                                {vehicle.overlappingAllocations[0].bookingRef}
+                              </div>
+                            )}
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="px-6 py-4 border-t border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white">
+              <p className="text-sm text-slate-500">
+                Allocate now to auto-create Safari Allocation and Job Card
+                entries. Choose Allocate Later to convert the PI without
+                assigning vehicles yet.
+              </p>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={closeConvertModal}
+                  disabled={convertingId === convertTarget?.id}
+                  className="px-4 py-2.5 rounded-xl text-sm font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => submitQuotationConversion("later")}
+                  disabled={convertingId === convertTarget?.id}
+                  className="px-4 py-2.5 rounded-xl text-sm font-medium border border-slate-300 text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50"
+                >
+                  {convertingId === convertTarget?.id
+                    ? "Working..."
+                    : "Allocate Later"}
+                </button>
+                <button
+                  onClick={() => submitQuotationConversion("now")}
+                  disabled={
+                    convertingId === convertTarget?.id ||
+                    isLoadingAvailability ||
+                    vehicleAvailabilityRows.every(
+                      (vehicle) => !vehicle.isAvailableNow,
+                    )
+                  }
+                  className="px-5 py-2.5 rounded-xl text-sm font-medium bg-gradient-to-r from-amber-400 to-amber-600 text-white hover:opacity-90 transition-opacity disabled:opacity-50"
+                >
+                  {convertingId === convertTarget?.id
+                    ? "Converting..."
+                    : "Convert & Allocate"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -2283,7 +2794,7 @@ export default function Quotations() {
                     </div>
                   ) : (
                     <table className="w-full">
-                      <thead className="sticky top-0 bg-slate-50 border-b border-slate-200">
+                      <thead className="sticky top-0 table-head-gradient border-b border-slate-200">
                         <tr>
                           <th className="text-left px-4 py-3 text-xs uppercase tracking-wide text-slate-500">
                             Product

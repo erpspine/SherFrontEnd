@@ -850,7 +850,7 @@ export default function SafariAllocations() {
 
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-slate-200 text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+            <thead className="table-head-gradient text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>
                 <th className="px-4 py-3">Safari</th>
                 <th className="px-4 py-3">Group Name</th>

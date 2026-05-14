@@ -12,7 +12,8 @@ import {
 import Swal from "sweetalert2";
 import { apiFetch } from "../utils/api";
 
-const MIN_LONG_TERM_DAYS = 365;
+const ONE_MONTH_DAYS = 30;
+const ONE_YEAR_DAYS = 365;
 const LEASE_CONTRACTS_STORAGE_KEY = "lease_contracts_v1";
 
 const parseDate = (value) => {
@@ -40,6 +41,14 @@ const calcDays = (start, end) => {
   return Number.isFinite(diff) ? Math.max(diff, 0) : null;
 };
 
+const getLeaseType = (startDate, endDate) => {
+  const days = calcDays(startDate, endDate);
+  if (days === null) return "Unknown";
+  if (days < ONE_MONTH_DAYS) return "Daily Lease";
+  if (days > ONE_YEAR_DAYS) return "Long-Term Lease";
+  return "Short-Term Lease";
+};
+
 const toInputDate = (value) => {
   const parsed = parseDate(value);
   if (!parsed) return "";
@@ -52,7 +61,6 @@ const toInputDate = (value) => {
 const createContractForm = () => ({
   vehicleIds: [],
   clientName: "",
-  contractNo: "",
   startDate: "",
   endDate: "",
   monthlyRate: "",
@@ -148,9 +156,7 @@ const extractVehicles = (payload) => {
   return [];
 };
 
-const isLongTerm = (vehicle) =>
-  vehicle.status === "On Lease" &&
-  (vehicle.leaseDays === null || vehicle.leaseDays >= MIN_LONG_TERM_DAYS);
+const isLeasedVehicle = (vehicle) => vehicle.status === "On Lease";
 
 export default function LongTermLeasing() {
   const [vehicles, setVehicles] = useState([]);
@@ -202,7 +208,7 @@ export default function LongTermLeasing() {
     return ids;
   }, [contracts]);
 
-  const longTermContracts = useMemo(() => {
+  const leaseContracts = useMemo(() => {
     const byVehicle = new Map(vehicles.map((v) => [String(v.id), v]));
     return contracts
       .map((contract) => {
@@ -219,40 +225,39 @@ export default function LongTermLeasing() {
         return {
           ...contract,
           durationDays,
+          leaseType:
+            contract.leaseType ||
+            getLeaseType(contract.startDate, contract.endDate),
           contractVehicles,
         };
       })
-      .filter(
-        (contract) =>
-          contract.durationDays === null ||
-          contract.durationDays >= MIN_LONG_TERM_DAYS,
-      )
       .sort((a, b) => Number(b.id || 0) - Number(a.id || 0));
   }, [contracts, vehicles]);
 
-  const legacyLongTermLeasedVehicles = useMemo(
+  const legacyLeasedVehicles = useMemo(
     () =>
       vehicles.filter(
         (vehicle) =>
-          isLongTerm(vehicle) && !activeVehicleLeaseSet.has(String(vehicle.id)),
+          isLeasedVehicle(vehicle) &&
+          !activeVehicleLeaseSet.has(String(vehicle.id)),
       ),
     [vehicles, activeVehicleLeaseSet],
   );
 
   const filteredContracts = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
-    if (!query) return longTermContracts;
+    if (!query) return leaseContracts;
 
-    return longTermContracts.filter((contract) => {
+    return leaseContracts.filter((contract) => {
       const vehicleText = (contract.contractVehicles || [])
         .map((v) => `${v.vehicleNo} ${v.plateNo} ${v.make} ${v.model}`)
         .join(" ");
-      return [contract.contractNo, contract.clientName, vehicleText]
+      return [contract.clientName, contract.leaseType, vehicleText]
         .join(" ")
         .toLowerCase()
         .includes(query);
     });
-  }, [longTermContracts, searchTerm]);
+  }, [leaseContracts, searchTerm]);
 
   const availableVehicles = useMemo(
     () =>
@@ -299,7 +304,6 @@ export default function LongTermLeasing() {
     if (
       form.vehicleIds.length === 0 ||
       !form.clientName ||
-      !form.contractNo ||
       !form.startDate ||
       !form.endDate
     ) {
@@ -310,19 +314,8 @@ export default function LongTermLeasing() {
     }
 
     const durationDays = calcDays(form.startDate, form.endDate);
-    if (durationDays === null || durationDays < MIN_LONG_TERM_DAYS) {
-      setErrorMessage("Long term lease must be one year (365 days) or more.");
-      return;
-    }
-
-    if (
-      contracts.some(
-        (item) =>
-          String(item.contractNo).toLowerCase() ===
-          String(form.contractNo).toLowerCase(),
-      )
-    ) {
-      setErrorMessage("Contract number already exists.");
+    if (durationDays === null) {
+      setErrorMessage("Lease start date and end date are required.");
       return;
     }
 
@@ -347,10 +340,10 @@ export default function LongTermLeasing() {
       const newContract = {
         id: Date.now(),
         vehicleIds: form.vehicleIds.map(Number),
-        contractNo: form.contractNo.trim(),
         clientName: form.clientName.trim(),
         startDate: form.startDate,
         endDate: form.endDate,
+        leaseType: getLeaseType(form.startDate, form.endDate),
         monthlyRate: form.monthlyRate,
         notes: form.notes,
         status: "Active",
@@ -373,7 +366,7 @@ export default function LongTermLeasing() {
 
       await Swal.fire({
         title: "Contract Created",
-        text: `${form.vehicleIds.length} vehicle(s) assigned to long term lease and blocked from allocation.`,
+        text: `${form.vehicleIds.length} vehicle(s) assigned to lease and blocked from allocation.`,
         icon: "success",
         timer: 1600,
         showConfirmButton: false,
@@ -397,33 +390,47 @@ export default function LongTermLeasing() {
   const stats = useMemo(
     () => ({
       totalLeased:
-        longTermContracts.reduce(
+        leaseContracts.reduce(
           (sum, c) => sum + (c.contractVehicles?.length || 0),
           0,
-        ) + legacyLongTermLeasedVehicles.length,
-      contracts: longTermContracts.length,
-      legacyLeased: legacyLongTermLeasedVehicles.length,
+        ) + legacyLeasedVehicles.length,
+      contracts: leaseContracts.length,
+      dailyLease: leaseContracts.filter((c) => c.leaseType === "Daily Lease")
+        .length,
+      shortTermLease: leaseContracts.filter(
+        (c) => c.leaseType === "Short-Term Lease",
+      ).length,
+      longTermLease:
+        leaseContracts.filter((c) => c.leaseType === "Long-Term Lease").length +
+        legacyLeasedVehicles.filter(
+          (vehicle) =>
+            getLeaseType(vehicle.leaseStartDate, vehicle.leaseEndDate) ===
+            "Long-Term Lease",
+        ).length,
       averageDays: (() => {
-        const values = longTermContracts
+        const values = leaseContracts
           .map((v) => v.durationDays)
           .filter((v) => typeof v === "number");
         if (values.length === 0) return 0;
         return Math.round(values.reduce((a, b) => a + b, 0) / values.length);
       })(),
     }),
-    [longTermContracts, legacyLongTermLeasedVehicles],
+    [leaseContracts, legacyLeasedVehicles],
+  );
+
+  const draftLeaseType = useMemo(
+    () => getLeaseType(form.startDate, form.endDate),
+    [form.startDate, form.endDate],
   );
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">
-            Long Term Leasing
-          </h1>
+          <h1 className="text-2xl font-bold text-slate-900">Lease</h1>
           <p className="text-slate-500 mt-1">
-            Create lease contracts for one year or more and block leased
-            vehicles from operational use.
+            Manage daily, short-term, and long-term lease contracts and block
+            leased vehicles from operational use.
           </p>
         </div>
         <button
@@ -445,7 +452,7 @@ export default function LongTermLeasing() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Long-Term Leased
+            Total Leased
           </p>
           <p className="text-2xl font-bold text-slate-900 mt-1">
             {stats.totalLeased}
@@ -453,26 +460,26 @@ export default function LongTermLeasing() {
         </div>
         <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
-            Contracts
+            Daily Lease
           </p>
           <p className="text-2xl font-bold text-emerald-700 mt-1">
-            {stats.contracts}
+            {stats.dailyLease}
           </p>
         </div>
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">
-            Legacy Leased
+            Short-Term Lease
           </p>
           <p className="text-2xl font-bold text-amber-700 mt-1">
-            {stats.legacyLeased}
+            {stats.shortTermLease}
           </p>
         </div>
         <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">
-            Avg Lease Days
+            Long-Term Lease
           </p>
           <p className="text-2xl font-bold text-blue-700 mt-1">
-            {stats.averageDays}
+            {stats.longTermLease}
           </p>
         </div>
       </div>
@@ -484,21 +491,21 @@ export default function LongTermLeasing() {
             type="text"
             value={searchTerm}
             onChange={(event) => setSearchTerm(event.target.value)}
-            placeholder="Search by contract no, client, vehicle or plate"
+            placeholder="Search by client, vehicle or plate"
             className="w-full bg-transparent text-sm text-slate-900 placeholder-slate-400 outline-none"
           />
         </div>
 
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-slate-200 text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+            <thead className="table-head-gradient text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>
-                <th className="px-4 py-3">Contract No</th>
                 <th className="px-4 py-3">Vehicle</th>
                 <th className="px-4 py-3">Client</th>
                 <th className="px-4 py-3">Lease Start</th>
                 <th className="px-4 py-3">Lease End</th>
                 <th className="px-4 py-3">Duration</th>
+                <th className="px-4 py-3">Lease Type</th>
                 <th className="px-4 py-3">Monthly Rate</th>
               </tr>
             </thead>
@@ -509,7 +516,7 @@ export default function LongTermLeasing() {
                     colSpan={7}
                     className="py-8 text-center text-slate-400 text-sm"
                   >
-                    Loading long term leased vehicles...
+                    Loading lease contracts...
                   </td>
                 </tr>
               ) : filteredContracts.length === 0 ? (
@@ -518,7 +525,7 @@ export default function LongTermLeasing() {
                     colSpan={7}
                     className="py-8 text-center text-slate-400 text-sm"
                   >
-                    No long term lease contracts found.
+                    No lease contracts found.
                   </td>
                 </tr>
               ) : (
@@ -527,9 +534,6 @@ export default function LongTermLeasing() {
                     key={contract.id}
                     className="hover:bg-slate-50 transition-colors"
                   >
-                    <td className="px-4 py-3 text-sm text-slate-900 font-medium">
-                      {contract.contractNo}
-                    </td>
                     <td className="px-4 py-3 text-sm text-slate-700">
                       {(contract.contractVehicles || []).length === 0 ? (
                         <span className="text-slate-500">-</span>
@@ -570,6 +574,11 @@ export default function LongTermLeasing() {
                           ? "Unknown"
                           : `${contract.durationDays} days`}
                       </div>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-slate-700">
+                      <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-700">
+                        {contract.leaseType}
+                      </span>
                     </td>
                     <td className="px-4 py-3 text-sm text-slate-700">
                       {contract.monthlyRate
@@ -661,20 +670,6 @@ export default function LongTermLeasing() {
 
                 <div>
                   <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                    Contract No <span className="text-red-400">*</span>
-                  </label>
-                  <input
-                    value={form.contractNo}
-                    onChange={(event) =>
-                      setField("contractNo", event.target.value)
-                    }
-                    placeholder="e.g. LSE-2026-001"
-                    className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
                     Client Name <span className="text-red-400">*</span>
                   </label>
                   <input
@@ -745,8 +740,12 @@ export default function LongTermLeasing() {
               </div>
 
               <p className="text-xs text-amber-300">
-                Only contracts of {MIN_LONG_TERM_DAYS} days or more are accepted
-                for long term leasing.
+                Lease type is auto-classified by duration: Daily Lease (&lt; 1
+                month), Short-Term Lease (1 month to 1 year), and Long-Term
+                Lease (&gt; 1 year).
+              </p>
+              <p className="text-xs text-cyan-300">
+                Draft classification: <strong>{draftLeaseType}</strong>
               </p>
             </div>
 

@@ -45,6 +45,41 @@ body {
   border: 1px solid rgba(139, 105, 20, 0.22);
 }
 
+.table-head-gradient {
+  background-color: #fef9eb;
+  background-image: linear-gradient(
+    110deg,
+    rgba(255, 251, 235, 0.98) 0%,
+    rgba(254, 243, 199, 0.55) 48%,
+    rgba(255, 248, 220, 0.98) 100%
+  ) !important;
+}
+
+/* Ensure list-page table headers visibly carry the same gradient theme. */
+.content-light section table thead,
+.content-light .table-head-gradient {
+  background-color: #fef9eb;
+  background-image: linear-gradient(
+    110deg,
+    rgba(255, 251, 235, 0.98) 0%,
+    rgba(254, 243, 199, 0.55) 48%,
+    rgba(255, 248, 220, 0.98) 100%
+  ) !important;
+}
+
+.content-light section table thead th {
+  background-color: transparent !important;
+}
+
+/* Zebra striping for list-page table data rows */
+.content-light section table tbody tr:nth-child(odd) {
+  background-color: #ffffff;
+}
+
+.content-light section table tbody tr:nth-child(even) {
+  background-color: #f8fafc;
+}
+
 /* Force page content surfaces to light mode while preserving auth screens. */
 .content-light [class~="bg-slate-900/50"],
 .content-light [class~="bg-slate-900/60"],

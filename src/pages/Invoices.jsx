@@ -696,7 +696,7 @@ export default function Invoices() {
       <section className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead className="bg-slate-50">
+            <thead className="table-head-gradient">
               <tr className="border-b border-slate-200">
                 {[
                   "Invoice",

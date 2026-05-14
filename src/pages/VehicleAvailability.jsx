@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  Download,
   Loader,
   MapPin,
   UserCheck,
@@ -20,6 +21,30 @@ const formatDateStr = (value) => {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+};
+
+const formatMonthInput = (value) => {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  return `${year}-${month}`;
+};
+
+const filenameFromHeader = (disposition, fallback) => {
+  if (!disposition) return fallback;
+
+  const utfMatch = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utfMatch?.[1]) {
+    return decodeURIComponent(utfMatch[1]);
+  }
+
+  const basicMatch = disposition.match(/filename="?([^";]+)"?/i);
+  if (basicMatch?.[1]) {
+    return basicMatch[1];
+  }
+
+  return fallback;
 };
 
 const normalizeVehicle = (vehicle) => {
@@ -157,8 +182,11 @@ export default function VehicleAvailability() {
   const [selectedDateKey, setSelectedDateKey] = useState("");
   const [selectedVehicleId, setSelectedVehicleId] = useState(0);
   const [vehicleSearch, setVehicleSearch] = useState("");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  const [selectedMonth, setSelectedMonth] = useState(() =>
+    formatMonthInput(new Date()),
+  );
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportType, setExportType] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -245,14 +273,9 @@ export default function VehicleAvailability() {
     return list;
   }, [currentDate]);
 
-  const visibleCalendarDates = useMemo(() => {
-    return calendarDates.filter((date) => {
-      const key = formatDateStr(date);
-      if (dateFrom && key < dateFrom) return false;
-      if (dateTo && key > dateTo) return false;
-      return true;
-    });
-  }, [calendarDates, dateFrom, dateTo]);
+  // Always show all days of the current calendar month — the date range only
+  // affects which vehicles are marked as unavailable, not the visible columns.
+  const visibleCalendarDates = calendarDates;
 
   const filteredVehicles = useMemo(() => {
     const term = vehicleSearch.trim().toLowerCase();
@@ -290,6 +313,106 @@ export default function VehicleAvailability() {
     return vehicles.find((vehicle) => Number(vehicle.id) === id) || null;
   }, [vehicles, selectedVehicleId]);
 
+  const applyCalendarMonth = (date) => {
+    const monthValue = formatMonthInput(date);
+    if (!monthValue) return;
+
+    setSelectedMonth(monthValue);
+    setCurrentDate(new Date(date.getFullYear(), date.getMonth(), 1));
+    setSelectedDateKey("");
+    setSelectedVehicleId(0);
+  };
+
+  const handleExport = async (type) => {
+    setError("");
+    setIsExporting(true);
+    setExportType(type);
+
+    try {
+      const params = new URLSearchParams();
+      if (selectedMonth) {
+        params.set("month", selectedMonth);
+      }
+
+      const response = await apiFetch(
+        `/vehicle-availability/export/${type}?${params.toString()}`,
+      );
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload?.message || `Failed to export ${type}.`);
+      }
+
+      const blob = await response.blob();
+      const defaultName = `vehicle-availability-${selectedMonth || formatMonthInput(new Date())}.${type === "pdf" ? "pdf" : "csv"}`;
+      const filename = filenameFromHeader(
+        response.headers.get("content-disposition"),
+        defaultName,
+      );
+
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch (exportError) {
+      setError(exportError?.message || "Export failed. Please try again.");
+    } finally {
+      setIsExporting(false);
+      setExportType("");
+    }
+  };
+
+  const isRangeFilterActive = Boolean(selectedMonth);
+
+  // Generate the full list of dates in the selected month.
+  const rangeDates = useMemo(() => {
+    if (!selectedMonth) return [];
+
+    const [year, month] = selectedMonth.split("-").map(Number);
+    if (!Number.isFinite(year) || !Number.isFinite(month)) {
+      return [];
+    }
+
+    const start = new Date(year, month - 1, 1);
+    const end = new Date(year, month, 0);
+
+    const list = [];
+    const cursor = new Date(start);
+    while (cursor <= end) {
+      list.push(new Date(cursor));
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    return list;
+  }, [selectedMonth]);
+
+  const unavailableVehicleIds = useMemo(() => {
+    if (!isRangeFilterActive || rangeDates.length === 0) {
+      return new Set();
+    }
+
+    const ids = new Set();
+
+    filteredVehicles.forEach((vehicle) => {
+      const vehicleId = Number(vehicle.id || 0);
+      if (!vehicleId) return;
+
+      // A vehicle is "unavailable" only if every single day in the range is booked.
+      const isBookedForEveryRangeDate = rangeDates.every(
+        (date) => getBookingsForDate(vehicleId, date).length > 0,
+      );
+
+      if (isBookedForEveryRangeDate) {
+        ids.add(vehicleId);
+      }
+    });
+
+    return ids;
+  }, [filteredVehicles, isRangeFilterActive, rangeDates, allocations]);
+
   const monthYear = currentDate.toLocaleDateString("en-US", {
     month: "long",
     year: "numeric",
@@ -317,6 +440,44 @@ export default function VehicleAvailability() {
             View all vehicles and their booking dates at a glance
           </p>
         </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => handleExport("excel")}
+            disabled={isExporting}
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60"
+          >
+            {exportType === "excel" ? (
+              <>
+                <Loader className="h-4 w-4 animate-spin" />
+                Exporting Excel...
+              </>
+            ) : (
+              <>
+                <Download className="h-4 w-4" />
+                Export Excel
+              </>
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={() => handleExport("pdf")}
+            disabled={isExporting}
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60"
+          >
+            {exportType === "pdf" ? (
+              <>
+                <Loader className="h-4 w-4 animate-spin" />
+                Exporting PDF...
+              </>
+            ) : (
+              <>
+                <Download className="h-4 w-4" />
+                Export PDF
+              </>
+            )}
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -334,7 +495,7 @@ export default function VehicleAvailability() {
       )}
 
       <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <div>
             <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600">
               Search Vehicle
@@ -350,24 +511,19 @@ export default function VehicleAvailability() {
 
           <div>
             <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600">
-              Date From
+              Month
             </label>
             <input
-              type="date"
-              value={dateFrom}
-              onChange={(event) => setDateFrom(event.target.value)}
-              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none [color-scheme:light] focus:border-sher-gold"
-            />
-          </div>
-
-          <div>
-            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600">
-              Date To
-            </label>
-            <input
-              type="date"
-              value={dateTo}
-              onChange={(event) => setDateTo(event.target.value)}
+              type="month"
+              value={selectedMonth}
+              onChange={(event) => {
+                const val = event.target.value;
+                setSelectedMonth(val);
+                if (val) {
+                  const d = new Date(`${val}-01T00:00:00`);
+                  if (!Number.isNaN(d.getTime())) setCurrentDate(d);
+                }
+              }}
               className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none [color-scheme:light] focus:border-sher-gold"
             />
           </div>
@@ -382,29 +538,29 @@ export default function VehicleAvailability() {
           </h2>
           <div className="flex gap-2">
             <button
-              onClick={() =>
-                setCurrentDate(
+              onClick={() => {
+                applyCalendarMonth(
                   new Date(
                     currentDate.getFullYear(),
                     currentDate.getMonth() - 1,
                     1,
                   ),
-                )
-              }
+                );
+              }}
               className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-600 transition hover:bg-slate-50"
             >
               <ChevronLeft className="h-4 w-4" />
             </button>
             <button
-              onClick={() =>
-                setCurrentDate(
+              onClick={() => {
+                applyCalendarMonth(
                   new Date(
                     currentDate.getFullYear(),
                     currentDate.getMonth() + 1,
                     1,
                   ),
-                )
-              }
+                );
+              }}
               className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-600 transition hover:bg-slate-50"
             >
               <ChevronRight className="h-4 w-4" />
@@ -458,89 +614,118 @@ export default function VehicleAvailability() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredVehicles.map((vehicle) => (
-                    <tr
-                      key={vehicle.id}
-                      className="border-b border-slate-200 transition hover:bg-slate-50"
-                    >
-                      <td className="sticky left-0 z-10 border-r border-slate-200 bg-white px-3 py-3 font-medium text-slate-900">
-                        <div className="flex flex-col">
-                          <span className="font-semibold">
-                            {vehicle.vehicleNo}
-                          </span>
-                          <span className="text-xs text-slate-500">
-                            {vehicle.plateNo}
-                          </span>
-                          <span className="text-xs text-slate-500">
-                            {vehicle.make} {vehicle.model}
-                          </span>
-                        </div>
-                      </td>
+                  {filteredVehicles.map((vehicle) => {
+                    const vehicleId = Number(vehicle.id || 0);
+                    const isDisabledInRange =
+                      unavailableVehicleIds.has(vehicleId);
 
-                      {visibleCalendarDates.map((date, idx) => {
-                        const bookings = getBookingsForDate(vehicle.id, date);
-                        const isBooked = bookings.length > 0;
-                        const dateKey = formatDateStr(date);
-                        const isSelectedCell =
-                          Number(selectedVehicleId || 0) ===
-                            Number(vehicle.id || 0) &&
-                          selectedDateKey === dateKey;
-
-                        return (
-                          <td
-                            key={idx}
-                            onClick={() => {
-                              if (!isBooked) return;
-                              const nextVehicleId = Number(vehicle.id || 0);
-                              const alreadySelected =
-                                Number(selectedVehicleId || 0) ===
-                                  nextVehicleId && selectedDateKey === dateKey;
-
-                              if (alreadySelected) {
-                                setSelectedVehicleId(0);
-                                setSelectedDateKey("");
-                                return;
-                              }
-
-                              setSelectedVehicleId(nextVehicleId);
-                              setSelectedDateKey(dateKey);
-                            }}
-                            className={`group relative border-r border-slate-200 px-2 py-3 text-center transition ${
-                              isBooked
-                                ? "cursor-pointer bg-rose-500/20 hover:bg-rose-500/35"
-                                : "hover:bg-slate-800/50"
-                            } ${isSelectedCell ? "ring-2 ring-cyan-400/70" : ""}`}
-                            title={
-                              isBooked
-                                ? bookings
-                                    .map((booking) => booking.bookingRef)
-                                    .filter(Boolean)
-                                    .join(", ")
-                                : ""
-                            }
-                          >
-                            {isBooked ? (
-                              <div className="flex items-center justify-center">
-                                <div className="w-full rounded-md border border-rose-300 bg-rose-100 px-2 py-1">
-                                  <span className="text-xs font-semibold text-rose-700">
-                                    {bookings.length > 1
-                                      ? `Booked (${bookings.length})`
-                                      : "Booked"}
-                                  </span>
-                                </div>
-                              </div>
-                            ) : (
-                              <div className="flex items-center justify-center">
-                                <div className="w-full rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1">
-                                  <CheckCircle2 className="mx-auto h-3 w-3 text-emerald-600" />
-                                </div>
-                              </div>
+                    return (
+                      <tr
+                        key={vehicle.id}
+                        className={`border-b border-slate-200 transition ${
+                          isDisabledInRange
+                            ? "bg-slate-100/80 text-slate-400"
+                            : "hover:bg-slate-50"
+                        }`}
+                      >
+                        <td className="sticky left-0 z-10 border-r border-slate-200 bg-white px-3 py-3 font-medium text-slate-900">
+                          <div className="flex flex-col">
+                            <span className="font-semibold">
+                              {vehicle.vehicleNo}
+                            </span>
+                            <span className="text-xs text-slate-500">
+                              {vehicle.plateNo}
+                            </span>
+                            <span className="text-xs text-slate-500">
+                              {vehicle.make} {vehicle.model}
+                            </span>
+                            {isDisabledInRange && (
+                              <span className="mt-1 inline-flex w-fit rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rose-700">
+                                No Availability in Range
+                              </span>
                             )}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
+                          </div>
+                        </td>
+
+                        {visibleCalendarDates.map((date, idx) => {
+                          const bookings = getBookingsForDate(vehicle.id, date);
+                          const isBooked = bookings.length > 0;
+                          const dateKey = formatDateStr(date);
+                          const isSelectedCell =
+                            Number(selectedVehicleId || 0) ===
+                              Number(vehicle.id || 0) &&
+                            selectedDateKey === dateKey;
+
+                          return (
+                            <td
+                              key={idx}
+                              onClick={() => {
+                                if (isDisabledInRange) return;
+                                if (!isBooked) return;
+                                const nextVehicleId = Number(vehicle.id || 0);
+                                const alreadySelected =
+                                  Number(selectedVehicleId || 0) ===
+                                    nextVehicleId &&
+                                  selectedDateKey === dateKey;
+
+                                if (alreadySelected) {
+                                  setSelectedVehicleId(0);
+                                  setSelectedDateKey("");
+                                  return;
+                                }
+
+                                setSelectedVehicleId(nextVehicleId);
+                                setSelectedDateKey(dateKey);
+                              }}
+                              className={`group relative border-r border-slate-200 px-2 py-3 text-center transition ${
+                                isDisabledInRange
+                                  ? "cursor-not-allowed bg-slate-100"
+                                  : isBooked
+                                    ? "cursor-pointer bg-rose-500/20 hover:bg-rose-500/35"
+                                    : "hover:bg-slate-50"
+                              } ${isSelectedCell ? "ring-2 ring-cyan-400/70" : ""}`}
+                              title={
+                                isDisabledInRange
+                                  ? "No availability in selected range"
+                                  : isBooked
+                                    ? bookings
+                                        .map((booking) => booking.bookingRef)
+                                        .filter(Boolean)
+                                        .join(", ")
+                                    : ""
+                              }
+                            >
+                              {isDisabledInRange ? (
+                                <div className="flex items-center justify-center">
+                                  <div className="w-full rounded-md border border-slate-300 bg-slate-100 px-2 py-1">
+                                    <span className="text-xs font-semibold text-slate-500">
+                                      Disabled
+                                    </span>
+                                  </div>
+                                </div>
+                              ) : isBooked ? (
+                                <div className="flex items-center justify-center">
+                                  <div className="w-full rounded-md border border-rose-300 bg-rose-100 px-2 py-1">
+                                    <span className="text-xs font-semibold text-rose-700">
+                                      {bookings.length > 1
+                                        ? `Booked (${bookings.length})`
+                                        : "Booked"}
+                                    </span>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="flex items-center justify-center">
+                                  <div className="w-full rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1">
+                                    <CheckCircle2 className="mx-auto h-3 w-3 text-emerald-600" />
+                                  </div>
+                                </div>
+                              )}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

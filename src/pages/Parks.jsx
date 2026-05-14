@@ -1050,7 +1050,7 @@ export default function Parks() {
       <section className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead className="bg-slate-50">
+            <thead className="table-head-gradient">
               <tr className="border-b border-slate-200">
                 {["Park", "Region", "Status", "Actions"].map((header) => (
                   <th
@@ -1163,7 +1163,7 @@ export default function Parks() {
 
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead className="bg-slate-50">
+            <thead className="table-head-gradient">
               <tr className="border-b border-slate-200">
                 {["Park", "type", "category", "rate", "Actions"].map(
                   (header) => (
@@ -1278,7 +1278,7 @@ export default function Parks() {
 
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead className="bg-slate-50">
+            <thead className="table-head-gradient">
               <tr className="border-b border-slate-200">
                 {["Park", "type", "category", "rate", "Actions"].map(
                   (header) => (
@@ -1376,7 +1376,7 @@ export default function Parks() {
 
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead className="bg-slate-50">
+            <thead className="table-head-gradient">
               <tr className="border-b border-slate-200">
                 {["Particular", "Rate", "Actions"].map((header) => (
                   <th

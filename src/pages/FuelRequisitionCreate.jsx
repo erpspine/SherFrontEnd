@@ -699,7 +699,7 @@ export default function FuelRequisitionCreate() {
               ) : (
                 <div className="mt-3 overflow-x-auto">
                   <table className="min-w-full divide-y divide-slate-200 text-sm">
-                    <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                    <thead className="table-head-gradient text-left text-xs uppercase tracking-wide text-slate-500">
                       <tr>
                         <th className="px-3 py-2">Day</th>
                         <th className="w-56 px-3 py-2">Date</th>

@@ -655,6 +655,7 @@ export default function Dashboard() {
         title: "Total Fleet",
         value: String(dashboard.stats.totalFleet),
         subtitle: "vehicles registered",
+        to: "/vehicles",
         icon: Car,
         color: "from-amber-400 to-amber-600",
         bgColor: "bg-amber-100",
@@ -664,6 +665,7 @@ export default function Dashboard() {
         title: "Active Leases",
         value: String(dashboard.stats.activeLeases),
         subtitle: "currently on lease",
+        to: "/long-term-leasing",
         icon: ClipboardList,
         color: "from-green-500 to-emerald-500",
         bgColor: "bg-emerald-100",
@@ -673,6 +675,7 @@ export default function Dashboard() {
         title: "Monthly Revenue",
         value: formatCurrency(dashboard.stats.monthlyRevenue),
         subtitle: "this month",
+        to: "/payments",
         icon: DollarSign,
         color: "from-cyan-500 to-teal-500",
         bgColor: "bg-cyan-100",
@@ -682,6 +685,7 @@ export default function Dashboard() {
         title: "Open Quotations",
         value: String(dashboard.stats.openQuotations),
         subtitle: "draft/sent/approved",
+        to: "/quotations",
         icon: FileText,
         color: "from-amber-500 to-orange-500",
         bgColor: "bg-orange-100",
@@ -905,8 +909,10 @@ export default function Dashboard() {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         {statsCards.map((stat) => (
-          <div
+          <Link
             key={stat.title}
+            to={stat.to}
+            aria-label={`View all for ${stat.title}`}
             className="group relative overflow-hidden rounded-2xl border border-slate-200/70 bg-white/85 p-6 shadow-[0_14px_30px_rgba(15,23,42,0.07)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_20px_35px_rgba(15,23,42,0.12)]"
           >
             <div className="absolute -right-12 -top-12 h-24 w-24 rounded-full bg-slate-100/90" />
@@ -932,7 +938,7 @@ export default function Dashboard() {
                 style={{ width: "75%" }}
               />
             </div>
-          </div>
+          </Link>
         ))}
       </div>
 
@@ -1139,8 +1145,10 @@ export default function Dashboard() {
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           {dashboard.fleetAvailability.map((item) => (
-            <div
+            <Link
               key={item.label}
+              to="/vehicles"
+              aria-label={`View all vehicles (${item.label})`}
               className={`p-4 rounded-xl ${item.bg} border border-slate-200/70`}
             >
               <p className={`text-3xl font-bold ${item.text}`}>{item.count}</p>
@@ -1153,7 +1161,7 @@ export default function Dashboard() {
                   }}
                 />
               </div>
-            </div>
+            </Link>
           ))}
         </div>
       </div>

@@ -39,7 +39,7 @@ const menuGroups = [
         icon: Calendar,
         label: "Vehicle Availability",
       },
-      { path: "/long-term-leasing", icon: Car, label: "Long Term Leasing" },
+      { path: "/long-term-leasing", icon: Car, label: "Lease" },
       { path: "/job-cards", icon: ClipboardList, label: "Job Cards" },
       { path: "/safari-allocations", icon: Car, label: "Safari Allocations" },
       { path: "/checklist", icon: ListChecks, label: "Checklist" },

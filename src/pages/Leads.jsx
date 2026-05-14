@@ -540,7 +540,7 @@ export default function Leads() {
       <section className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1760px]">
-            <thead className="bg-slate-50">
+            <thead className="table-head-gradient">
               <tr className="border-b border-slate-200">
                 {[
                   "Booking Ref",
@@ -581,8 +581,11 @@ export default function Leads() {
                     className="border-b border-slate-100 hover:bg-slate-50 transition-colors"
                   >
                     {/* Booking Ref */}
-                    <td className="py-3 px-4">
-                      <span className="text-blue-400 font-mono text-sm font-medium">
+                    <td className="py-3 px-4 whitespace-nowrap min-w-[170px]">
+                      <span
+                        className="text-blue-600 font-mono text-sm font-medium"
+                        title={lead.bookingRef}
+                      >
                         {lead.bookingRef}
                       </span>
                     </td>

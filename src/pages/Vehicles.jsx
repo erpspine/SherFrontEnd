@@ -29,6 +29,7 @@ const createVehicleForm = () => ({
   seats: "",
   initialMileage: "",
   status: "Available",
+  assignedDriverId: "",
   chassis: "",
   specs: "",
 });
@@ -69,6 +70,9 @@ const normalizeVehicle = (vehicle) => {
         0,
     ),
     status: item.status || "Available",
+    assignedDriverId: item.assigned_driver_id || item.assignedDriverId || "",
+    assignedDriverName:
+      item.assigned_driver?.name || item.assignedDriver?.name || "",
     chassis: item.chassis || item.chassis_no || item.chassisNo || "",
     specs:
       item.specs ||
@@ -137,6 +141,16 @@ const extractList = (payload) => {
 
 const extractSingle = (payload) => payload?.data || payload?.vehicle || payload;
 
+const compareVehiclesByCarNumber = (a, b) =>
+  String(a?.vehicleNo || "").localeCompare(
+    String(b?.vehicleNo || ""),
+    undefined,
+    {
+      numeric: true,
+      sensitivity: "base",
+    },
+  );
+
 const normalizeHistoryEvent = (event) => ({
   eventType: event?.eventType || event?.event_type || "event",
   eventDate: event?.eventDate || event?.event_date || "",
@@ -202,8 +216,10 @@ const getStatusConfig = (status) => {
 export default function Vehicles() {
   const navigate = useNavigate();
   const [vehicles, setVehicles] = useState([]);
+  const [drivers, setDrivers] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedStatus, setSelectedStatus] = useState("All");
+  const [selectedAssignment, setSelectedAssignment] = useState("All");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editVehicle, setEditVehicle] = useState(null);
   const [form, setForm] = useState(createVehicleForm());
@@ -296,6 +312,35 @@ export default function Vehicles() {
     loadVehicles();
   }, []);
 
+  const loadDrivers = async () => {
+    try {
+      const response = await apiFetch("/vehicles/drivers");
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.message || "Unable to fetch drivers.");
+      }
+
+      const list = Array.isArray(payload?.drivers)
+        ? payload.drivers
+        : Array.isArray(payload?.data)
+          ? payload.data
+          : [];
+      setDrivers(
+        list.map((driver) => ({
+          id: Number(driver?.id || 0),
+          name: String(driver?.name || "").trim(),
+          email: String(driver?.email || "").trim(),
+        })),
+      );
+    } catch {
+      setDrivers([]);
+    }
+  };
+
+  useEffect(() => {
+    loadDrivers();
+  }, []);
+
   useEffect(() => {
     return () => {
       if (photoPreviewObjectUrlRef.current) {
@@ -311,15 +356,23 @@ export default function Vehicles() {
     maintenance: vehicles.filter((v) => v.status === "Maintenance").length,
   };
 
-  const filtered = vehicles.filter((v) => {
-    const matchSearch =
-      v.vehicleNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      v.plateNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      v.make.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      v.model.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchStatus = selectedStatus === "All" || v.status === selectedStatus;
-    return matchSearch && matchStatus;
-  });
+  const filtered = vehicles
+    .filter((v) => {
+      const matchSearch =
+        v.vehicleNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        v.plateNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        v.make.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        v.model.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchStatus =
+        selectedStatus === "All" || v.status === selectedStatus;
+      const isAssigned = Boolean(v.assignedDriverId);
+      const matchAssignment =
+        selectedAssignment === "All" ||
+        (selectedAssignment === "Assigned" && isAssigned) ||
+        (selectedAssignment === "Unassigned" && !isAssigned);
+      return matchSearch && matchStatus && matchAssignment;
+    })
+    .sort(compareVehiclesByCarNumber);
 
   const openAdd = () => {
     setEditVehicle(null);
@@ -517,6 +570,7 @@ export default function Vehicles() {
       payload.append("initialMileage", String(initialMileageValue));
       payload.append("mileage", String(initialMileageValue));
       payload.append("status", form.status || "Available");
+      payload.append("assignedDriverId", String(form.assignedDriverId || ""));
       payload.append("chassis", form.chassis || "");
       payload.append("specs", form.specs || "");
       if (photoFile) {
@@ -609,6 +663,7 @@ export default function Vehicles() {
           {
             label: "Total Fleet",
             value: stats.total,
+            statusFilter: "All",
             color: "text-slate-900",
             bg: "bg-blue-50",
             icon: Car,
@@ -617,6 +672,7 @@ export default function Vehicles() {
           {
             label: "Available",
             value: stats.available,
+            statusFilter: "Available",
             color: "text-emerald-600",
             bg: "bg-emerald-50",
             icon: CheckCircle,
@@ -625,6 +681,7 @@ export default function Vehicles() {
           {
             label: "On Lease",
             value: stats.onLease,
+            statusFilter: "On Lease",
             color: "text-blue-600",
             bg: "bg-blue-50",
             icon: Clock,
@@ -633,15 +690,22 @@ export default function Vehicles() {
           {
             label: "Maintenance",
             value: stats.maintenance,
+            statusFilter: "Maintenance",
             color: "text-amber-600",
             bg: "bg-amber-50",
             icon: Wrench,
             iconColor: "text-amber-600",
           },
         ].map((s) => (
-          <div
+          <button
             key={s.label}
-            className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+            type="button"
+            onClick={() =>
+              setSelectedStatus((current) =>
+                current === s.statusFilter ? "All" : s.statusFilter,
+              )
+            }
+            className={`rounded-2xl border bg-white p-4 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md ${selectedStatus === s.statusFilter ? "border-amber-400 ring-2 ring-amber-100" : "border-slate-200"}`}
           >
             <div className="flex items-center justify-between">
               <div>
@@ -654,13 +718,13 @@ export default function Vehicles() {
                 <s.icon className={`w-6 h-6 ${s.iconColor}`} />
               </div>
             </div>
-          </div>
+          </button>
         ))}
       </div>
 
       {/* Filters */}
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4">
-        <div className="flex flex-col lg:flex-row gap-4">
+        <div className="flex flex-col gap-4">
           <div className="flex-1 flex items-center gap-3 bg-slate-50 rounded-xl px-4 py-2.5 border border-slate-200 focus-within:border-amber-500 transition-colors">
             <Search className="w-5 h-5 text-slate-400 flex-shrink-0" />
             <input
@@ -671,16 +735,29 @@ export default function Vehicles() {
               className="bg-transparent border-none outline-none text-sm text-slate-900 placeholder-slate-400 w-full"
             />
           </div>
-          <div className="flex flex-wrap gap-2">
-            {["All", "Available", "On Lease", "Maintenance"].map((s) => (
-              <button
-                key={s}
-                onClick={() => setSelectedStatus(s)}
-                className={`px-3 py-2 rounded-xl text-sm font-medium transition-all ${selectedStatus === s ? "bg-amber-500 text-white" : "bg-slate-100 text-slate-600 hover:text-slate-900 hover:bg-slate-200"}`}
-              >
-                {s}
-              </button>
-            ))}
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-wrap gap-2">
+              {["All", "Available", "On Lease", "Maintenance"].map((s) => (
+                <button
+                  key={s}
+                  onClick={() => setSelectedStatus(s)}
+                  className={`px-3 py-2 rounded-xl text-sm font-medium transition-all ${selectedStatus === s ? "bg-amber-500 text-white" : "bg-slate-100 text-slate-600 hover:text-slate-900 hover:bg-slate-200"}`}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {["All", "Assigned", "Unassigned"].map((s) => (
+                <button
+                  key={s}
+                  onClick={() => setSelectedAssignment(s)}
+                  className={`px-3 py-2 rounded-xl text-sm font-medium transition-all ${selectedAssignment === s ? "bg-cyan-600 text-white" : "bg-slate-100 text-slate-600 hover:text-slate-900 hover:bg-slate-200"}`}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </div>
@@ -689,11 +766,12 @@ export default function Vehicles() {
       <section className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead className="bg-slate-50">
+            <thead className="table-head-gradient">
               <tr className="border-b border-slate-200">
                 {[
                   "Car No",
                   "Vehicle",
+                  "Assigned Driver",
                   "Seats",
                   "Initial Mileage",
                   "Current Mileage",
@@ -764,6 +842,11 @@ export default function Vehicles() {
                             </p>
                           )}
                         </div>
+                      </div>
+                    </td>
+                    <td className="py-4 px-6">
+                      <div className="text-sm text-slate-700">
+                        {v.assignedDriverName || "Unassigned"}
                       </div>
                     </td>
                     <td className="py-4 px-6">
@@ -1006,6 +1089,26 @@ export default function Vehicles() {
                       <option key={status}>{status}</option>
                     ),
                   )}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">
+                  Assigned Driver
+                </label>
+                <select
+                  value={form.assignedDriverId || ""}
+                  onChange={(e) =>
+                    setForm({ ...form, assignedDriverId: e.target.value })
+                  }
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-amber-500 transition-colors"
+                >
+                  <option value="">Unassigned</option>
+                  {drivers.map((driver) => (
+                    <option key={driver.id} value={String(driver.id)}>
+                      {driver.name}
+                      {driver.email ? ` (${driver.email})` : ""}
+                    </option>
+                  ))}
                 </select>
               </div>
             </div>
