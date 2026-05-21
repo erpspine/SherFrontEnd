@@ -23,16 +23,22 @@ import Leads from "./pages/Leads";
 import Users from "./pages/Users";
 import RolesPermissions from "./pages/RolesPermissions";
 import Checklist from "./pages/Checklist";
-import FuelRequisitions from "./pages/FuelRequisitions";
-import FuelRequisitionCreate from "./pages/FuelRequisitionCreate";
-import FuelRequisitionApproval from "./pages/FuelRequisitionApproval";
+// import FuelRequisitions from "./pages/FuelRequisitions";
+// import FuelRequisitionCreate from "./pages/FuelRequisitionCreate";
+// import FuelRequisitionApproval from "./pages/FuelRequisitionApproval";
 import VehicleServices from "./pages/VehicleServices";
 import VehicleView from "./pages/VehicleView";
 import VehicleAvailability from "./pages/VehicleAvailability";
-import RouteDistances from "./pages/RouteDistances";
+// import RouteDistances from "./pages/RouteDistances";
 import Inspections from "./pages/Inspections";
 import LongTermLeasing from "./pages/LongTermLeasing";
-import { isAuthenticated } from "./utils/auth";
+import { isAuthenticated, hasPermission } from "./utils/auth";
+function PermissionRoute({ permission, element }) {
+  if (!hasPermission(permission)) {
+    return <Navigate to="/" replace />;
+  }
+  return element;
+}
 
 function LoginRoute() {
   return isAuthenticated() ? <Navigate to="/" replace /> : <Login />;
@@ -46,36 +52,172 @@ function ProtectedRoutes() {
   return (
     <Layout>
       <Routes>
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/vehicles" element={<Vehicles />} />
-        <Route path="/vehicles/:id" element={<VehicleView />} />
-        <Route path="/vehicle-availability" element={<VehicleAvailability />} />
-        <Route path="/long-term-leasing" element={<LongTermLeasing />} />
-        <Route path="/clients" element={<Clients />} />
-        <Route path="/job-cards" element={<JobCards />} />
-        <Route path="/safari-allocations" element={<SafariAllocations />} />
-        <Route path="/leads" element={<Leads />} />
-        <Route path="/quotations" element={<Quotations />} />
-        <Route path="/parks" element={<Parks />} />
-        <Route path="/proforma-invoices" element={<ProformaInvoices />} />
-        <Route path="/invoices" element={<Invoices />} />
-        <Route path="/payments" element={<Payments />} />
-        <Route path="/users" element={<Users />} />
-        <Route path="/roles-permissions" element={<RolesPermissions />} />
+        <Route
+          path="/"
+          element={
+            <PermissionRoute
+              permission="dashboard.view"
+              element={<Dashboard />}
+            />
+          }
+        />
+        <Route
+          path="/vehicles"
+          element={
+            <PermissionRoute
+              permission="vehicles.view"
+              element={<Vehicles />}
+            />
+          }
+        />
+        <Route
+          path="/vehicles/:id"
+          element={
+            <PermissionRoute
+              permission="vehicles.view"
+              element={<VehicleView />}
+            />
+          }
+        />
+        <Route
+          path="/vehicle-availability"
+          element={
+            <PermissionRoute
+              permission="vehicles.view"
+              element={<VehicleAvailability />}
+            />
+          }
+        />
+        <Route
+          path="/long-term-leasing"
+          element={
+            <PermissionRoute
+              permission="vehicles.view"
+              element={<LongTermLeasing />}
+            />
+          }
+        />
+        <Route
+          path="/clients"
+          element={
+            <PermissionRoute permission="clients.view" element={<Clients />} />
+          }
+        />
+        <Route
+          path="/job-cards"
+          element={
+            <PermissionRoute
+              permission="job-cards.view"
+              element={<JobCards />}
+            />
+          }
+        />
+        <Route
+          path="/safari-allocations"
+          element={
+            <PermissionRoute
+              permission="safari-allocations.view"
+              element={<SafariAllocations />}
+            />
+          }
+        />
+        <Route
+          path="/leads"
+          element={
+            <PermissionRoute permission="leads.view" element={<Leads />} />
+          }
+        />
+        <Route
+          path="/quotations"
+          element={
+            <PermissionRoute
+              permission="quotations.view"
+              element={<Quotations />}
+            />
+          }
+        />
+        <Route
+          path="/parks"
+          element={
+            <PermissionRoute permission="parks.view" element={<Parks />} />
+          }
+        />
+        <Route
+          path="/proforma-invoices"
+          element={
+            <PermissionRoute
+              permission="proforma-invoices.view"
+              element={<ProformaInvoices />}
+            />
+          }
+        />
+        <Route
+          path="/invoices"
+          element={
+            <PermissionRoute
+              permission="invoices.view"
+              element={<Invoices />}
+            />
+          }
+        />
+        <Route
+          path="/payments"
+          element={
+            <PermissionRoute
+              permission="invoice-payments.view"
+              element={<Payments />}
+            />
+          }
+        />
+        <Route
+          path="/users"
+          element={
+            <PermissionRoute permission="users.view" element={<Users />} />
+          }
+        />
+        <Route
+          path="/roles-permissions"
+          element={
+            <PermissionRoute
+              permission="users.view"
+              element={<RolesPermissions />}
+            />
+          }
+        />
         <Route path="/checklist" element={<Checklist />} />
-        <Route path="/fuel-requisitions" element={<FuelRequisitions />} />
+        {/* <Route path="/fuel-requisitions" element={<FuelRequisitions />} /> */}
+        {/*
         <Route
           path="/fuel-requisitions/:id/approval"
           element={<FuelRequisitionApproval />}
         />
-        <Route path="/vehicle-services" element={<VehicleServices />} />
-        <Route path="/route-distances" element={<RouteDistances />} />
+        */}
+        <Route
+          path="/vehicle-services"
+          element={
+            <PermissionRoute
+              permission="vehicles.view"
+              element={<VehicleServices />}
+            />
+          }
+        />
+        {/* <Route path="/route-distances" element={<RouteDistances />} /> */}
         <Route path="/inspections" element={<Inspections />} />
+        {/*
         <Route
           path="/fuel-requisitions/new"
           element={<FuelRequisitionCreate />}
         />
-        <Route path="/settings" element={<Settings />} />
+        */}
+        <Route
+          path="/settings"
+          element={
+            <PermissionRoute
+              permission="settings.view"
+              element={<Settings />}
+            />
+          }
+        />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Layout>

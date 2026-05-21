@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   Search,
   Plus,
+  Copy,
   FileText,
   Building2,
   Car,
@@ -52,11 +53,19 @@ const statusConfig = {
 
 const createDayItem = () => ({
   item: "",
+  customItem: "",
   description: "",
   unit: "Per person",
   qty: "",
   rate: "",
 });
+
+const PREDEFINED_ITEM_TYPES = [
+  "Transport",
+  "Park Fees",
+  "Concession Fees",
+  "Others",
+];
 
 const formatDateToIso = (dateValue) => {
   const year = dateValue.getFullYear();
@@ -160,6 +169,11 @@ const getItineraryDatesLabel = (daySections = []) => {
 };
 
 const getQuotationDestinationsLabel = (quotation) => {
+  const summary = String(quotation?.serviceSummary || "").trim();
+  if (summary && summary !== "-") {
+    return summary;
+  }
+
   const fromDayDescriptions = (quotation?.daySections || [])
     .map((section) => String(section?.dayDescription || "").trim())
     .filter(Boolean);
@@ -168,7 +182,7 @@ const getQuotationDestinationsLabel = (quotation) => {
     return [...new Set(fromDayDescriptions)].join(" | ");
   }
 
-  return String(quotation?.serviceSummary || "").trim();
+  return summary;
 };
 
 const formatQuotationNumberFromId = (id, dateValue) => {
@@ -176,8 +190,10 @@ const formatQuotationNumberFromId = (id, dateValue) => {
   if (!Number.isFinite(numericId) || numericId <= 0) return "";
 
   const isoDate = toIsoDate(dateValue);
-  const year = isoDate ? isoDate.slice(0, 4) : String(new Date().getFullYear());
-  return `QT-${year}-${String(Math.trunc(numericId)).padStart(4, "0")}`;
+  const yearMonth = isoDate
+    ? isoDate.slice(0, 7)
+    : `${String(new Date().getFullYear())}-${String(new Date().getMonth() + 1).padStart(2, "0")}`;
+  return `QT-${yearMonth}-${String(Math.trunc(numericId)).padStart(3, "0")}`;
 };
 
 const getQuotationNumberValue = (quotation) => {
@@ -201,6 +217,14 @@ const toPickerValue = (value) => ({
 });
 
 const calculateItemTotal = (item) => toNumber(item.qty) * toNumber(item.rate);
+
+const isDayItemBlank = (item) =>
+  !String(item?.item || "").trim() &&
+  !String(item?.customItem || "").trim() &&
+  !String(item?.description || "").trim() &&
+  !String(item?.unit || "").trim() &&
+  !String(item?.qty || "").trim() &&
+  !String(item?.rate || "").trim();
 
 const filenameFromHeader = (disposition, fallback) => {
   if (!disposition) return fallback;
@@ -305,8 +329,13 @@ const normalizeLead = (lead) => ({
 
 const normalizeDayItem = (item) => {
   if (item.item || item.description || item.unit || item.qty || item.rate) {
+    const rawItem = item.item || "";
+    const isCustomLoadedItem =
+      rawItem && !PREDEFINED_ITEM_TYPES.includes(String(rawItem));
+
     return {
-      item: item.item || "",
+      item: isCustomLoadedItem ? "Others" : rawItem,
+      customItem: isCustomLoadedItem ? String(rawItem) : item.customItem || "",
       description: item.description || "",
       unit: item.unit || "Per person",
       qty: String(item.qty ?? ""),
@@ -480,6 +509,7 @@ export default function Quotations() {
     sectionIndex: 0,
     itemIndex: 0,
   });
+  const pickerTargetRef = useRef({ sectionIndex: 0, itemIndex: 0 });
   const navigate = useNavigate();
   const [ratesCache, setRatesCache] = useState({
     transport: [],
@@ -639,6 +669,10 @@ export default function Quotations() {
       ...vehicle,
       overlappingAllocations,
       isStatusAvailable,
+      isAvailableForDates:
+        Boolean(convertLead?.startDate && convertLead?.endDate) &&
+        isStatusAvailable &&
+        overlappingAllocations.length === 0,
       hasAssignedDriver,
       isAvailableNow,
       reason:
@@ -653,6 +687,9 @@ export default function Quotations() {
                 : "Available now",
     };
   });
+  const availableVehicleRows = vehicleAvailabilityRows.filter(
+    (vehicle) => vehicle.isAvailableForDates,
+  );
   const allItems = form.daySections.flatMap((section) => section.items);
   const subtotal = allItems.reduce(
     (sum, item) => sum + calculateItemTotal(item),
@@ -707,9 +744,22 @@ export default function Quotations() {
         if (sectionPos !== sectionIndex) return section;
         return {
           ...section,
-          items: section.items.map((item, itemPos) =>
-            itemPos === itemIndex ? { ...item, [field]: value } : item,
-          ),
+          items: section.items.map((item, itemPos) => {
+            if (itemPos !== itemIndex) return item;
+
+            if (field === "customItem") {
+              const nextDescription = String(item.description || "").trim()
+                ? item.description
+                : value;
+              return {
+                ...item,
+                [field]: value,
+                description: nextDescription,
+              };
+            }
+
+            return { ...item, [field]: value };
+          }),
         };
       }),
     }));
@@ -737,6 +787,65 @@ export default function Quotations() {
             section.items.length === 1
               ? [createDayItem()]
               : section.items.filter((_, i) => i !== itemIndex),
+        };
+      }),
+    }));
+  };
+
+  const copyDayItemToSection = async (sectionIndex, itemIndex) => {
+    if (form.daySections.length < 2) {
+      await Swal.fire({
+        title: "Add Another Day First",
+        text: "You need at least two days before copying a line item.",
+        icon: "info",
+        background: "#0f172a",
+        color: "#e2e8f0",
+      });
+      return;
+    }
+
+    const sourceSection = form.daySections[sectionIndex];
+    const sourceItem = sourceSection?.items?.[itemIndex];
+    if (!sourceItem) return;
+
+    const targetOptions = form.daySections.reduce((options, section, index) => {
+      if (index === sectionIndex) return options;
+      options[String(index)] =
+        section.dayTitle || section.dayDate || `Day ${index + 1}`;
+      return options;
+    }, {});
+
+    const { value: targetSectionIndex } = await Swal.fire({
+      title: "Copy Line Item",
+      text: "Choose the day to copy this line into.",
+      input: "select",
+      inputOptions: targetOptions,
+      inputPlaceholder: "Select target day",
+      showCancelButton: true,
+      confirmButtonText: "Copy",
+      cancelButtonText: "Cancel",
+      background: "#0f172a",
+      color: "#e2e8f0",
+      inputValidator: (value) =>
+        value === "" ? "Please choose a target day." : undefined,
+    });
+
+    if (targetSectionIndex === undefined) return;
+
+    setForm((current) => ({
+      ...current,
+      daySections: current.daySections.map((section, index) => {
+        if (index !== Number(targetSectionIndex)) return section;
+
+        const copiedItem = { ...sourceItem };
+        const nextItems =
+          section.items.length === 1 && isDayItemBlank(section.items[0])
+            ? [copiedItem]
+            : [...section.items, copiedItem];
+
+        return {
+          ...section,
+          items: nextItems,
         };
       }),
     }));
@@ -896,12 +1005,15 @@ export default function Quotations() {
 
         const qty = Number(item.qty);
         const rate = Number(item.rate);
+        const effectiveDescription =
+          String(item.description || "").trim() ||
+          (item.item === "Others" ? String(item.customItem || "").trim() : "");
         const isMissingCustomName =
           item.item === "Others" && !String(item.customItem || "").trim();
 
         const isInvalid =
           !String(item.item || "").trim() ||
-          !String(item.description || "").trim() ||
+          !effectiveDescription ||
           !String(item.unit || "").trim() ||
           !Number.isFinite(qty) ||
           qty <= 0 ||
@@ -951,10 +1063,16 @@ export default function Quotations() {
 
     const preparedLineItems = preparedDaySections.flatMap((section) =>
       section.items.map((item) => ({
+        item:
+          item.item === "Others"
+            ? String(item.customItem || "").trim() || "Others"
+            : item.item,
         dayTitle: section.dayTitle,
         dayDescription: section.dayDescription,
-        item: item.item,
-        description: item.description,
+        description:
+          item.item === "Others" && !String(item.description || "").trim()
+            ? String(item.customItem || "").trim()
+            : item.description,
         unit: item.unit,
         qty: Number(item.qty || 0),
         rate: Number(item.rate || 0),
@@ -1520,7 +1638,9 @@ export default function Quotations() {
   };
 
   const openProductPicker = async (sectionIndex, itemIndex) => {
-    setPickerTarget({ sectionIndex, itemIndex });
+    const nextTarget = { sectionIndex, itemIndex };
+    pickerTargetRef.current = nextTarget;
+    setPickerTarget(nextTarget);
     setPickerCategory("Transport");
     setPickerSearch("");
     setIsProductModalOpen(true);
@@ -1530,6 +1650,34 @@ export default function Quotations() {
   };
 
   const applyProductToLine = (product, category) => {
+    // Close picker immediately once an option is chosen.
+    setIsProductModalOpen(false);
+
+    const activeTarget = pickerTargetRef.current || pickerTarget;
+
+    if (category === "Others") {
+      setForm((current) => ({
+        ...current,
+        daySections: current.daySections.map((section, sectionIndex) => {
+          if (sectionIndex !== activeTarget.sectionIndex) return section;
+          return {
+            ...section,
+            items: section.items.map((item, itemIndex) => {
+              if (itemIndex !== activeTarget.itemIndex) return item;
+              return {
+                ...item,
+                item: "Others",
+                customItem: item.customItem || "",
+                description: item.description || "",
+                unit: item.unit || "Per person",
+              };
+            }),
+          };
+        }),
+      }));
+      return;
+    }
+
     const description =
       category === "Transport"
         ? product?.particular || product?.name || ""
@@ -1539,18 +1687,11 @@ export default function Quotations() {
     setForm((current) => ({
       ...current,
       daySections: current.daySections.map((section, sectionIndex) => {
-        if (sectionIndex !== pickerTarget.sectionIndex) return section;
+        if (sectionIndex !== activeTarget.sectionIndex) return section;
         return {
           ...section,
           items: section.items.map((item, itemIndex) => {
-            if (itemIndex !== pickerTarget.itemIndex) return item;
-            if (category === "Others") {
-              return {
-                ...item,
-                item: "Others",
-              };
-            }
-
+            if (itemIndex !== activeTarget.itemIndex) return item;
             return {
               ...item,
               item: category,
@@ -1563,8 +1704,6 @@ export default function Quotations() {
         };
       }),
     }));
-
-    setIsProductModalOpen(false);
   };
 
   const categories = ["Transport", "Park Fees", "Concession Fees", "Others"];
@@ -1708,9 +1847,9 @@ export default function Quotations() {
       </div>
 
       <section className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto overflow-y-auto max-h-[70vh]">
           <table className="w-full">
-            <thead className="table-head-gradient">
+            <thead className="sticky top-0 z-20 table-head-gradient">
               <tr className="border-b border-slate-200">
                 {[
                   "Actions",
@@ -1999,13 +2138,13 @@ export default function Quotations() {
                   <div className="px-5 py-12 text-center text-slate-500">
                     Loading vehicle availability...
                   </div>
-                ) : vehicleAvailabilityRows.length === 0 ? (
+                ) : availableVehicleRows.length === 0 ? (
                   <div className="px-5 py-12 text-center text-slate-500">
-                    No vehicles found.
+                    No vehicles are available for the selected safari dates.
                   </div>
                 ) : (
                   <div className="divide-y divide-slate-200 max-h-[420px] overflow-y-auto">
-                    {vehicleAvailabilityRows.map((vehicle) => {
+                    {availableVehicleRows.map((vehicle) => {
                       const isChecked = selectedVehicleIds.includes(vehicle.id);
                       return (
                         <label
@@ -2086,7 +2225,7 @@ export default function Quotations() {
                 <button
                   onClick={() => submitQuotationConversion("later")}
                   disabled={convertingId === convertTarget?.id}
-                  className="px-4 py-2.5 rounded-xl text-sm font-medium border border-slate-300 text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50"
+                  className="px-4 py-2.5 rounded-xl text-sm font-medium text-white bg-gradient-to-r from-amber-400 to-amber-600 hover:opacity-90 transition-opacity disabled:opacity-50"
                 >
                   {convertingId === convertTarget?.id
                     ? "Working..."
@@ -2097,7 +2236,7 @@ export default function Quotations() {
                   disabled={
                     convertingId === convertTarget?.id ||
                     isLoadingAvailability ||
-                    vehicleAvailabilityRows.every(
+                    availableVehicleRows.every(
                       (vehicle) => !vehicle.isAvailableNow,
                     )
                   }
@@ -2622,15 +2761,31 @@ export default function Quotations() {
                                   </div>
                                 </td>
                                 <td className="px-3 py-3">
-                                  <button
-                                    onClick={() =>
-                                      removeDayItem(sectionIndex, itemIndex)
-                                    }
-                                    className="p-2 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
-                                    title="Remove line"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </button>
+                                  <div className="flex items-center gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        copyDayItemToSection(
+                                          sectionIndex,
+                                          itemIndex,
+                                        )
+                                      }
+                                      className="p-2 text-slate-400 hover:text-blue-400 hover:bg-blue-500/10 rounded-lg transition-colors"
+                                      title="Copy line to another day"
+                                    >
+                                      <Copy className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        removeDayItem(sectionIndex, itemIndex)
+                                      }
+                                      className="p-2 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                                      title="Remove line"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  </div>
                                 </td>
                               </tr>
                             ))}
@@ -2848,6 +3003,10 @@ export default function Quotations() {
                       key={category}
                       type="button"
                       onClick={() => {
+                        if (category === "Others") {
+                          applyProductToLine(null, "Others");
+                          return;
+                        }
                         setPickerCategory(category);
                         setPickerSearch("");
                       }}

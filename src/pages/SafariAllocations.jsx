@@ -20,6 +20,9 @@ import { apiFetch } from "../utils/api";
 const createFormState = () => ({
   leadId: "",
   pairs: [{ vehicleId: "", driverId: "" }],
+  allocationType: "full",
+  singleDate: "",
+  extraDayAllocations: [],
   notes: "",
   status: "Assigned",
 });
@@ -28,14 +31,24 @@ const formatDate = (value) => {
   if (!value) return "-";
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleDateString();
+  return parsed.toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
 };
 
 const formatDateTime = (value) => {
   if (!value) return "-";
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleString();
+  return parsed.toLocaleString("en-GB", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 };
 
 const normalizeLead = (lead) => ({
@@ -47,16 +60,39 @@ const normalizeLead = (lead) => ({
   startDate: lead.start_date || lead.startDate || "",
   endDate: lead.end_date || lead.endDate || "",
   routeParks: lead.route_parks || lead.routeParks || "-",
+  noOfVehicles: Number(lead.no_of_vehicles ?? lead.noOfVehicles ?? 0),
   paxAdults: Number(lead.pax_adults ?? lead.paxAdults ?? 0),
   paxChildren: Number(lead.pax_children ?? lead.paxChildren ?? 0),
   bookingStatus: lead.booking_status || lead.bookingStatus || "Pending",
   piSentAt: lead.pi_sent_at || lead.piSentAt || "",
 });
 
+const formatPiNumberFromId = (id, dateValue) => {
+  const numericId = Number(id);
+  if (!Number.isFinite(numericId) || numericId <= 0) return "";
+
+  const parsed = new Date(dateValue || Date.now());
+  const yearMonth = Number.isNaN(parsed.getTime())
+    ? `${String(new Date().getFullYear())}-${String(new Date().getMonth() + 1).padStart(2, "0")}`
+    : `${String(parsed.getFullYear())}-${String(parsed.getMonth() + 1).padStart(2, "0")}`;
+
+  return `PI-${yearMonth}-${String(Math.trunc(numericId)).padStart(3, "0")}`;
+};
+
 const normalizePI = (pi) => ({
   id: Number(pi.id || 0),
   leadId: Number(pi.lead_id || pi.leadId || 0),
-  piNo: pi.pi_no || pi.piNo || pi.invoice_no || pi.invoiceNo || `PI-${pi.id}`,
+  piNo:
+    pi.pi_no ||
+    pi.piNo ||
+    pi.proforma_number ||
+    pi.proformaNumber ||
+    pi.invoice_no ||
+    pi.invoiceNo ||
+    formatPiNumberFromId(
+      pi.id,
+      pi.quote_date || pi.quoteDate || pi.created_at || pi.createdAt,
+    ),
   groupName: pi.group_name || pi.groupName || "",
   date:
     pi.quoteDate ||
@@ -89,6 +125,14 @@ const normalizeVehicle = (vehicle) => ({
   make: vehicle.make || "",
   model: vehicle.model || "",
   status: vehicle.status || "Available",
+  assignedDriverId:
+    vehicle.assigned_driver_id ||
+    vehicle.assignedDriverId ||
+    vehicle.assigned_driver?.id ||
+    vehicle.assignedDriver?.id ||
+    "",
+  assignedDriverName:
+    vehicle.assigned_driver?.name || vehicle.assignedDriver?.name || "",
 });
 
 const normalizeUser = (user) => ({
@@ -120,6 +164,16 @@ const normalizeAllocation = (allocation) => ({
   ),
   vehicleId: String(allocation.vehicleId || allocation.vehicle_id || ""),
   driverId: String(allocation.driverId || allocation.driver_id || ""),
+  startDate:
+    allocation.startDate ||
+    allocation.start_date ||
+    allocation.allocationStartDate ||
+    "",
+  endDate:
+    allocation.endDate ||
+    allocation.end_date ||
+    allocation.allocationEndDate ||
+    "",
   notes: allocation.notes || "",
   status: allocation.status || "Assigned",
   lead: allocation.lead
@@ -146,7 +200,15 @@ const normalizeAllocation = (allocation) => ({
         piNo:
           allocation.proformaInvoice.pi_no ||
           allocation.proformaInvoice.piNo ||
-          `PI-${allocation.proformaInvoice.id}`,
+          allocation.proformaInvoice.proforma_number ||
+          allocation.proformaInvoice.proformaNumber ||
+          formatPiNumberFromId(
+            allocation.proformaInvoice.id,
+            allocation.proformaInvoice.quote_date ||
+              allocation.proformaInvoice.quoteDate ||
+              allocation.proformaInvoice.created_at ||
+              allocation.proformaInvoice.createdAt,
+          ),
       }
     : null,
   vehicle: allocation.vehicle
@@ -197,6 +259,13 @@ const extractList = (payload, keys) => {
   return [];
 };
 
+const createEmptyPair = () => ({ vehicleId: "", driverId: "" });
+const createExtraDayAllocation = (date = "") => ({
+  date,
+  pairs: [createEmptyPair()],
+});
+const isPairEmpty = (pair) => !pair?.vehicleId && !pair?.driverId;
+
 export default function SafariAllocations() {
   const [leads, setLeads] = useState([]);
   const [proformas, setProformas] = useState([]);
@@ -211,6 +280,7 @@ export default function SafariAllocations() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [autoFilledLeadKey, setAutoFilledLeadKey] = useState("");
 
   const loadData = async () => {
     setErrorMessage("");
@@ -364,6 +434,7 @@ export default function SafariAllocations() {
           routeParks: lead.routeParks,
           startDate: lead.startDate,
           endDate: lead.endDate,
+          noOfVehicles: Number(lead.noOfVehicles || 0),
           pax: Number(lead.paxAdults || 0) + Number(lead.paxChildren || 0),
           nationality: lead.clientCountry,
         };
@@ -454,42 +525,62 @@ export default function SafariAllocations() {
     });
   }, [resolvedAllocations, searchTerm]);
 
-  const assignedVehicleIds = useMemo(
-    () =>
-      new Set(
-        allocations
-          .filter((item) => item.id !== editingId)
-          .map((item) => String(item.vehicleId)),
-      ),
-    [allocations, editingId],
-  );
-
-  const assignedDriverIds = useMemo(
-    () =>
-      new Set(
-        allocations
-          .filter((item) => item.id !== editingId)
-          .map((item) => String(item.driverId)),
-      ),
-    [allocations, editingId],
-  );
-
   const vehicleOptions = useMemo(
-    () =>
-      vehicles.filter(
-        (vehicle) =>
-          ["Available"].includes(vehicle.status) &&
-          !assignedVehicleIds.has(String(vehicle.id)),
-      ),
-    [vehicles, assignedVehicleIds],
+    () => vehicles.filter((vehicle) => ["Available"].includes(vehicle.status)),
+    [vehicles],
   );
 
-  const availableDrivers = useMemo(
-    () =>
-      driverOptions.filter(
-        (driver) => !assignedDriverIds.has(String(driver.id)),
-      ),
-    [driverOptions, assignedDriverIds],
+  const availableDrivers = useMemo(() => driverOptions, [driverOptions]);
+
+  const rangesOverlap = (aStart, aEnd, bStart, bEnd) => {
+    if (!aStart || !aEnd || !bStart || !bEnd) return false;
+    return aStart <= bEnd && aEnd >= bStart;
+  };
+
+  const primaryAllocationRange = useMemo(() => {
+    const safari = safariOptions.find(
+      (item) => String(item.leadId) === String(form.leadId),
+    );
+    if (!safari) return null;
+
+    if (form.allocationType === "single") {
+      if (!form.singleDate) return null;
+      return { startDate: form.singleDate, endDate: form.singleDate };
+    }
+
+    if (!safari.startDate || !safari.endDate) return null;
+    return { startDate: safari.startDate, endDate: safari.endDate };
+  }, [safariOptions, form.leadId, form.allocationType, form.singleDate]);
+
+  const getUnavailableIdsForRange = (range, key) => {
+    if (!range) return new Set();
+
+    return new Set(
+      allocations
+        .filter((item) => item.id !== editingId)
+        .filter((item) => {
+          const itemStart = item.startDate || item.lead?.startDate;
+          const itemEnd = item.endDate || item.lead?.endDate;
+
+          return rangesOverlap(
+            itemStart,
+            itemEnd,
+            range.startDate,
+            range.endDate,
+          );
+        })
+        .map((item) => String(item[key])),
+    );
+  };
+
+  const unavailableVehicleIds = useMemo(
+    () => getUnavailableIdsForRange(primaryAllocationRange, "vehicleId"),
+    [allocations, editingId, primaryAllocationRange],
+  );
+
+  const unavailableDriverIds = useMemo(
+    () => getUnavailableIdsForRange(primaryAllocationRange, "driverId"),
+    [allocations, editingId, primaryAllocationRange],
   );
 
   const stats = useMemo(
@@ -511,8 +602,50 @@ export default function SafariAllocations() {
       pairs: [...f.pairs, { vehicleId: "", driverId: "" }],
     }));
 
+  const addExtraDay = () =>
+    setForm((f) => ({
+      ...f,
+      extraDayAllocations: [
+        ...f.extraDayAllocations,
+        createExtraDayAllocation(selectedSafariOption?.startDate || ""),
+      ],
+    }));
+
+  const addExtraPair = (dayIdx) =>
+    setForm((f) => ({
+      ...f,
+      extraDayAllocations: f.extraDayAllocations.map((day, index) =>
+        index === dayIdx
+          ? { ...day, pairs: [...day.pairs, createEmptyPair()] }
+          : day,
+      ),
+    }));
+
   const removePair = (idx) =>
     setForm((f) => ({ ...f, pairs: f.pairs.filter((_, i) => i !== idx) }));
+
+  const removeExtraDay = (dayIdx) =>
+    setForm((f) => ({
+      ...f,
+      extraDayAllocations: f.extraDayAllocations.filter(
+        (_, index) => index !== dayIdx,
+      ),
+    }));
+
+  const removeExtraPair = (dayIdx, rowIdx) =>
+    setForm((f) => ({
+      ...f,
+      extraDayAllocations: f.extraDayAllocations.map((day, index) => {
+        if (index !== dayIdx) return day;
+        return {
+          ...day,
+          pairs:
+            day.pairs.length > 1
+              ? day.pairs.filter((_, pairIndex) => pairIndex !== rowIdx)
+              : day.pairs,
+        };
+      }),
+    }));
 
   const updatePair = (idx, field, value) =>
     setForm((f) => ({
@@ -520,34 +653,250 @@ export default function SafariAllocations() {
       pairs: f.pairs.map((p, i) => (i === idx ? { ...p, [field]: value } : p)),
     }));
 
+  const updateExtraPair = (dayIdx, rowIdx, field, value) =>
+    setForm((f) => ({
+      ...f,
+      extraDayAllocations: f.extraDayAllocations.map((day, index) => {
+        if (index !== dayIdx) return day;
+        return {
+          ...day,
+          pairs: day.pairs.map((p, i) =>
+            i === rowIdx ? { ...p, [field]: value } : p,
+          ),
+        };
+      }),
+    }));
+
+  const setExtraDayDate = (dayIdx, value) =>
+    setForm((f) => ({
+      ...f,
+      extraDayAllocations: f.extraDayAllocations.map((day, index) =>
+        index === dayIdx ? { ...day, date: value } : day,
+      ),
+    }));
+
+  const handleVehicleChange = (idx, vehicleId) => {
+    const matchedVehicle = vehicles.find(
+      (vehicle) => String(vehicle.id) === String(vehicleId),
+    );
+    const assignedDriverId = matchedVehicle?.assignedDriverId
+      ? String(matchedVehicle.assignedDriverId)
+      : "";
+
+    setForm((current) => ({
+      ...current,
+      pairs: current.pairs.map((pair, pairIndex) => {
+        if (pairIndex !== idx) return pair;
+
+        return {
+          ...pair,
+          vehicleId,
+          driverId: assignedDriverId || "",
+        };
+      }),
+    }));
+  };
+
+  const handleExtraVehicleChange = (dayIdx, rowIdx, vehicleId) => {
+    const matchedVehicle = vehicles.find(
+      (vehicle) => String(vehicle.id) === String(vehicleId),
+    );
+    const assignedDriverId = matchedVehicle?.assignedDriverId
+      ? String(matchedVehicle.assignedDriverId)
+      : "";
+
+    setForm((current) => ({
+      ...current,
+      extraDayAllocations: current.extraDayAllocations.map((day, dayIndex) => {
+        if (dayIndex !== dayIdx) return day;
+        return {
+          ...day,
+          pairs: day.pairs.map((pair, pairIndex) => {
+            if (pairIndex !== rowIdx) return pair;
+            return {
+              ...pair,
+              vehicleId,
+              driverId: assignedDriverId || "",
+            };
+          }),
+        };
+      }),
+    }));
+  };
+
+  const handleDriverChange = (idx, driverId) => {
+    setForm((current) => ({
+      ...current,
+      pairs: current.pairs.map((pair, pairIndex) => {
+        if (pairIndex !== idx) return pair;
+
+        const selectedVehicle = vehicles.find(
+          (vehicle) => String(vehicle.id) === String(pair.vehicleId),
+        );
+        const vehicleAssignedDriverId = selectedVehicle?.assignedDriverId
+          ? String(selectedVehicle.assignedDriverId)
+          : "";
+
+        return {
+          ...pair,
+          driverId,
+          vehicleId:
+            vehicleAssignedDriverId &&
+            vehicleAssignedDriverId !== String(driverId || "")
+              ? ""
+              : pair.vehicleId,
+        };
+      }),
+    }));
+  };
+
+  const handleExtraDriverChange = (dayIdx, rowIdx, driverId) => {
+    setForm((current) => ({
+      ...current,
+      extraDayAllocations: current.extraDayAllocations.map((day, dayIndex) => {
+        if (dayIndex !== dayIdx) return day;
+        return {
+          ...day,
+          pairs: day.pairs.map((pair, pairIndex) => {
+            if (pairIndex !== rowIdx) return pair;
+
+            const selectedVehicle = vehicles.find(
+              (vehicle) => String(vehicle.id) === String(pair.vehicleId),
+            );
+            const vehicleAssignedDriverId = selectedVehicle?.assignedDriverId
+              ? String(selectedVehicle.assignedDriverId)
+              : "";
+
+            return {
+              ...pair,
+              driverId,
+              vehicleId:
+                vehicleAssignedDriverId &&
+                vehicleAssignedDriverId !== String(driverId || "")
+                  ? ""
+                  : pair.vehicleId,
+            };
+          }),
+        };
+      }),
+    }));
+  };
+
   const getVehiclesForRow = (idx) => {
-    const otherSelected = new Set(
-      form.pairs
+    const allExtraPairs = form.extraDayAllocations.flatMap((day) => day.pairs);
+    const otherSelected = new Set([
+      ...form.pairs
         .filter((_, i) => i !== idx)
         .map((p) => p.vehicleId)
         .filter(Boolean),
-    );
+      ...allExtraPairs.map((p) => p.vehicleId).filter(Boolean),
+    ]);
+    const selectedDriverId = String(form.pairs[idx]?.driverId || "");
     const current = form.pairs[idx]?.vehicleId || "";
     return vehicles.filter(
       (v) =>
         (["Available"].includes(v.status) &&
-          !assignedVehicleIds.has(String(v.id)) &&
+          (selectedDriverId
+            ? String(v.assignedDriverId || "") === selectedDriverId
+            : Boolean(v.assignedDriverId)) &&
+          !unavailableVehicleIds.has(String(v.id)) &&
           !otherSelected.has(String(v.id))) ||
         String(v.id) === current,
     );
   };
 
   const getDriversForRow = (idx) => {
-    const otherSelected = new Set(
-      form.pairs
+    const allExtraPairs = form.extraDayAllocations.flatMap((day) => day.pairs);
+    const otherSelected = new Set([
+      ...form.pairs
         .filter((_, i) => i !== idx)
         .map((p) => p.driverId)
         .filter(Boolean),
+      ...allExtraPairs.map((p) => p.driverId).filter(Boolean),
+    ]);
+    const selectedVehicle = vehicles.find(
+      (vehicle) =>
+        String(vehicle.id) === String(form.pairs[idx]?.vehicleId || ""),
     );
+    const vehicleAssignedDriverId = selectedVehicle?.assignedDriverId
+      ? String(selectedVehicle.assignedDriverId)
+      : "";
     const current = form.pairs[idx]?.driverId || "";
     return driverOptions.filter(
       (d) =>
-        (!assignedDriverIds.has(String(d.id)) &&
+        (!unavailableDriverIds.has(String(d.id)) &&
+          (vehicleAssignedDriverId
+            ? String(d.id) === vehicleAssignedDriverId
+            : true) &&
+          !otherSelected.has(String(d.id))) ||
+        String(d.id) === current,
+    );
+  };
+
+  const getVehiclesForExtraRow = (dayIdx, rowIdx) => {
+    const dayDate = form.extraDayAllocations[dayIdx]?.date || "";
+    const unavailableExtraVehicleIds = getUnavailableIdsForRange(
+      dayDate ? { startDate: dayDate, endDate: dayDate } : null,
+      "vehicleId",
+    );
+
+    const allExtraPairs = form.extraDayAllocations.flatMap((day) => day.pairs);
+    const currentExtraPair =
+      form.extraDayAllocations[dayIdx]?.pairs[rowIdx] || createEmptyPair();
+
+    const otherSelected = new Set([
+      ...allExtraPairs
+        .filter((pair) => pair !== currentExtraPair)
+        .map((p) => p.vehicleId)
+        .filter(Boolean),
+      ...form.pairs.map((p) => p.vehicleId).filter(Boolean),
+    ]);
+    const selectedDriverId = String(currentExtraPair.driverId || "");
+    const current = currentExtraPair.vehicleId || "";
+    return vehicles.filter(
+      (v) =>
+        (["Available"].includes(v.status) &&
+          (selectedDriverId
+            ? String(v.assignedDriverId || "") === selectedDriverId
+            : Boolean(v.assignedDriverId)) &&
+          !unavailableExtraVehicleIds.has(String(v.id)) &&
+          !otherSelected.has(String(v.id))) ||
+        String(v.id) === current,
+    );
+  };
+
+  const getDriversForExtraRow = (dayIdx, rowIdx) => {
+    const dayDate = form.extraDayAllocations[dayIdx]?.date || "";
+    const unavailableExtraDriverIds = getUnavailableIdsForRange(
+      dayDate ? { startDate: dayDate, endDate: dayDate } : null,
+      "driverId",
+    );
+
+    const allExtraPairs = form.extraDayAllocations.flatMap((day) => day.pairs);
+    const currentExtraPair =
+      form.extraDayAllocations[dayIdx]?.pairs[rowIdx] || createEmptyPair();
+
+    const otherSelected = new Set([
+      ...allExtraPairs
+        .filter((pair) => pair !== currentExtraPair)
+        .map((p) => p.driverId)
+        .filter(Boolean),
+      ...form.pairs.map((p) => p.driverId).filter(Boolean),
+    ]);
+    const selectedVehicle = vehicles.find(
+      (vehicle) =>
+        String(vehicle.id) === String(currentExtraPair.vehicleId || ""),
+    );
+    const vehicleAssignedDriverId = selectedVehicle?.assignedDriverId
+      ? String(selectedVehicle.assignedDriverId)
+      : "";
+    const current = currentExtraPair.driverId || "";
+    return driverOptions.filter(
+      (d) =>
+        (!unavailableExtraDriverIds.has(String(d.id)) &&
+          (vehicleAssignedDriverId
+            ? String(d.id) === vehicleAssignedDriverId
+            : true) &&
           !otherSelected.has(String(d.id))) ||
         String(d.id) === current,
     );
@@ -563,6 +912,7 @@ export default function SafariAllocations() {
     setEditingId(null);
     setErrorMessage("");
     setForm(createFormState());
+    setAutoFilledLeadKey("");
     setIsModalOpen(true);
   };
 
@@ -577,11 +927,55 @@ export default function SafariAllocations() {
           driverId: String(allocation.driverId || ""),
         },
       ],
+      allocationType:
+        allocation.startDate &&
+        allocation.endDate &&
+        allocation.startDate === allocation.endDate
+          ? "single"
+          : "full",
+      singleDate:
+        allocation.startDate &&
+        allocation.endDate &&
+        allocation.startDate === allocation.endDate
+          ? String(allocation.startDate)
+          : "",
+      extraDayAllocations: [],
       notes: allocation.notes || "",
       status: allocation.status || "Assigned",
     });
     setIsModalOpen(true);
   };
+
+  useEffect(() => {
+    if (!isModalOpen || editingId || !selectedSafariOption || !form.leadId)
+      return;
+    if (form.allocationType !== "full") return;
+
+    const plannedVehicles = Number(selectedSafariOption.noOfVehicles || 0);
+    if (plannedVehicles <= 1) return;
+
+    const leadKey = `${form.leadId}|${form.allocationType}|${plannedVehicles}`;
+    if (autoFilledLeadKey === leadKey) return;
+
+    const onlySingleBlankRow =
+      form.pairs.length === 1 && isPairEmpty(form.pairs[0]);
+
+    if (!onlySingleBlankRow) return;
+
+    setForm((current) => ({
+      ...current,
+      pairs: Array.from({ length: plannedVehicles }, () => createEmptyPair()),
+    }));
+    setAutoFilledLeadKey(leadKey);
+  }, [
+    isModalOpen,
+    editingId,
+    selectedSafariOption,
+    form.leadId,
+    form.allocationType,
+    form.pairs,
+    autoFilledLeadKey,
+  ]);
 
   const handleDelete = async (allocationId) => {
     const confirmation = await Swal.fire({
@@ -666,6 +1060,79 @@ export default function SafariAllocations() {
       return;
     }
 
+    if (form.allocationType === "single" && !form.singleDate) {
+      setErrorMessage("Please select a single allocation date.");
+      await Swal.fire({
+        title: "Missing Required Fields",
+        text: "Please select a single allocation date.",
+        icon: "warning",
+        background: "#0f172a",
+        color: "#e2e8f0",
+      });
+      return;
+    }
+
+    if (form.allocationType === "full-plus-single") {
+      if (form.extraDayAllocations.length === 0) {
+        setErrorMessage("Add at least one extra day block.");
+        await Swal.fire({
+          title: "Missing Required Fields",
+          text: "Add at least one extra day block.",
+          icon: "warning",
+          background: "#0f172a",
+          color: "#e2e8f0",
+        });
+        return;
+      }
+
+      const hasMissingDayDate = form.extraDayAllocations.some(
+        (day) => !day.date,
+      );
+      if (hasMissingDayDate) {
+        setErrorMessage("Select a date for each extra day block.");
+        await Swal.fire({
+          title: "Missing Required Fields",
+          text: "Select a date for each extra day block.",
+          icon: "warning",
+          background: "#0f172a",
+          color: "#e2e8f0",
+        });
+        return;
+      }
+
+      const hasEmptyExtraRows = form.extraDayAllocations.some(
+        (day) => !Array.isArray(day.pairs) || day.pairs.length === 0,
+      );
+      if (hasEmptyExtraRows) {
+        setErrorMessage("Each extra day must have at least one row.");
+        await Swal.fire({
+          title: "Missing Required Fields",
+          text: "Each extra day must have at least one vehicle and driver row.",
+          icon: "warning",
+          background: "#0f172a",
+          color: "#e2e8f0",
+        });
+        return;
+      }
+
+      const invalidExtraPair = form.extraDayAllocations.some((day) =>
+        day.pairs.some((p) => !p.vehicleId || !p.driverId),
+      );
+      if (invalidExtraPair) {
+        setErrorMessage(
+          "Each extra row must have a vehicle and driver selected.",
+        );
+        await Swal.fire({
+          title: "Missing Required Fields",
+          text: "Each extra row must have a vehicle and driver selected.",
+          icon: "warning",
+          background: "#0f172a",
+          color: "#e2e8f0",
+        });
+        return;
+      }
+    }
+
     setIsSaving(true);
     setErrorMessage("");
     const selectedLeadId = String(form.leadId || "");
@@ -674,17 +1141,34 @@ export default function SafariAllocations() {
         (item) => item.leadId === selectedLeadId,
       );
 
+      const buildPayload = (pair, startDate, endDate) => ({
+        leadId: Number(form.leadId),
+        proformaInvoiceId: safari?.piId ? Number(safari.piId) : null,
+        vehicleId: Number(pair.vehicleId),
+        driverId: Number(pair.driverId),
+        startDate,
+        endDate,
+        notes: form.notes,
+        status: form.status,
+      });
+
       if (editingId) {
         // PUT request for update (single pair)
         const pair = form.pairs[0];
-        const payload = {
-          leadId: Number(form.leadId),
-          proformaInvoiceId: safari?.piId ? Number(safari.piId) : null,
-          vehicleId: Number(pair.vehicleId),
-          driverId: Number(pair.driverId),
-          notes: form.notes,
-          status: form.status,
-        };
+        const allocationStartDate =
+          form.allocationType === "single"
+            ? form.singleDate
+            : safari?.startDate || "";
+        const allocationEndDate =
+          form.allocationType === "single"
+            ? form.singleDate
+            : safari?.endDate || "";
+
+        const payload = buildPayload(
+          pair,
+          allocationStartDate,
+          allocationEndDate,
+        );
 
         const response = await apiFetch(`/safari-allocations/${editingId}`, {
           method: "PUT",
@@ -712,39 +1196,74 @@ export default function SafariAllocations() {
         setEditingId(null);
         setForm(createFormState());
       } else {
-        // POST each pair sequentially
+        // POST full and/or extra-day pairs sequentially
         const created = [];
-        for (const pair of form.pairs) {
-          const payload = {
-            leadId: Number(form.leadId),
-            proformaInvoiceId: safari?.piId ? Number(safari.piId) : null,
-            vehicleId: Number(pair.vehicleId),
-            driverId: Number(pair.driverId),
-            notes: form.notes,
-            status: form.status,
-          };
+        const savePlans = [];
 
-          const response = await apiFetch("/safari-allocations", {
-            method: "POST",
-            body: payload,
+        if (form.allocationType === "single") {
+          savePlans.push({
+            pairs: form.pairs,
+            startDate: form.singleDate,
+            endDate: form.singleDate,
           });
+        } else if (form.allocationType === "full") {
+          savePlans.push({
+            pairs: form.pairs,
+            startDate: safari?.startDate || "",
+            endDate: safari?.endDate || "",
+          });
+        } else {
+          savePlans.push({
+            pairs: form.pairs,
+            startDate: safari?.startDate || "",
+            endDate: safari?.endDate || "",
+          });
+          form.extraDayAllocations.forEach((day) => {
+            savePlans.push({
+              pairs: day.pairs,
+              startDate: day.date,
+              endDate: day.date,
+            });
+          });
+        }
 
-          const responsePayload = await response.json().catch(() => ({}));
+        for (const plan of savePlans) {
+          for (const pair of plan.pairs) {
+            const response = await apiFetch("/safari-allocations", {
+              method: "POST",
+              body: buildPayload(pair, plan.startDate, plan.endDate),
+            });
 
-          if (!response.ok) {
-            throw new Error(
-              responsePayload?.message || "Unable to create safari allocation.",
+            const responsePayload = await response.json().catch(() => ({}));
+
+            if (!response.ok) {
+              throw new Error(
+                responsePayload?.message ||
+                  "Unable to create safari allocation.",
+              );
+            }
+
+            created.push(
+              normalizeAllocation(extractAllocation(responsePayload)),
             );
           }
-
-          created.push(normalizeAllocation(extractAllocation(responsePayload)));
         }
 
         setAllocations([...created.reverse(), ...allocations]);
-        // Reset pairs but keep same safari selected
+        // Reset rows but keep the selected safari so extra vehicles can be added quickly.
         setForm({
           ...createFormState(),
           leadId: selectedLeadId,
+          allocationType: form.allocationType,
+          singleDate: form.allocationType === "single" ? form.singleDate : "",
+          extraDayAllocations:
+            form.allocationType === "full-plus-single"
+              ? [
+                  createExtraDayAllocation(
+                    selectedSafariOption?.startDate || "",
+                  ),
+                ]
+              : [],
         });
       }
 
@@ -752,7 +1271,25 @@ export default function SafariAllocations() {
         title: editingId ? "Updated" : "Created",
         text: editingId
           ? "Safari allocation updated successfully."
-          : `${form.pairs.length} allocation${form.pairs.length > 1 ? "s" : ""} created successfully.`,
+          : `${
+              form.allocationType === "full-plus-single"
+                ? form.pairs.length +
+                  form.extraDayAllocations.reduce(
+                    (sum, day) => sum + day.pairs.length,
+                    0,
+                  )
+                : form.pairs.length
+            } allocation${
+              (form.allocationType === "full-plus-single"
+                ? form.pairs.length +
+                  form.extraDayAllocations.reduce(
+                    (sum, day) => sum + day.pairs.length,
+                    0,
+                  )
+                : form.pairs.length) > 1
+                ? "s"
+                : ""
+            } created successfully.`,
         icon: "success",
         timer: 1500,
         showConfirmButton: false,
@@ -918,9 +1455,17 @@ export default function SafariAllocations() {
                       <div className="flex items-start gap-2">
                         <Calendar className="w-4 h-4 text-slate-400 mt-0.5 shrink-0" />
                         <div>
-                          <div>{formatDate(allocation.safari?.startDate)}</div>
+                          <div>
+                            {formatDate(
+                              allocation.startDate ||
+                                allocation.safari?.startDate,
+                            )}
+                          </div>
                           <div className="text-xs text-slate-500">
-                            to {formatDate(allocation.safari?.endDate)}
+                            to{" "}
+                            {formatDate(
+                              allocation.endDate || allocation.safari?.endDate,
+                            )}
                           </div>
                         </div>
                       </div>
@@ -1050,6 +1595,225 @@ export default function SafariAllocations() {
                   )}
                 </div>
 
+                <div>
+                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                    Allocation Mode
+                  </label>
+                  <select
+                    value={form.allocationType}
+                    onChange={(event) =>
+                      setForm((current) => ({
+                        ...current,
+                        allocationType: event.target.value,
+                        singleDate:
+                          event.target.value === "single" && !current.singleDate
+                            ? selectedSafariOption?.startDate || ""
+                            : current.singleDate,
+                        extraDayAllocations:
+                          event.target.value === "full-plus-single"
+                            ? current.extraDayAllocations.length > 0
+                              ? current.extraDayAllocations
+                              : [
+                                  createExtraDayAllocation(
+                                    selectedSafariOption?.startDate || "",
+                                  ),
+                                ]
+                            : [],
+                      }))
+                    }
+                    disabled={isSaving}
+                    className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
+                  >
+                    <option value="full">Full Safari Dates</option>
+                    <option value="single">Single Date</option>
+                    <option value="full-plus-single">
+                      Full + Single Day Extras
+                    </option>
+                  </select>
+                  <p className="mt-1.5 text-xs text-slate-400">
+                    {form.allocationType === "full"
+                      ? "Use one row per vehicle needed every day of the safari."
+                      : form.allocationType === "single"
+                        ? "Use this for extra vehicles on a specific day."
+                        : "Save base daily vehicles and extra single-day vehicles in one submission."}
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                    Single Allocation Date
+                  </label>
+                  <input
+                    type="date"
+                    value={form.singleDate}
+                    onChange={(event) =>
+                      setField("singleDate", event.target.value)
+                    }
+                    disabled={isSaving || form.allocationType !== "single"}
+                    min={selectedSafariOption?.startDate || undefined}
+                    max={selectedSafariOption?.endDate || undefined}
+                    className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50 disabled:opacity-60"
+                  />
+                </div>
+
+                {form.allocationType === "full-plus-single" && (
+                  <div className="md:col-span-2 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="block text-xs font-medium text-slate-300">
+                        Extra Day Vehicles &amp; Drivers *
+                      </label>
+                    </div>
+
+                    {form.extraDayAllocations.map((day, dayIdx) => (
+                      <div
+                        key={`extra-day-${dayIdx}`}
+                        className="space-y-3 p-3 bg-slate-800/40 border border-slate-700/50 rounded-xl"
+                      >
+                        <div className="flex flex-col md:flex-row md:items-end gap-3">
+                          <div className="w-full md:w-64">
+                            <label className="block text-xs text-slate-400 mb-1">
+                              Extra Day Date {dayIdx + 1}
+                            </label>
+                            <input
+                              type="date"
+                              value={day.date}
+                              onChange={(event) =>
+                                setExtraDayDate(dayIdx, event.target.value)
+                              }
+                              disabled={isSaving}
+                              min={selectedSafariOption?.startDate || undefined}
+                              max={selectedSafariOption?.endDate || undefined}
+                              className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
+                            />
+                          </div>
+
+                          <div className="flex gap-2 md:pb-0.5">
+                            {!editingId && (
+                              <button
+                                type="button"
+                                onClick={() => addExtraPair(dayIdx)}
+                                disabled={isSaving}
+                                className="flex items-center gap-1.5 px-3 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs rounded-lg transition-colors disabled:opacity-50"
+                              >
+                                <Plus className="w-3 h-3" />
+                                Add Row
+                              </button>
+                            )}
+                            {!editingId &&
+                              form.extraDayAllocations.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => removeExtraDay(dayIdx)}
+                                  disabled={isSaving}
+                                  className="px-3 py-2 text-xs font-semibold rounded-lg bg-rose-900/40 text-white hover:bg-rose-900/60 disabled:opacity-50"
+                                >
+                                  Remove Day
+                                </button>
+                              )}
+                          </div>
+                        </div>
+
+                        {day.pairs.map((pair, rowIdx) => (
+                          <div
+                            key={`extra-day-${dayIdx}-row-${rowIdx}`}
+                            className="grid grid-cols-1 md:grid-cols-2 gap-3"
+                          >
+                            <div>
+                              <label className="block text-xs text-slate-400 mb-1">
+                                Extra Vehicle
+                                {day.pairs.length > 1 ? ` ${rowIdx + 1}` : ""}
+                              </label>
+                              <select
+                                value={pair.vehicleId}
+                                onChange={(e) =>
+                                  handleExtraVehicleChange(
+                                    dayIdx,
+                                    rowIdx,
+                                    e.target.value,
+                                  )
+                                }
+                                disabled={isSaving}
+                                className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
+                              >
+                                <option value="">Select vehicle</option>
+                                {getVehiclesForExtraRow(dayIdx, rowIdx).map(
+                                  (vehicle) => (
+                                    <option key={vehicle.id} value={vehicle.id}>
+                                      {`${vehicle.vehicleNo || "Vehicle"} | Reg: ${vehicle.plateNo || "N/A"}` +
+                                        (vehicle.assignedDriverName
+                                          ? ` | Driver: ${vehicle.assignedDriverName}`
+                                          : "") +
+                                        (vehicle.make
+                                          ? ` - ${vehicle.make} ${vehicle.model}`
+                                          : "")}
+                                    </option>
+                                  ),
+                                )}
+                              </select>
+                            </div>
+
+                            <div className="flex gap-2 items-end">
+                              <div className="flex-1">
+                                <label className="block text-xs text-slate-400 mb-1">
+                                  Extra Driver
+                                  {day.pairs.length > 1 ? ` ${rowIdx + 1}` : ""}
+                                </label>
+                                <select
+                                  value={pair.driverId}
+                                  onChange={(e) =>
+                                    handleExtraDriverChange(
+                                      dayIdx,
+                                      rowIdx,
+                                      e.target.value,
+                                    )
+                                  }
+                                  disabled={isSaving}
+                                  className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
+                                >
+                                  <option value="">Select driver</option>
+                                  {getDriversForExtraRow(dayIdx, rowIdx).map(
+                                    (driver) => (
+                                      <option key={driver.id} value={driver.id}>
+                                        {driver.name} ({driver.role})
+                                      </option>
+                                    ),
+                                  )}
+                                </select>
+                              </div>
+
+                              {!editingId && day.pairs.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    removeExtraPair(dayIdx, rowIdx)
+                                  }
+                                  disabled={isSaving}
+                                  className="p-2.5 text-slate-400 hover:text-red-400 hover:bg-slate-700 rounded-lg transition-colors"
+                                  title="Remove extra row"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+
+                    {!editingId && (
+                      <button
+                        type="button"
+                        onClick={addExtraDay}
+                        disabled={isSaving}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs rounded-lg transition-colors disabled:opacity-50"
+                      >
+                        <Plus className="w-3 h-3" />
+                        Add Extra Day
+                      </button>
+                    )}
+                  </div>
+                )}
+
                 <div className="md:col-span-2 space-y-3">
                   <div className="flex items-center justify-between">
                     <label className="block text-xs font-medium text-slate-300">
@@ -1080,7 +1844,7 @@ export default function SafariAllocations() {
                         <select
                           value={pair.vehicleId}
                           onChange={(e) =>
-                            updatePair(idx, "vehicleId", e.target.value)
+                            handleVehicleChange(idx, e.target.value)
                           }
                           disabled={isSaving}
                           className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
@@ -1088,7 +1852,10 @@ export default function SafariAllocations() {
                           <option value="">Select vehicle</option>
                           {getVehiclesForRow(idx).map((vehicle) => (
                             <option key={vehicle.id} value={vehicle.id}>
-                              {(vehicle.vehicleNo || vehicle.plateNo) +
+                              {`${vehicle.vehicleNo || "Vehicle"} | Reg: ${vehicle.plateNo || "N/A"}` +
+                                (vehicle.assignedDriverName
+                                  ? ` | Driver: ${vehicle.assignedDriverName}`
+                                  : "") +
                                 (vehicle.make
                                   ? ` - ${vehicle.make} ${vehicle.model}`
                                   : "")}
@@ -1105,7 +1872,7 @@ export default function SafariAllocations() {
                           <select
                             value={pair.driverId}
                             onChange={(e) =>
-                              updatePair(idx, "driverId", e.target.value)
+                              handleDriverChange(idx, e.target.value)
                             }
                             disabled={isSaving}
                             className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
@@ -1201,6 +1968,30 @@ export default function SafariAllocations() {
                           </span>
                         </div>
                         <div className="flex justify-between gap-4">
+                          <span className="text-slate-400">
+                            Vehicles Planned
+                          </span>
+                          <span className="text-white">
+                            {safari.noOfVehicles > 0
+                              ? safari.noOfVehicles
+                              : "Not specified"}
+                          </span>
+                        </div>
+                        <div className="flex justify-between gap-4">
+                          <span className="text-slate-400">
+                            Rows In This Save
+                          </span>
+                          <span className="text-white">
+                            {form.allocationType === "full-plus-single"
+                              ? form.pairs.length +
+                                form.extraDayAllocations.reduce(
+                                  (sum, day) => sum + day.pairs.length,
+                                  0,
+                                )
+                              : form.pairs.length}
+                          </span>
+                        </div>
+                        <div className="flex justify-between gap-4">
                           <span className="text-slate-400">Safari Start</span>
                           <span className="text-white">
                             {formatDate(safari.startDate)}
@@ -1210,6 +2001,18 @@ export default function SafariAllocations() {
                           <span className="text-slate-400">Safari End</span>
                           <span className="text-white">
                             {formatDate(safari.endDate)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between gap-4">
+                          <span className="text-slate-400">
+                            Allocation Range
+                          </span>
+                          <span className="text-white text-right">
+                            {form.allocationType === "single"
+                              ? formatDate(form.singleDate)
+                              : form.allocationType === "full-plus-single"
+                                ? `${formatDate(safari.startDate)} to ${formatDate(safari.endDate)} + ${form.extraDayAllocations.length} extra day(s)`
+                                : `${formatDate(safari.startDate)} to ${formatDate(safari.endDate)}`}
                           </span>
                         </div>
                         <div className="flex justify-between gap-4 md:col-span-2">
@@ -1244,8 +2047,22 @@ export default function SafariAllocations() {
                   ? "Saving..."
                   : editingId
                     ? "Update Allocation"
-                    : form.pairs.length > 1
-                      ? `Create ${form.pairs.length} Allocations`
+                    : (form.allocationType === "full-plus-single"
+                          ? form.pairs.length +
+                            form.extraDayAllocations.reduce(
+                              (sum, day) => sum + day.pairs.length,
+                              0,
+                            )
+                          : form.pairs.length) > 1
+                      ? `Create ${
+                          form.allocationType === "full-plus-single"
+                            ? form.pairs.length +
+                              form.extraDayAllocations.reduce(
+                                (sum, day) => sum + day.pairs.length,
+                                0,
+                              )
+                            : form.pairs.length
+                        } Allocations`
                       : "Create Allocation"}
               </button>
             </div>

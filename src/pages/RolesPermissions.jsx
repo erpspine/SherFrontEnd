@@ -3,14 +3,14 @@ import { Shield, Key, CheckCircle2, XCircle, RefreshCw } from "lucide-react";
 import { apiFetch } from "../utils/api";
 
 const roleStyles = {
-  Admin: "bg-blue-500/20 text-blue-400 border-blue-500/30",
-  Operations: "bg-purple-500/20 text-purple-400 border-purple-500/30",
-  Finance: "bg-amber-500/20 text-amber-400 border-amber-500/30",
-  Driver: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
-  Viewer: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
+  Admin: "bg-blue-50 text-blue-600 border-blue-200",
+  Operations: "bg-purple-50 text-purple-600 border-purple-200",
+  Finance: "bg-amber-50 text-amber-600 border-amber-200",
+  Driver: "bg-emerald-50 text-emerald-600 border-emerald-200",
+  Viewer: "bg-cyan-50 text-cyan-600 border-cyan-200",
 };
 
-const defaultRoleStyle = "bg-slate-500/20 text-slate-400 border-slate-500/30";
+const defaultRoleStyle = "bg-slate-50 text-slate-600 border-slate-200";
 
 function groupPermissions(permissions) {
   return permissions.reduce((groups, perm) => {
@@ -93,17 +93,17 @@ export default function RolesPermissions() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white">
+          <h1 className="text-2xl font-bold text-slate-800">
             Roles &amp; Permissions
           </h1>
-          <p className="text-slate-400 mt-1">
+          <p className="text-slate-500 mt-1">
             View which permissions are assigned to each system role.
           </p>
         </div>
         <button
           onClick={load}
           disabled={isLoading}
-          className="flex items-center gap-2 px-4 py-2.5 bg-slate-800 border border-slate-700 text-slate-300 rounded-xl text-sm hover:bg-slate-700 transition-colors disabled:opacity-50"
+          className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 text-slate-600 rounded-xl text-sm hover:bg-slate-50 transition-colors disabled:opacity-50"
         >
           <RefreshCw className={`w-4 h-4 ${isLoading ? "animate-spin" : ""}`} />
           Refresh
@@ -112,30 +112,30 @@ export default function RolesPermissions() {
 
       {/* Error */}
       {errorMessage && (
-        <div className="bg-red-500/10 border border-red-500/30 text-red-300 rounded-xl px-4 py-3 text-sm">
+        <div className="bg-red-50 border border-red-200 text-red-600 rounded-xl px-4 py-3 text-sm">
           {errorMessage}
         </div>
       )}
 
       {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-xl p-4 text-center">
-          <p className="text-slate-400 text-sm">Total Roles</p>
-          <p className="text-2xl font-bold mt-1 text-white">{totalRoles}</p>
+        <div className="bg-white border border-slate-200 rounded-xl p-4 text-center shadow-sm">
+          <p className="text-slate-500 text-sm">Total Roles</p>
+          <p className="text-2xl font-bold mt-1 text-slate-800">{totalRoles}</p>
         </div>
-        <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-xl p-4 text-center">
-          <p className="text-slate-400 text-sm">Total Permissions</p>
-          <p className="text-2xl font-bold mt-1 text-amber-400">{totalPerms}</p>
+        <div className="bg-white border border-slate-200 rounded-xl p-4 text-center shadow-sm">
+          <p className="text-slate-500 text-sm">Total Permissions</p>
+          <p className="text-2xl font-bold mt-1 text-amber-500">{totalPerms}</p>
         </div>
-        <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-xl p-4 text-center">
-          <p className="text-slate-400 text-sm">Permission Groups</p>
-          <p className="text-2xl font-bold mt-1 text-blue-400">
+        <div className="bg-white border border-slate-200 rounded-xl p-4 text-center shadow-sm">
+          <p className="text-slate-500 text-sm">Permission Groups</p>
+          <p className="text-2xl font-bold mt-1 text-blue-500">
             {groupNames.length}
           </p>
         </div>
-        <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-xl p-4 text-center">
-          <p className="text-slate-400 text-sm">Admin Permissions</p>
-          <p className="text-2xl font-bold mt-1 text-emerald-400">
+        <div className="bg-white border border-slate-200 rounded-xl p-4 text-center shadow-sm">
+          <p className="text-slate-500 text-sm">Admin Permissions</p>
+          <p className="text-2xl font-bold mt-1 text-emerald-500">
             {permSet["Admin"]?.size ?? "—"}
           </p>
         </div>
@@ -143,8 +143,8 @@ export default function RolesPermissions() {
 
       {/* Role badges */}
       {!isLoading && roles.length > 0 && (
-        <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-2xl p-5">
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
+        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
             System Roles
           </p>
           <div className="flex flex-wrap gap-2">
@@ -166,20 +166,20 @@ export default function RolesPermissions() {
 
       {/* Permissions matrix */}
       {isLoading ? (
-        <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-2xl py-20 text-center text-slate-500">
+        <div className="bg-white border border-slate-200 rounded-2xl py-20 text-center text-slate-400 shadow-sm">
           Loading roles and permissions...
         </div>
       ) : roles.length === 0 ? (
-        <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-2xl py-20 text-center text-slate-500">
+        <div className="bg-white border border-slate-200 rounded-2xl py-20 text-center text-slate-400 shadow-sm">
           No data available.
         </div>
       ) : (
-        <div className="bg-slate-900/50 backdrop-blur border border-slate-800/50 rounded-2xl overflow-hidden">
+        <section className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead>
-                <tr className="border-b border-slate-800">
-                  <th className="text-left py-4 px-6 text-sm font-semibold text-slate-400 w-56 min-w-[14rem]">
+              <thead className="table-head-gradient">
+                <tr className="border-b border-slate-200">
+                  <th className="text-left py-4 px-6 text-xs font-semibold text-slate-500 uppercase tracking-wide w-56 min-w-[14rem]">
                     <div className="flex items-center gap-2">
                       <Key className="w-4 h-4" />
                       Permission
@@ -188,7 +188,7 @@ export default function RolesPermissions() {
                   {roles.map((role) => (
                     <th
                       key={role.name}
-                      className="py-4 px-4 text-center text-sm font-semibold"
+                      className="py-4 px-4 text-center text-xs font-semibold text-slate-500 uppercase tracking-wide"
                     >
                       <span
                         className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium border ${roleStyles[role.name] ?? defaultRoleStyle}`}
@@ -204,10 +204,10 @@ export default function RolesPermissions() {
                 {groupNames.map((module) => (
                   <>
                     {/* Group header row */}
-                    <tr key={`group-${module}`} className="bg-slate-800/30">
+                    <tr key={`group-${module}`} className="bg-slate-50">
                       <td
                         colSpan={roles.length + 1}
-                        className="py-2 px-6 text-xs font-semibold text-slate-500 uppercase tracking-wider"
+                        className="py-2 px-6 text-xs font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-200"
                       >
                         {formatModuleName(module)}
                       </td>
@@ -217,13 +217,13 @@ export default function RolesPermissions() {
                     {permissionGroups[module].map((perm) => (
                       <tr
                         key={perm}
-                        className="border-b border-slate-800/40 hover:bg-slate-800/20 transition-colors"
+                        className="border-b border-slate-100 hover:bg-amber-50/60 transition-colors"
                       >
                         <td className="py-3 px-6">
-                          <div className="text-sm text-slate-200 font-medium">
+                          <div className="text-sm text-slate-700 font-medium">
                             {formatPermissionLabel(perm)}
                           </div>
-                          <div className="text-xs text-slate-500 font-mono mt-0.5">
+                          <div className="text-xs text-slate-400 font-mono mt-0.5">
                             {perm}
                           </div>
                         </td>
@@ -235,9 +235,9 @@ export default function RolesPermissions() {
                               className="py-3 px-4 text-center"
                             >
                               {hasPermission ? (
-                                <CheckCircle2 className="w-5 h-5 text-emerald-400 mx-auto" />
+                                <CheckCircle2 className="w-5 h-5 text-emerald-500 mx-auto" />
                               ) : (
-                                <XCircle className="w-5 h-5 text-slate-700 mx-auto" />
+                                <XCircle className="w-5 h-5 text-slate-300 mx-auto" />
                               )}
                             </td>
                           );
@@ -249,7 +249,7 @@ export default function RolesPermissions() {
               </tbody>
             </table>
           </div>
-        </div>
+        </section>
       )}
     </div>
   );

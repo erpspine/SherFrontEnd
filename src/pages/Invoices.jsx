@@ -4,6 +4,9 @@ import {
   Search,
   FileSpreadsheet,
   Eye,
+  Paperclip,
+  Upload,
+  Download,
   CheckCircle,
   Clock,
   AlertTriangle,
@@ -74,9 +77,28 @@ const extractList = (payload, keys) => {
   return [];
 };
 
+const formatPiNumberFromId = (id, dateValue) => {
+  const numericId = Number(id);
+  if (!Number.isFinite(numericId) || numericId <= 0) return "";
+
+  const parsed = new Date(dateValue || Date.now());
+  const yearMonth = Number.isNaN(parsed.getTime())
+    ? `${String(new Date().getFullYear())}-${String(new Date().getMonth() + 1).padStart(2, "0")}`
+    : `${String(parsed.getFullYear())}-${String(parsed.getMonth() + 1).padStart(2, "0")}`;
+
+  return `PI-${yearMonth}-${String(Math.trunc(numericId)).padStart(3, "0")}`;
+};
+
 const normalizeProforma = (pi) => ({
   id: Number(pi.id || 0),
-  piNo: pi.pi_no || pi.piNo || pi.invoice_no || pi.invoiceNo || `PI-${pi.id}`,
+  piNo:
+    pi.pi_no ||
+    pi.piNo ||
+    pi.proforma_number ||
+    pi.proformaNumber ||
+    pi.invoice_no ||
+    pi.invoiceNo ||
+    formatPiNumberFromId(pi.id, pi.quote_date || pi.quoteDate || pi.created_at || pi.createdAt),
   client: pi.client || pi.client_name || pi.clientName || "",
   total: Number(pi.total || 0),
 });
@@ -126,6 +148,8 @@ const normalizeInvoice = (invoice) => {
     total: Number(invoice.total || 0),
     paid,
     notes: invoice.notes || "",
+    attachmentName: invoice.attachmentName || invoice.attachment_name || "",
+    attachmentUrl: invoice.attachmentUrl || invoice.attachment_url || "",
     payments,
   };
 };
@@ -156,7 +180,13 @@ export default function Invoices() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isPaymentLoading, setIsPaymentLoading] = useState(false);
+  const [uploadingInvoiceId, setUploadingInvoiceId] = useState(null);
   const [errorMessage, setErrorMessage] = useState("");
+  const [invoiceAttachmentFile, setInvoiceAttachmentFile] = useState(null);
+  const [invoiceAttachmentInfo, setInvoiceAttachmentInfo] = useState({
+    name: "",
+    url: "",
+  });
 
   const loadInvoices = async () => {
     const response = await apiFetch("/invoices");
@@ -301,9 +331,120 @@ export default function Invoices() {
     ]).map(normalizePayment);
   };
 
+  const uploadInvoiceAttachmentRequest = async (invoiceId, file) => {
+    const formData = new FormData();
+    formData.append("attachment", file);
+
+    const response = await apiFetch(`/invoices/${invoiceId}/attachment`, {
+      method: "POST",
+      body: formData,
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload?.message || "Unable to upload attachment.");
+    }
+
+    return normalizeInvoice(extractSingle(payload));
+  };
+
+  const removeInvoiceAttachmentRequest = async (invoiceId) => {
+    const response = await apiFetch(`/invoices/${invoiceId}/attachment`, {
+      method: "DELETE",
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload?.message || "Unable to remove attachment.");
+    }
+
+    return normalizeInvoice(extractSingle(payload));
+  };
+
+  const uploadAttachmentForInvoice = async (invoiceId, file) => {
+    setUploadingInvoiceId(invoiceId);
+    try {
+      await uploadInvoiceAttachmentRequest(invoiceId, file);
+      await loadInvoices();
+      await Swal.fire({
+        title: "Attachment Uploaded",
+        text: "Invoice attachment saved successfully.",
+        icon: "success",
+        timer: 1400,
+        showConfirmButton: false,
+        background: "#0f172a",
+        color: "#e2e8f0",
+      });
+    } catch (error) {
+      await Swal.fire({
+        title: "Upload Failed",
+        text: error.message || "Unable to upload attachment.",
+        icon: "error",
+        background: "#0f172a",
+        color: "#e2e8f0",
+      });
+    } finally {
+      setUploadingInvoiceId(null);
+    }
+  };
+
+  const handleUploadFromAction = (invoiceId) => {
+    const filePicker = document.createElement("input");
+    filePicker.type = "file";
+    filePicker.accept =
+      ".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx,.csv";
+    filePicker.onchange = async (event) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      await uploadAttachmentForInvoice(invoiceId, file);
+    };
+    filePicker.click();
+  };
+
+  const handleRemoveAttachment = async (invoice) => {
+    const confirmation = await Swal.fire({
+      title: "Remove attachment?",
+      text: "The uploaded document will be removed from this invoice.",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Yes, remove",
+      cancelButtonText: "Cancel",
+      background: "#0f172a",
+      color: "#e2e8f0",
+      confirmButtonColor: "#dc2626",
+    });
+
+    if (!confirmation.isConfirmed) return;
+
+    setUploadingInvoiceId(invoice.id);
+    try {
+      await removeInvoiceAttachmentRequest(invoice.id);
+      await loadInvoices();
+      await Swal.fire({
+        title: "Attachment Removed",
+        text: "Invoice attachment removed successfully.",
+        icon: "success",
+        timer: 1400,
+        showConfirmButton: false,
+        background: "#0f172a",
+        color: "#e2e8f0",
+      });
+    } catch (error) {
+      await Swal.fire({
+        title: "Remove Failed",
+        text: error.message || "Unable to remove attachment.",
+        icon: "error",
+        background: "#0f172a",
+        color: "#e2e8f0",
+      });
+    } finally {
+      setUploadingInvoiceId(null);
+    }
+  };
+
   const openAddInvoice = () => {
     setEditingInvoiceId(null);
     setInvoiceForm(emptyInvoiceForm);
+    setInvoiceAttachmentFile(null);
+    setInvoiceAttachmentInfo({ name: "", url: "" });
     setIsInvoiceModalOpen(true);
   };
 
@@ -318,6 +459,11 @@ export default function Invoices() {
 
       const invoice = normalizeInvoice(extractSingle(payload));
       setEditingInvoiceId(invoice.id);
+      setInvoiceAttachmentFile(null);
+      setInvoiceAttachmentInfo({
+        name: invoice.attachmentName || "",
+        url: invoice.attachmentUrl || "",
+      });
       setInvoiceForm({
         proformaId: invoice.proformaId ? String(invoice.proformaId) : "",
         invoiceNo: invoice.invoiceNo || "",
@@ -393,9 +539,18 @@ export default function Invoices() {
         );
       }
 
+      const savedInvoice = normalizeInvoice(extractSingle(responsePayload));
+      const targetInvoiceId = savedInvoice.id || editingInvoiceId;
+
+      if (invoiceAttachmentFile && targetInvoiceId) {
+        await uploadInvoiceAttachmentRequest(targetInvoiceId, invoiceAttachmentFile);
+      }
+
       await loadInvoices();
       setIsInvoiceModalOpen(false);
       setEditingInvoiceId(null);
+      setInvoiceAttachmentFile(null);
+      setInvoiceAttachmentInfo({ name: "", url: "" });
 
       await Swal.fire({
         title: editingInvoiceId ? "Invoice Updated" : "Invoice Captured",
@@ -707,6 +862,7 @@ export default function Invoices() {
                   "Paid",
                   "Balance",
                   "Status",
+                  "Attachment",
                   "Actions",
                 ].map((header) => (
                   <th
@@ -773,6 +929,43 @@ export default function Invoices() {
                     </span>
                   </td>
                   <td className="py-3 px-4">
+                    <div className="flex items-center gap-1.5">
+                      {invoice.attachmentUrl ? (
+                        <a
+                          href={invoice.attachmentUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-xs text-blue-600 hover:bg-blue-50"
+                          title={invoice.attachmentName || "View attachment"}
+                        >
+                          <Download className="w-3 h-3" />
+                          View
+                        </a>
+                      ) : (
+                        <span className="text-xs text-slate-400">No file</span>
+                      )}
+                      <button
+                        onClick={() => handleUploadFromAction(invoice.id)}
+                        disabled={isSaving || uploadingInvoiceId === invoice.id}
+                        className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 disabled:opacity-50"
+                        title={invoice.attachmentUrl ? "Replace attachment" : "Upload attachment"}
+                      >
+                        <Upload className="w-3 h-3" />
+                        {uploadingInvoiceId === invoice.id ? "Uploading" : "Upload"}
+                      </button>
+                      {invoice.attachmentUrl && (
+                        <button
+                          onClick={() => handleRemoveAttachment(invoice)}
+                          disabled={isSaving || uploadingInvoiceId === invoice.id}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 disabled:opacity-50"
+                          title="Remove attachment"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                  <td className="py-3 px-4">
                     <div className="flex items-center gap-1">
                       <button
                         onClick={() => openRecordPayment(invoice.id)}
@@ -813,7 +1006,7 @@ export default function Invoices() {
               {isLoading && (
                 <tr>
                   <td
-                    colSpan={9}
+                    colSpan={10}
                     className="py-10 text-center text-sm text-slate-500"
                   >
                     Loading invoices...
@@ -823,7 +1016,7 @@ export default function Invoices() {
               {!isLoading && filteredInvoices.length === 0 && (
                 <tr>
                   <td
-                    colSpan={9}
+                    colSpan={10}
                     className="py-10 text-center text-sm text-slate-500"
                   >
                     No invoices found.
@@ -948,6 +1141,42 @@ export default function Invoices() {
                   onChange={(e) => setInvoiceField("notes", e.target.value)}
                   className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
                 />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-xs text-slate-300 mb-1.5">
+                  Attachment
+                </label>
+                <label className="flex items-center justify-between gap-3 w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-300 cursor-pointer hover:border-amber-500/40">
+                  <span className="inline-flex items-center gap-2 min-w-0">
+                    <Paperclip className="w-4 h-4 text-slate-400" />
+                    <span className="truncate">
+                      {invoiceAttachmentFile?.name ||
+                        invoiceAttachmentInfo.name ||
+                        "Choose document"}
+                    </span>
+                  </span>
+                  <span className="text-xs text-slate-400">Max 10MB</span>
+                  <input
+                    type="file"
+                    accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx,.csv"
+                    className="hidden"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0] || null;
+                      setInvoiceAttachmentFile(file);
+                    }}
+                  />
+                </label>
+                {invoiceAttachmentInfo.url && !invoiceAttachmentFile && (
+                  <a
+                    href={invoiceAttachmentInfo.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 mt-2 text-xs text-amber-300 hover:text-amber-200"
+                  >
+                    <Download className="w-3 h-3" />
+                    View current attachment
+                  </a>
+                )}
               </div>
             </div>
             <div className="px-6 py-4 border-t border-slate-800 flex justify-end gap-3">

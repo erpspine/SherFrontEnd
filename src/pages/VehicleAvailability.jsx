@@ -185,6 +185,10 @@ export default function VehicleAvailability() {
   const [selectedMonth, setSelectedMonth] = useState(() =>
     formatMonthInput(new Date()),
   );
+  const [rangeStartDate, setRangeStartDate] = useState("");
+  const [rangeEndDate, setRangeEndDate] = useState("");
+  const [showOnlyAvailableInRange, setShowOnlyAvailableInRange] =
+    useState(true);
   const [isExporting, setIsExporting] = useState(false);
   const [exportType, setExportType] = useState("");
   const [isLoading, setIsLoading] = useState(true);
@@ -303,6 +307,72 @@ export default function VehicleAvailability() {
     });
   };
 
+  const rangesOverlap = (startA, endA, startB, endB) => {
+    const fromA = formatDateStr(startA);
+    const toA = formatDateStr(endA);
+    const fromB = formatDateStr(startB);
+    const toB = formatDateStr(endB);
+
+    if (!fromA || !toA || !fromB || !toB) return false;
+
+    return fromA <= toB && toA >= fromB;
+  };
+
+  const isDateRangeValid = useMemo(() => {
+    if (!rangeStartDate || !rangeEndDate) return false;
+    return formatDateStr(rangeStartDate) <= formatDateStr(rangeEndDate);
+  }, [rangeStartDate, rangeEndDate]);
+
+  const availableVehiclesInDateRange = useMemo(() => {
+    if (!isDateRangeValid) return [];
+
+    return filteredVehicles.filter((vehicle) => {
+      const vehicleId = Number(vehicle.id || 0);
+      if (!vehicleId) return false;
+
+      const isStatusAvailable =
+        String(vehicle.status || "").toLowerCase() === "available";
+      if (!isStatusAvailable) return false;
+
+      const hasOverlappingBooking = allocations.some((allocation) => {
+        if (Number(allocation.vehicleId || 0) !== vehicleId) return false;
+
+        const isCancelled = ["cancelled", "canceled"].includes(
+          String(allocation.status || "").toLowerCase(),
+        );
+        if (isCancelled) return false;
+
+        return rangesOverlap(
+          allocation.startDate,
+          allocation.endDate,
+          rangeStartDate,
+          rangeEndDate,
+        );
+      });
+
+      return !hasOverlappingBooking;
+    });
+  }, [
+    filteredVehicles,
+    allocations,
+    isDateRangeValid,
+    rangeStartDate,
+    rangeEndDate,
+  ]);
+
+  const vehiclesForTable = useMemo(() => {
+    if (!isDateRangeValid || !showOnlyAvailableInRange) {
+      return filteredVehicles;
+    }
+
+    return availableVehiclesInDateRange;
+  }, [
+    filteredVehicles,
+    availableVehiclesInDateRange,
+    isDateRangeValid,
+    showOnlyAvailableInRange,
+  ]);
+
   const selectedBookings = useMemo(() => {
     if (!selectedVehicleId || !selectedDateKey) return [];
     return getBookingsForDate(selectedVehicleId, selectedDateKey);
@@ -319,6 +389,20 @@ export default function VehicleAvailability() {
 
     setSelectedMonth(monthValue);
     setCurrentDate(new Date(date.getFullYear(), date.getMonth(), 1));
+    setSelectedDateKey("");
+    setSelectedVehicleId(0);
+  };
+
+  const resetFilters = () => {
+    const now = new Date();
+    const defaultMonth = formatMonthInput(now);
+
+    setVehicleSearch("");
+    setSelectedMonth(defaultMonth);
+    setCurrentDate(new Date(now.getFullYear(), now.getMonth(), 1));
+    setRangeStartDate("");
+    setRangeEndDate("");
+    setShowOnlyAvailableInRange(true);
     setSelectedDateKey("");
     setSelectedVehicleId(0);
   };
@@ -490,11 +574,21 @@ export default function VehicleAvailability() {
       {vehicles.length > 0 && (
         <div className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs text-slate-600">
           Loaded: {vehicles.length} vehicles, {allocations.length} bookings |
-          Showing: {filteredVehicles.length} vehicles
+          Showing: {vehiclesForTable.length} vehicles
         </div>
       )}
 
       <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="mb-3 flex justify-end">
+          <button
+            type="button"
+            onClick={resetFilters}
+            className="inline-flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-700 transition hover:bg-amber-100"
+          >
+            Reset Filters
+          </button>
+        </div>
+
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <div>
             <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600">
@@ -528,6 +622,66 @@ export default function VehicleAvailability() {
             />
           </div>
         </div>
+
+        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+          <div>
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600">
+              Availability From
+            </label>
+            <input
+              type="date"
+              value={rangeStartDate}
+              onChange={(event) => setRangeStartDate(event.target.value)}
+              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none [color-scheme:light] focus:border-sher-gold"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600">
+              Availability To
+            </label>
+            <input
+              type="date"
+              value={rangeEndDate}
+              min={rangeStartDate || undefined}
+              onChange={(event) => setRangeEndDate(event.target.value)}
+              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none [color-scheme:light] focus:border-sher-gold"
+            />
+          </div>
+
+          <div className="flex items-end">
+            <label className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700">
+              <input
+                type="checkbox"
+                checked={showOnlyAvailableInRange}
+                onChange={(event) =>
+                  setShowOnlyAvailableInRange(event.target.checked)
+                }
+                className="h-4 w-4 rounded border-slate-300 text-sher-gold focus:ring-sher-gold"
+              />
+              Show Only Available In Range
+            </label>
+          </div>
+        </div>
+
+        {rangeStartDate && rangeEndDate && !isDateRangeValid && (
+          <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+            Date range is invalid. "Availability To" must be after or equal to
+            "Availability From".
+          </div>
+        )}
+
+        {isDateRangeValid && (
+          <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+            Available vehicles from {rangeStartDate} to {rangeEndDate}:{" "}
+            <span className="font-semibold">
+              {availableVehiclesInDateRange.length}
+            </span>
+            {showOnlyAvailableInRange
+              ? " (table filtered to only available vehicles)"
+              : ""}
+          </div>
+        )}
       </div>
 
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -580,11 +734,13 @@ export default function VehicleAvailability() {
               No dates in selected range
             </p>
           </div>
-        ) : filteredVehicles.length === 0 ? (
+        ) : vehiclesForTable.length === 0 ? (
           <div className="space-y-3 py-10 text-center">
             <AlertCircle className="mx-auto h-10 w-10 text-slate-400" />
             <p className="font-medium text-slate-700">
-              No vehicles match your search
+              {isDateRangeValid && showOnlyAvailableInRange
+                ? "No vehicles are available in the selected date range"
+                : "No vehicles match your search"}
             </p>
           </div>
         ) : (
@@ -614,7 +770,7 @@ export default function VehicleAvailability() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredVehicles.map((vehicle) => {
+                  {vehiclesForTable.map((vehicle) => {
                     const vehicleId = Number(vehicle.id || 0);
                     const isDisabledInRange =
                       unavailableVehicleIds.has(vehicleId);

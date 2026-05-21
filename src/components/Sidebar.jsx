@@ -22,59 +22,137 @@ import {
   Calendar,
   ChevronLeft,
 } from "lucide-react";
-import { clearAuthSession, getAuthUser } from "../utils/auth";
+import { clearAuthSession, getAuthUser, hasPermission } from "../utils/auth";
 import { apiFetch } from "../utils/api";
 
 const menuGroups = [
   {
     label: "Overview",
-    items: [{ path: "/", icon: LayoutDashboard, label: "Dashboard" }],
+    items: [
+      {
+        path: "/",
+        icon: LayoutDashboard,
+        label: "Dashboard",
+        permission: "dashboard.view",
+      },
+    ],
   },
   {
     label: "Fleet",
     items: [
-      { path: "/vehicles", icon: Car, label: "Vehicles" },
+      {
+        path: "/vehicles",
+        icon: Car,
+        label: "Vehicles",
+        permission: "vehicles.view",
+      },
       {
         path: "/vehicle-availability",
         icon: Calendar,
         label: "Vehicle Availability",
+        permission: "vehicles.view",
       },
-      { path: "/long-term-leasing", icon: Car, label: "Lease" },
-      { path: "/job-cards", icon: ClipboardList, label: "Job Cards" },
-      { path: "/safari-allocations", icon: Car, label: "Safari Allocations" },
-      { path: "/checklist", icon: ListChecks, label: "Checklist" },
-      { path: "/inspections", icon: ClipboardList, label: "Inspections" },
-      { path: "/fuel-requisitions", icon: Fuel, label: "Fuel Requisitions" },
-      { path: "/vehicle-services", icon: Wrench, label: "Vehicle Service" },
       {
-        path: "/route-distances",
-        icon: Route,
-        label: "Route Distances",
+        path: "/long-term-leasing",
+        icon: Car,
+        label: "Lease",
+        permission: "vehicles.view",
+      },
+      {
+        path: "/job-cards",
+        icon: ClipboardList,
+        label: "Job Cards",
+        permission: "job-cards.view",
+      },
+      {
+        path: "/safari-allocations",
+        icon: Car,
+        label: "Safari Allocations",
+        permission: "safari-allocations.view",
+      },
+      {
+        path: "/checklist",
+        icon: ListChecks,
+        label: "Checklist",
+        permission: null,
+      },
+      {
+        path: "/inspections",
+        icon: ClipboardList,
+        label: "Inspections",
+        permission: null,
+      },
+      {
+        path: "/vehicle-services",
+        icon: Wrench,
+        label: "Vehicle Service",
+        permission: "vehicles.view",
       },
     ],
   },
   {
     label: "Operations",
     items: [
-      { path: "/leads", icon: TrendingUp, label: "Leads" },
-      { path: "/clients", icon: Building2, label: "Clients" },
-      { path: "/parks", icon: Trees, label: "Parks & Rates" },
-      { path: "/quotations", icon: FileText, label: "Quotations" },
-      { path: "/proforma-invoices", icon: Receipt, label: "Proforma Invoices" },
-      { path: "/invoices", icon: FileText, label: "Invoices" },
-      { path: "/payments", icon: CreditCard, label: "Payments" },
+      {
+        path: "/leads",
+        icon: TrendingUp,
+        label: "Leads",
+        permission: "leads.view",
+      },
+      {
+        path: "/clients",
+        icon: Building2,
+        label: "Clients",
+        permission: "clients.view",
+      },
+      {
+        path: "/parks",
+        icon: Trees,
+        label: "Parks & Rates",
+        permission: "parks.view",
+      },
+      {
+        path: "/quotations",
+        icon: FileText,
+        label: "Quotations",
+        permission: "quotations.view",
+      },
+      {
+        path: "/proforma-invoices",
+        icon: Receipt,
+        label: "Proforma Invoices",
+        permission: "proforma-invoices.view",
+      },
+      {
+        path: "/invoices",
+        icon: FileText,
+        label: "Invoices",
+        permission: "invoices.view",
+      },
+      {
+        path: "/payments",
+        icon: CreditCard,
+        label: "Payments",
+        permission: "invoice-payments.view",
+      },
     ],
   },
   {
     label: "System",
     items: [
-      { path: "/users", icon: Users, label: "Users" },
+      { path: "/users", icon: Users, label: "Users", permission: "users.view" },
       {
         path: "/roles-permissions",
         icon: ShieldCheck,
         label: "Roles & Permissions",
+        permission: "users.view",
       },
-      { path: "/settings", icon: Settings, label: "Settings" },
+      {
+        path: "/settings",
+        icon: Settings,
+        label: "Settings",
+        permission: "settings.view",
+      },
     ],
   },
 ];
@@ -170,29 +248,34 @@ export default function Sidebar({
 
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto p-4 space-y-1">
-          {menuGroups.map((group) => (
-            <div key={group.label} className="mb-2">
-              {!isCollapsed && (
-                <p className="px-4 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                  {group.label}
-                </p>
-              )}
-              {group.items.map((item) => {
-                const isActive = location.pathname === item.path;
-                return (
-                  <Link
-                    key={item.path}
-                    to={item.path}
-                    onClick={() => {
-                      if (
-                        typeof window !== "undefined" &&
-                        window.innerWidth < 1024
-                      ) {
-                        closeMobileSidebar();
-                      }
-                    }}
-                    title={item.label}
-                    className={`
+          {menuGroups.map((group) => {
+            const visibleItems = group.items.filter((item) =>
+              hasPermission(item.permission),
+            );
+            if (visibleItems.length === 0) return null;
+            return (
+              <div key={group.label} className="mb-2">
+                {!isCollapsed && (
+                  <p className="px-4 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                    {group.label}
+                  </p>
+                )}
+                {visibleItems.map((item) => {
+                  const isActive = location.pathname === item.path;
+                  return (
+                    <Link
+                      key={item.path}
+                      to={item.path}
+                      onClick={() => {
+                        if (
+                          typeof window !== "undefined" &&
+                          window.innerWidth < 1024
+                        ) {
+                          closeMobileSidebar();
+                        }
+                      }}
+                      title={item.label}
+                      className={`
                       flex items-center rounded-xl transition-all duration-200
                       group relative overflow-hidden
                       ${isCollapsed ? "justify-center px-3 py-3" : "gap-3 px-4 py-3"}
@@ -202,24 +285,25 @@ export default function Sidebar({
                           : "text-slate-600 hover:text-slate-900 hover:bg-white"
                       }
                     `}
-                  >
-                    {isActive && (
-                      <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-sher-gold to-sher-gold-dark rounded-r" />
-                    )}
-                    <item.icon
-                      className={`w-5 h-5 transition-colors ${isActive ? "text-sher-gold-dark" : "group-hover:text-sher-teal"}`}
-                    />
-                    {!isCollapsed && (
-                      <span className="font-medium">{item.label}</span>
-                    )}
-                    {!isCollapsed && isActive && (
-                      <ChevronRight className="w-4 h-4 ml-auto text-sher-gold-dark" />
-                    )}
-                  </Link>
-                );
-              })}
-            </div>
-          ))}
+                    >
+                      {isActive && (
+                        <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-sher-gold to-sher-gold-dark rounded-r" />
+                      )}
+                      <item.icon
+                        className={`w-5 h-5 transition-colors ${isActive ? "text-sher-gold-dark" : "group-hover:text-sher-teal"}`}
+                      />
+                      {!isCollapsed && (
+                        <span className="font-medium">{item.label}</span>
+                      )}
+                      {!isCollapsed && isActive && (
+                        <ChevronRight className="w-4 h-4 ml-auto text-sher-gold-dark" />
+                      )}
+                    </Link>
+                  );
+                })}
+              </div>
+            );
+          })}
         </nav>
 
         {/* User Profile */}

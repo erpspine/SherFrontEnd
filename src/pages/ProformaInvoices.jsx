@@ -57,8 +57,22 @@ const formatDate = (value) => {
 const normalizeIsoDateOnly = (value) => {
   const raw = String(value || "").trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  const fromDmy = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (fromDmy) return `${fromDmy[3]}-${fromDmy[2]}-${fromDmy[1]}`;
   const fromDateTime = raw.match(/^(\d{4}-\d{2}-\d{2})T/);
   return fromDateTime ? fromDateTime[1] : "";
+};
+
+const formatPiNumberFromId = (id, dateValue) => {
+  const numericId = Number(id);
+  if (!Number.isFinite(numericId) || numericId <= 0) return "";
+
+  const isoDate = normalizeIsoDateOnly(dateValue);
+  const yearMonth = isoDate
+    ? isoDate.slice(0, 7)
+    : `${String(new Date().getFullYear())}-${String(new Date().getMonth() + 1).padStart(2, "0")}`;
+
+  return `PI-${yearMonth}-${String(Math.trunc(numericId)).padStart(3, "0")}`;
 };
 
 const getPIItineraryDatesLabel = (daySections = []) => {
@@ -82,6 +96,11 @@ const getPIItineraryDatesLabel = (daySections = []) => {
 };
 
 const getPIDestinationsLabel = (pi) => {
+  const summary = String(pi?.serviceSummary || "").trim();
+  if (summary && summary !== "-") {
+    return summary;
+  }
+
   const fromDayDescriptions = (pi?.daySections || [])
     .map((section) =>
       String(section?.dayDescription || section?.day_description || "").trim(),
@@ -92,7 +111,7 @@ const getPIDestinationsLabel = (pi) => {
     return [...new Set(fromDayDescriptions)].join(" | ");
   }
 
-  return String(pi?.serviceSummary || "").trim();
+  return summary;
 };
 
 const addDays = (value, days) => {
@@ -139,7 +158,14 @@ const normalizePI = (pi) => {
     id: pi.id,
     quotationId,
     leadId: pi.lead_id || pi.leadId || null,
-    piNo: pi.pi_no || pi.piNo || pi.invoice_no || pi.invoiceNo || `PI-${pi.id}`,
+    piNo:
+      pi.pi_no ||
+      pi.piNo ||
+      pi.proforma_number ||
+      pi.proformaNumber ||
+      pi.invoice_no ||
+      pi.invoiceNo ||
+      formatPiNumberFromId(pi.id, quoteDate),
     quoteRef,
     date: quoteDate,
     dueDate,

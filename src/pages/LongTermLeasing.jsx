@@ -65,7 +65,16 @@ const createContractForm = () => ({
   endDate: "",
   monthlyRate: "",
   notes: "",
+  documents: [],
 });
+
+const readFileAsDataUrl = (file) =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error(`Failed to read ${file.name}.`));
+    reader.readAsDataURL(file);
+  });
 
 const readStoredContracts = () => {
   try {
@@ -280,6 +289,49 @@ export default function LongTermLeasing() {
   const setField = (field, value) =>
     setForm((prev) => ({ ...prev, [field]: value }));
 
+  const handleContractDocuments = async (event) => {
+    const files = Array.from(event.target.files || []);
+    if (files.length === 0) return;
+
+    try {
+      const documents = [];
+
+      for (const file of files) {
+        if (file.size > 5 * 1024 * 1024) {
+          throw new Error(
+            `${file.name} is larger than 5MB. Please upload smaller files.`,
+          );
+        }
+
+        const dataUrl = await readFileAsDataUrl(file);
+        documents.push({
+          id: `${Date.now()}-${Math.random()}`,
+          name: file.name,
+          type: file.type || "application/octet-stream",
+          size: file.size,
+          dataUrl,
+        });
+      }
+
+      setForm((prev) => ({
+        ...prev,
+        documents: [...prev.documents, ...documents],
+      }));
+      setErrorMessage("");
+    } catch (error) {
+      setErrorMessage(error.message || "Failed to attach contract documents.");
+    } finally {
+      event.target.value = "";
+    }
+  };
+
+  const removeContractDocument = (documentId) => {
+    setForm((prev) => ({
+      ...prev,
+      documents: prev.documents.filter((doc) => doc.id !== documentId),
+    }));
+  };
+
   const addVehicle = (id) => {
     if (!id || form.vehicleIds.map(String).includes(String(id))) return;
     setForm((prev) => ({
@@ -346,6 +398,7 @@ export default function LongTermLeasing() {
         leaseType: getLeaseType(form.startDate, form.endDate),
         monthlyRate: form.monthlyRate,
         notes: form.notes,
+        documents: form.documents,
         status: "Active",
         createdAt: new Date().toISOString(),
       };
@@ -506,14 +559,16 @@ export default function LongTermLeasing() {
                 <th className="px-4 py-3">Lease End</th>
                 <th className="px-4 py-3">Duration</th>
                 <th className="px-4 py-3">Lease Type</th>
+                <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Monthly Rate</th>
+                <th className="px-4 py-3">Documents</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {isLoading ? (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={9}
                     className="py-8 text-center text-slate-400 text-sm"
                   >
                     Loading lease contracts...
@@ -522,7 +577,7 @@ export default function LongTermLeasing() {
               ) : filteredContracts.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={9}
                     className="py-8 text-center text-slate-400 text-sm"
                   >
                     No lease contracts found.
@@ -581,9 +636,39 @@ export default function LongTermLeasing() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-sm text-slate-700">
+                      <span
+                        className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${
+                          contract.status === "Active"
+                            ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                            : "border-slate-200 bg-slate-50 text-slate-700"
+                        }`}
+                      >
+                        {contract.status || "-"}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-slate-700">
                       {contract.monthlyRate
                         ? Number(contract.monthlyRate).toLocaleString()
                         : "-"}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-slate-700">
+                      {Array.isArray(contract.documents) &&
+                      contract.documents.length > 0 ? (
+                        <div className="flex flex-wrap gap-1.5">
+                          {contract.documents.map((doc) => (
+                            <a
+                              key={doc.id || doc.name}
+                              href={doc.dataUrl}
+                              download={doc.name}
+                              className="inline-flex items-center rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100"
+                            >
+                              {doc.name}
+                            </a>
+                          ))}
+                        </div>
+                      ) : (
+                        "-"
+                      )}
                     </td>
                   </tr>
                 ))
@@ -736,6 +821,43 @@ export default function LongTermLeasing() {
                     onChange={(event) => setField("notes", event.target.value)}
                     className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
                   />
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                    Lease Contracts / Documents
+                  </label>
+                  <input
+                    type="file"
+                    multiple
+                    accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
+                    onChange={handleContractDocuments}
+                    className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-200 outline-none file:mr-3 file:rounded-md file:border-0 file:bg-amber-500 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-white hover:file:bg-amber-600"
+                  />
+                  <p className="mt-1 text-xs text-slate-400">
+                    You can upload PDF, DOC, DOCX, JPG, or PNG files (max 5MB
+                    each).
+                  </p>
+                  {form.documents.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {form.documents.map((doc) => (
+                        <span
+                          key={doc.id}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-slate-700 px-2.5 py-1 text-xs text-slate-200"
+                        >
+                          {doc.name}
+                          <button
+                            type="button"
+                            onClick={() => removeContractDocument(doc.id)}
+                            className="text-slate-400 hover:text-red-400"
+                            title="Remove document"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
 

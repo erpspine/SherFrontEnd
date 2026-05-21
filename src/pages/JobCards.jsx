@@ -136,12 +136,19 @@ const extractSingle = (payload, preferredKey) =>
   payload;
 
 const JOB_CARD_TYPES = [
-  "Safari",
+  "Safari - Daily",
+  "Safari - Monthly",
+  "Safari - Yearly",
   "Test Drive",
   "Service",
   "Client Viewing",
   "Others",
 ];
+
+const isSafariJobType = (type) =>
+  String(type || "")
+    .toLowerCase()
+    .startsWith("safari");
 
 const calculateMileage = (odometerOut, odometerIn) => {
   if (
@@ -240,7 +247,8 @@ const normalizeJobCard = (jobCard) => {
     id: jobCard.id,
     leadId: Number(jobCard.lead_id ?? jobCard.leadId ?? 0),
     vehicleId: Number(jobCard.vehicle_id ?? jobCard.vehicleId ?? 0),
-    type: jobCard.type || jobCard.job_type || jobCard.jobType || "Safari",
+    type:
+      jobCard.type || jobCard.job_type || jobCard.jobType || "Safari - Daily",
     jobCardNo: jobCard.job_card_no || jobCard.jobCardNo || "-",
     bookingReferenceNo:
       jobCard.booking_reference_no ||
@@ -325,7 +333,7 @@ const createEmptyForm = () => ({
   leadId: "",
   vehicleId: "",
   status: "Open",
-  type: "Safari",
+  type: "Safari - Daily",
   safariStartDate: "",
   safariEndDate: "",
   timeOut: "",
@@ -360,7 +368,7 @@ const buildFormFromLead = (lead) => ({
   leadId: String(lead.id),
   vehicleId: "",
   status: "Open",
-  type: "Safari",
+  type: "Safari - Daily",
   safariStartDate: toInputDate(lead.startDate),
   safariEndDate: toInputDate(lead.endDate),
   timeOut: "",
@@ -404,7 +412,7 @@ const buildFormFromJobCard = (jobCard) => ({
   leadId: String(jobCard.leadId || ""),
   vehicleId: String(jobCard.vehicleId || ""),
   status: jobCard.status || deriveJobCardStatus(jobCard),
-  type: jobCard.type || "Safari",
+  type: jobCard.type || "Safari - Daily",
   safariStartDate: toInputDate(jobCard.safariStartDate),
   safariEndDate: toInputDate(jobCard.safariEndDate),
   timeOut: jobCard.timeOut || "",
@@ -442,6 +450,7 @@ export default function JobCards() {
   const [safariAllocations, setSafariAllocations] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalMode, setModalMode] = useState("create");
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [selectedJobCard, setSelectedJobCard] = useState(null);
@@ -604,7 +613,9 @@ export default function JobCards() {
     form.type,
   );
   const requiresReasonSection = form.type === "Others";
-  const isSafariType = form.type === "Safari";
+  const isSafariType = isSafariJobType(form.type);
+  const isCreateMode = modalMode === "create";
+  const isCloseMode = modalMode === "close";
   const derivedStatus = deriveJobCardStatus(form);
   const calculatedMileage = calculateMileage(form.odometerOut, form.odometerIn);
   const calculatedFuelUsed = calculateApproxFuelUsed(
@@ -623,8 +634,16 @@ export default function JobCards() {
   );
 
   const openCreate = () => {
+    setModalMode("create");
     setEditingId(null);
     setForm(createEmptyForm());
+    setIsModalOpen(true);
+  };
+
+  const openClose = (jobCard) => {
+    setModalMode("close");
+    setEditingId(jobCard.id);
+    setForm(buildFormFromJobCard(jobCard));
     setIsModalOpen(true);
   };
 
@@ -647,7 +666,7 @@ export default function JobCards() {
 
   const handleTypeChange = (nextType) => {
     setForm((prev) => {
-      if (nextType === "Safari") {
+      if (isSafariJobType(nextType)) {
         return { ...prev, type: nextType };
       }
 
@@ -683,6 +702,7 @@ export default function JobCards() {
         throw new Error(payload?.message || "Unable to fetch job card.");
       }
       const selected = normalizeJobCard(extractSingle(payload, "jobCard"));
+      setModalMode("edit");
       setEditingId(selected.id);
       setForm(buildFormFromJobCard(selected));
       setIsModalOpen(true);
@@ -859,9 +879,13 @@ export default function JobCards() {
 
     const shouldAutoCloseOnUpdate =
       Boolean(editingId) && hasCapturedSafariDateRange(form);
-    const selectedStatus = shouldAutoCloseOnUpdate
-      ? "Closed"
-      : form.status || derivedStatus;
+    const selectedStatus = isCreateMode
+      ? "Open"
+      : isCloseMode
+        ? "Closed"
+        : shouldAutoCloseOnUpdate
+          ? "Closed"
+          : form.status || derivedStatus;
     const calculatedNumberOfDays =
       isSafariType && hasCapturedSafariDateRange(form)
         ? getNumberOfDaysBetween(form.safariStartDate, form.safariEndDate)
@@ -874,6 +898,30 @@ export default function JobCards() {
       await Swal.fire({
         title: "Missing Mileage Out",
         text: "Please capture Odometer Out when the vehicle is going out.",
+        icon: "warning",
+        background: "#0f172a",
+        color: "#e2e8f0",
+      });
+      return;
+    }
+
+    if (isCloseMode && String(form.safariEndDate || "").trim() === "") {
+      setErrorMessage("Please capture Date In when closing the job card.");
+      await Swal.fire({
+        title: "Missing Date In",
+        text: "Please capture Date In as part of closing the job card.",
+        icon: "warning",
+        background: "#0f172a",
+        color: "#e2e8f0",
+      });
+      return;
+    }
+
+    if (isCloseMode && String(form.timeIn || "").trim() === "") {
+      setErrorMessage("Please capture Time In when closing the job card.");
+      await Swal.fire({
+        title: "Missing Time In",
+        text: "Please capture Time In as part of closing the job card.",
         icon: "warning",
         background: "#0f172a",
         color: "#e2e8f0",
@@ -900,72 +948,81 @@ export default function JobCards() {
     setIsSaving(true);
     setErrorMessage("");
     try {
-      const payload = {
-        leadId: isSafariType ? Number(form.leadId) : null,
-        vehicleId: form.vehicleId ? Number(form.vehicleId) : null,
-        status: selectedStatus,
-        type: form.type || "Safari",
-        safariStartDate: form.safariStartDate || null,
-        safariEndDate: form.safariEndDate || null,
-        safari_start_date: form.safariStartDate || null,
-        safari_end_date: form.safariEndDate || null,
-        timeOut: form.timeOut || null,
-        timeIn: form.timeIn || null,
-        numberOfDays: isSafariType ? calculatedNumberOfDays : null,
-        pickupLocation: isSafariType ? form.pickupLocation || null : null,
-        dropoffLocation: isSafariType ? form.dropoffLocation || null : null,
-        routeSummary: form.routeSummary || null,
-        additionalDetails: form.additionalDetails || null,
-        bookingReferenceNo: isSafariType
-          ? form.bookingReferenceNo || undefined
-          : null,
-        tourOperatorClientName: isSafariType
-          ? form.tourOperatorClientName || undefined
-          : null,
-        contactPerson: isSafariType ? form.contactPerson || undefined : null,
-        contactNumber: isSafariType ? form.contactNumber || undefined : null,
-        contactEmail: isSafariType ? form.contactEmail || null : null,
-        adults: isSafariType ? Number(form.adults || 0) : null,
-        children: isSafariType ? Number(form.children || 0) : null,
-        nationality: isSafariType ? form.nationality || null : null,
-        reason: requiresReasonSection ? form.reason || null : null,
-        clientDetails: requiresClientVisitSection
-          ? form.clientDetails || null
-          : null,
-        location: requiresClientVisitSection ? form.location || null : null,
-        kms: requiresClientVisitSection ? Number(form.kms || 0) : null,
-        odometerOut: requiresVehicleRunSection
-          ? String(form.odometerOut || "").trim() === ""
-            ? null
-            : Number(form.odometerOut)
-          : null,
-        odometerIn: requiresVehicleRunSection
-          ? String(form.odometerIn || "").trim() === ""
-            ? null
-            : Number(form.odometerIn)
-          : null,
-        mileage:
-          requiresVehicleRunSection && calculatedMileage !== ""
-            ? Number(calculatedMileage)
-            : null,
-        fuelGaugeOut: requiresVehicleRunSection
-          ? String(form.fuelGaugeOut || "").trim() === ""
-            ? null
-            : Number(form.fuelGaugeOut)
-          : null,
-        fuelGaugeIn: requiresVehicleRunSection
-          ? String(form.fuelGaugeIn || "").trim() === ""
-            ? null
-            : Number(form.fuelGaugeIn)
-          : null,
-        approximateFuelUsed:
-          requiresVehicleRunSection && calculatedFuelUsed !== ""
-            ? Number(calculatedFuelUsed)
-            : null,
-        driverDetails: requiresVehicleRunSection
-          ? form.driverDetails || null
-          : null,
-      };
+      // When closing, only send the return/closing fields so creation data is never overwritten.
+      const payload = isCloseMode
+        ? {
+            status: "Closed",
+            safariEndDate: form.safariEndDate || null,
+            safari_end_date: form.safariEndDate || null,
+            timeIn: form.timeIn || null,
+            odometerIn:
+              requiresVehicleRunSection &&
+              String(form.odometerIn || "").trim() !== ""
+                ? Number(form.odometerIn)
+                : null,
+            fuelGaugeIn:
+              requiresVehicleRunSection &&
+              String(form.fuelGaugeIn || "").trim() !== ""
+                ? Number(form.fuelGaugeIn)
+                : null,
+            mileage:
+              requiresVehicleRunSection && calculatedMileage !== ""
+                ? Number(calculatedMileage)
+                : null,
+            approximateFuelUsed:
+              requiresVehicleRunSection && calculatedFuelUsed !== ""
+                ? Number(calculatedFuelUsed)
+                : null,
+          }
+        : {
+            leadId: isSafariType ? Number(form.leadId) : null,
+            vehicleId: form.vehicleId ? Number(form.vehicleId) : null,
+            status: selectedStatus,
+            type: form.type || "Safari - Daily",
+            safariStartDate: form.safariStartDate || null,
+            safari_start_date: form.safariStartDate || null,
+            timeOut: form.timeOut || null,
+            numberOfDays: isSafariType ? calculatedNumberOfDays : null,
+            pickupLocation: isSafariType ? form.pickupLocation || null : null,
+            dropoffLocation: isSafariType ? form.dropoffLocation || null : null,
+            routeSummary: form.routeSummary || null,
+            additionalDetails: form.additionalDetails || null,
+            bookingReferenceNo: isSafariType
+              ? form.bookingReferenceNo || undefined
+              : null,
+            tourOperatorClientName: isSafariType
+              ? form.tourOperatorClientName || undefined
+              : null,
+            contactPerson: isSafariType
+              ? form.contactPerson || undefined
+              : null,
+            contactNumber: isSafariType
+              ? form.contactNumber || undefined
+              : null,
+            contactEmail: isSafariType ? form.contactEmail || null : null,
+            adults: isSafariType ? Number(form.adults || 0) : null,
+            children: isSafariType ? Number(form.children || 0) : null,
+            nationality: isSafariType ? form.nationality || null : null,
+            reason: requiresReasonSection ? form.reason || null : null,
+            clientDetails: requiresClientVisitSection
+              ? form.clientDetails || null
+              : null,
+            location: requiresClientVisitSection ? form.location || null : null,
+            kms: requiresClientVisitSection ? Number(form.kms || 0) : null,
+            odometerOut: requiresVehicleRunSection
+              ? String(form.odometerOut || "").trim() === ""
+                ? null
+                : Number(form.odometerOut)
+              : null,
+            fuelGaugeOut: requiresVehicleRunSection
+              ? String(form.fuelGaugeOut || "").trim() === ""
+                ? null
+                : Number(form.fuelGaugeOut)
+              : null,
+            driverDetails: requiresVehicleRunSection
+              ? form.driverDetails || null
+              : null,
+          };
 
       const response = editingId
         ? await apiFetch(`/job-cards/${editingId}`, {
@@ -1005,10 +1062,12 @@ export default function JobCards() {
       setForm(createEmptyForm());
 
       await Swal.fire({
-        title: editingId ? "Updated" : "Created",
-        text: editingId
-          ? "Job card updated successfully."
-          : "Job card created successfully.",
+        title: isCloseMode ? "Closed" : editingId ? "Updated" : "Created",
+        text: isCloseMode
+          ? "Job card closed successfully."
+          : editingId
+            ? "Job card updated successfully."
+            : "Job card created successfully.",
         icon: "success",
         timer: 1700,
         showConfirmButton: false,
@@ -1257,6 +1316,15 @@ export default function JobCards() {
                         >
                           <Edit className="w-4 h-4" />
                         </button>
+                        {(card.status || "Open") !== "Closed" && (
+                          <button
+                            onClick={() => openClose(card)}
+                            className="px-2.5 py-1.5 text-xs font-medium text-emerald-700 border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors"
+                            title="Close Job Card"
+                          >
+                            Close
+                          </button>
+                        )}
                         <button
                           onClick={() => handleDelete(card.id)}
                           className="p-2 text-slate-500 hover:text-red-600 hover:bg-slate-100 rounded-lg transition-colors"
@@ -1287,7 +1355,11 @@ export default function JobCards() {
           <div className="relative w-full max-w-4xl max-h-[90vh] overflow-y-auto bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800">
               <h2 className="text-lg font-semibold text-white">
-                {editingId ? "Edit Job Card" : "Create Job Card"}
+                {isCloseMode
+                  ? "Close Job Card"
+                  : editingId
+                    ? "Edit Job Card"
+                    : "Create Job Card"}
               </h2>
               <button
                 onClick={() => {
@@ -1307,25 +1379,71 @@ export default function JobCards() {
                 </div>
               )}
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                    Type
-                  </label>
-                  <select
-                    value={form.type}
-                    onChange={(event) => handleTypeChange(event.target.value)}
-                    className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
-                  >
-                    {JOB_CARD_TYPES.map((typeOption) => (
-                      <option key={typeOption} value={typeOption}>
-                        {typeOption}
-                      </option>
-                    ))}
-                  </select>
+              {isCloseMode && (
+                <div className="bg-slate-800/50 border border-slate-700 rounded-xl px-4 py-3 space-y-2">
+                  <p className="text-xs font-semibold text-amber-400 uppercase tracking-wide mb-2">
+                    Job Card Details (Read-Only)
+                  </p>
+                  <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-xs">
+                    <div>
+                      <span className="text-slate-400">Type:</span>{" "}
+                      <span className="text-slate-200">{form.type}</span>
+                    </div>
+                    {isSafariType && form.tourOperatorClientName && (
+                      <div>
+                        <span className="text-slate-400">Client:</span>{" "}
+                        <span className="text-slate-200">
+                          {form.tourOperatorClientName}
+                        </span>
+                      </div>
+                    )}
+                    {isSafariType && form.bookingReferenceNo && (
+                      <div>
+                        <span className="text-slate-400">Booking Ref:</span>{" "}
+                        <span className="text-slate-200">
+                          {form.bookingReferenceNo}
+                        </span>
+                      </div>
+                    )}
+                    {form.safariStartDate && (
+                      <div>
+                        <span className="text-slate-400">Date Out:</span>{" "}
+                        <span className="text-slate-200">
+                          {form.safariStartDate}
+                        </span>
+                      </div>
+                    )}
+                    {form.timeOut && (
+                      <div>
+                        <span className="text-slate-400">Time Out:</span>{" "}
+                        <span className="text-slate-200">{form.timeOut}</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
+              )}
 
-                {isSafariType && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {!isCloseMode && (
+                  <div>
+                    <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                      Type
+                    </label>
+                    <select
+                      value={form.type}
+                      onChange={(event) => handleTypeChange(event.target.value)}
+                      className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
+                    >
+                      {JOB_CARD_TYPES.map((typeOption) => (
+                        <option key={typeOption} value={typeOption}>
+                          {typeOption}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {isSafariType && !isCloseMode && (
                   <div>
                     <label className="block text-xs font-medium text-slate-300 mb-1.5">
                       Lead (PI Sent) *
@@ -1356,7 +1474,7 @@ export default function JobCards() {
                   </div>
                 )}
 
-                {isSafariType && (
+                {isSafariType && !isCloseMode && (
                   <div>
                     <label className="block text-xs font-medium text-slate-300 mb-1.5">
                       Vehicle
@@ -1378,21 +1496,43 @@ export default function JobCards() {
                   </div>
                 )}
 
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                    Status
-                  </label>
-                  <select
-                    value={form.status || derivedStatus}
-                    onChange={(event) => setField("status", event.target.value)}
-                    className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
-                  >
-                    <option value="Open">Open</option>
-                    <option value="Closed">Closed</option>
-                  </select>
-                </div>
+                {isCreateMode ? (
+                  <div>
+                    <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                      Status
+                    </label>
+                    <div className="w-full rounded-lg border border-slate-700 bg-slate-800/40 px-3 py-2.5 text-sm font-medium text-emerald-300">
+                      Open
+                    </div>
+                  </div>
+                ) : isCloseMode ? (
+                  <div>
+                    <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                      Status
+                    </label>
+                    <div className="w-full rounded-lg border border-slate-700 bg-slate-800/40 px-3 py-2.5 text-sm font-medium text-red-300">
+                      Closed
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                      Status
+                    </label>
+                    <select
+                      value={form.status || derivedStatus}
+                      onChange={(event) =>
+                        setField("status", event.target.value)
+                      }
+                      className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
+                    >
+                      <option value="Open">Open</option>
+                      <option value="Closed">Closed</option>
+                    </select>
+                  </div>
+                )}
 
-                {!isSafariType && (
+                {!isSafariType && !isCloseMode && (
                   <div>
                     <label className="block text-xs font-medium text-slate-300 mb-1.5">
                       Vehicle <span className="text-red-400">*</span>
@@ -1414,61 +1554,71 @@ export default function JobCards() {
                   </div>
                 )}
 
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                    Date Out
-                  </label>
-                  <input
-                    type="date"
-                    value={form.safariStartDate}
-                    onChange={(event) =>
-                      setField("safariStartDate", event.target.value)
-                    }
-                    className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
-                  />
-                </div>
+                {!isCloseMode && (
+                  <div>
+                    <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                      Date Out
+                    </label>
+                    <input
+                      type="date"
+                      value={form.safariStartDate}
+                      onChange={(event) =>
+                        setField("safariStartDate", event.target.value)
+                      }
+                      className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
+                    />
+                  </div>
+                )}
 
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                    Time Out
-                  </label>
-                  <input
-                    type="time"
-                    value={form.timeOut}
-                    onChange={(event) =>
-                      setField("timeOut", event.target.value)
-                    }
-                    className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
-                  />
-                </div>
+                {!isCloseMode && (
+                  <div>
+                    <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                      Time Out
+                    </label>
+                    <input
+                      type="time"
+                      value={form.timeOut}
+                      onChange={(event) =>
+                        setField("timeOut", event.target.value)
+                      }
+                      className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
+                    />
+                  </div>
+                )}
 
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                    Date In
-                  </label>
-                  <input
-                    type="date"
-                    value={form.safariEndDate}
-                    onChange={(event) =>
-                      setField("safariEndDate", event.target.value)
-                    }
-                    className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
-                  />
-                </div>
+                {!isCreateMode && (
+                  <div>
+                    <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                      Date In
+                    </label>
+                    <input
+                      type="date"
+                      value={form.safariEndDate}
+                      onChange={(event) =>
+                        setField("safariEndDate", event.target.value)
+                      }
+                      className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
+                    />
+                  </div>
+                )}
 
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                    Time In
-                  </label>
-                  <input
-                    type="time"
-                    value={form.timeIn}
-                    onChange={(event) => setField("timeIn", event.target.value)}
-                    className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
-                  />
-                </div>
+                {!isCreateMode && (
+                  <div>
+                    <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                      Time In
+                    </label>
+                    <input
+                      type="time"
+                      value={form.timeIn}
+                      onChange={(event) =>
+                        setField("timeIn", event.target.value)
+                      }
+                      className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
+                    />
+                  </div>
+                )}
 
-                {isSafariType && (
+                {isSafariType && !isCloseMode && (
                   <div>
                     <label className="block text-xs font-medium text-slate-300 mb-1.5">
                       Number of Days
@@ -1486,7 +1636,7 @@ export default function JobCards() {
                   </div>
                 )}
 
-                {isSafariType && (
+                {isSafariType && !isCloseMode && (
                   <div>
                     <label className="block text-xs font-medium text-slate-300 mb-1.5">
                       Booking Reference
@@ -1501,7 +1651,7 @@ export default function JobCards() {
                   </div>
                 )}
 
-                {isSafariType && (
+                {isSafariType && !isCloseMode && (
                   <div>
                     <label className="block text-xs font-medium text-slate-300 mb-1.5">
                       Client Name
@@ -1516,7 +1666,7 @@ export default function JobCards() {
                   </div>
                 )}
 
-                {isSafariType && (
+                {isSafariType && !isCloseMode && (
                   <div>
                     <label className="block text-xs font-medium text-slate-300 mb-1.5">
                       Contact Person
@@ -1531,7 +1681,7 @@ export default function JobCards() {
                   </div>
                 )}
 
-                {isSafariType && (
+                {isSafariType && !isCloseMode && (
                   <div>
                     <label className="block text-xs font-medium text-slate-300 mb-1.5">
                       Contact Number
@@ -1546,7 +1696,7 @@ export default function JobCards() {
                   </div>
                 )}
 
-                {isSafariType && (
+                {isSafariType && !isCloseMode && (
                   <div>
                     <label className="block text-xs font-medium text-slate-300 mb-1.5">
                       Contact Email
@@ -1562,7 +1712,7 @@ export default function JobCards() {
                   </div>
                 )}
 
-                {isSafariType && (
+                {isSafariType && !isCloseMode && (
                   <div>
                     <label className="block text-xs font-medium text-slate-300 mb-1.5">
                       Adults
@@ -1579,7 +1729,7 @@ export default function JobCards() {
                   </div>
                 )}
 
-                {isSafariType && (
+                {isSafariType && !isCloseMode && (
                   <div>
                     <label className="block text-xs font-medium text-slate-300 mb-1.5">
                       Children
@@ -1596,7 +1746,7 @@ export default function JobCards() {
                   </div>
                 )}
 
-                {isSafariType && (
+                {isSafariType && !isCloseMode && (
                   <div>
                     <label className="block text-xs font-medium text-slate-300 mb-1.5">
                       Nationality
@@ -1611,7 +1761,7 @@ export default function JobCards() {
                   </div>
                 )}
 
-                {isSafariType && (
+                {isSafariType && !isCloseMode && (
                   <div>
                     <label className="block text-xs font-medium text-slate-300 mb-1.5">
                       Pickup Location
@@ -1626,7 +1776,7 @@ export default function JobCards() {
                   </div>
                 )}
 
-                {isSafariType && (
+                {isSafariType && !isCloseMode && (
                   <div>
                     <label className="block text-xs font-medium text-slate-300 mb-1.5">
                       Dropoff Location
@@ -1642,7 +1792,7 @@ export default function JobCards() {
                 )}
               </div>
 
-              {requiresReasonSection && (
+              {requiresReasonSection && !isCloseMode && (
                 <div>
                   <label className="block text-xs font-medium text-slate-300 mb-1.5">
                     Reason
@@ -1656,7 +1806,7 @@ export default function JobCards() {
                 </div>
               )}
 
-              {requiresClientVisitSection && (
+              {requiresClientVisitSection && !isCloseMode && (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
                     <label className="block text-xs font-medium text-slate-300 mb-1.5">
@@ -1699,34 +1849,38 @@ export default function JobCards() {
 
               {requiresVehicleRunSection && (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                      Mileage Out (Odometer Out)
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      value={form.odometerOut}
-                      onChange={(event) =>
-                        setField("odometerOut", event.target.value)
-                      }
-                      className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                      Mileage In (Odometer In)
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      value={form.odometerIn}
-                      onChange={(event) =>
-                        setField("odometerIn", event.target.value)
-                      }
-                      className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
-                    />
-                  </div>
+                  {!isCloseMode && (
+                    <div>
+                      <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                        Mileage Out (Odometer Out)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={form.odometerOut}
+                        onChange={(event) =>
+                          setField("odometerOut", event.target.value)
+                        }
+                        className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
+                      />
+                    </div>
+                  )}
+                  {!isCreateMode && (
+                    <div>
+                      <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                        Mileage In (Odometer In)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={form.odometerIn}
+                        onChange={(event) =>
+                          setField("odometerIn", event.target.value)
+                        }
+                        className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
+                      />
+                    </div>
+                  )}
                   <div>
                     <label className="block text-xs font-medium text-slate-300 mb-1.5">
                       Mileage (Auto)
@@ -1738,21 +1892,23 @@ export default function JobCards() {
                     />
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                      Fuel Gauge Out
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      max="100"
-                      value={form.fuelGaugeOut}
-                      onChange={(event) =>
-                        setField("fuelGaugeOut", event.target.value)
-                      }
-                      className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
-                    />
-                  </div>
+                  {!isCloseMode && (
+                    <div>
+                      <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                        Fuel Gauge Out
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        value={form.fuelGaugeOut}
+                        onChange={(event) =>
+                          setField("fuelGaugeOut", event.target.value)
+                        }
+                        className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
+                      />
+                    </div>
+                  )}
                   <div>
                     <label className="block text-xs font-medium text-slate-300 mb-1.5">
                       Fuel Gauge In
@@ -1799,19 +1955,21 @@ export default function JobCards() {
                 </div>
               )}
 
-              <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                  Route Summary
-                </label>
-                <textarea
-                  rows={2}
-                  value={form.routeSummary}
-                  onChange={(event) =>
-                    setField("routeSummary", event.target.value)
-                  }
-                  className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
-                />
-              </div>
+              {!isCloseMode && (
+                <div>
+                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                    Route Summary
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={form.routeSummary}
+                    onChange={(event) =>
+                      setField("routeSummary", event.target.value)
+                    }
+                    className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
+                  />
+                </div>
+              )}
 
               <div>
                 <label className="block text-xs font-medium text-slate-300 mb-1.5">
@@ -1845,9 +2003,11 @@ export default function JobCards() {
               >
                 {isSaving
                   ? "Saving..."
-                  : editingId
-                    ? "Update Job Card"
-                    : "Create Job Card"}
+                  : isCloseMode
+                    ? "Close Job Card"
+                    : editingId
+                      ? "Update Job Card"
+                      : "Create Job Card"}
               </button>
             </div>
           </div>

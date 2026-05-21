@@ -198,7 +198,12 @@ const normalizeLead = (lead) => ({
 
 const normalizeQuotation = (quotation) => ({
   id: quotation.id,
-  quoteNo: quotation.quote_no || quotation.quoteNo || `Q-${quotation.id}`,
+  quoteNo:
+    quotation.quotation_number ||
+    quotation.quotationNumber ||
+    quotation.quote_no ||
+    quotation.quoteNo ||
+    `QT-${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}-${String(quotation.id || 0).padStart(3, "0")}`,
   client: quotation.client || "",
   status: quotation.status || "Draft",
   total: Number(quotation.total || 0),

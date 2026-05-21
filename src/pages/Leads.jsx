@@ -77,6 +77,7 @@ export const leadsData = [];
 const createEmptyForm = () => ({
   bookingRef: "",
   clientCompany: "",
+  groupName: "",
   agentContact: "",
   agentEmail: "",
   agentPhone: "",
@@ -172,6 +173,7 @@ export default function Leads() {
     id: l.id,
     bookingRef: l.booking_ref || l.bookingRef || "",
     clientCompany: l.client_company || l.clientCompany || "",
+    groupName: l.group_name || l.groupName || "",
     agentContact: l.agent_contact || l.agentContact || "",
     agentEmail: l.agent_email || l.agentEmail || "",
     agentPhone: l.agent_phone || l.agentPhone || "",
@@ -262,6 +264,7 @@ export default function Leads() {
     const matchSearch =
       lead.bookingRef.toLowerCase().includes(q) ||
       lead.clientCompany.toLowerCase().includes(q) ||
+      lead.groupName.toLowerCase().includes(q) ||
       lead.agentContact.toLowerCase().includes(q) ||
       lead.routeParks.toLowerCase().includes(q) ||
       lead.clientCountry.toLowerCase().includes(q);
@@ -391,6 +394,7 @@ export default function Leads() {
         : "Pending";
       const body = {
         clientCompany: form.clientCompany,
+        groupName: form.groupName || null,
         agentContact: form.agentContact,
         agentEmail: form.agentEmail,
         agentPhone: form.agentPhone,
@@ -538,13 +542,15 @@ export default function Leads() {
 
       {/* Table */}
       <section className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto overflow-y-auto max-h-[70vh]">
           <table className="w-full min-w-[1760px]">
-            <thead className="table-head-gradient">
+            <thead className="sticky top-0 z-20 table-head-gradient">
               <tr className="border-b border-slate-200">
                 {[
+                  "Actions",
                   "Booking Ref",
                   "Client Company",
+                  "Group Name",
                   "Agent Contact",
                   "Agent Email",
                   "Agent Phone",
@@ -560,7 +566,6 @@ export default function Leads() {
                   "Sent By",
                   "Quotation Sent At",
                   "PI Sent At",
-                  "Actions",
                 ].map((h) => (
                   <th
                     key={h}
@@ -580,6 +585,25 @@ export default function Leads() {
                     key={lead.id}
                     className="border-b border-slate-100 hover:bg-slate-50 transition-colors"
                   >
+                    {/* Actions */}
+                    <td className="py-3 px-4">
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => openEdit(lead)}
+                          className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
+                          title="Edit"
+                        >
+                          <Edit className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(lead.id)}
+                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                          title="Delete"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
                     {/* Booking Ref */}
                     <td className="py-3 px-4 whitespace-nowrap min-w-[170px]">
                       <span
@@ -599,6 +623,10 @@ export default function Leads() {
                           {lead.clientCompany}
                         </span>
                       </div>
+                    </td>
+                    {/* Group Name */}
+                    <td className="py-3 px-4 text-sm text-slate-700 whitespace-nowrap">
+                      {lead.groupName || "-"}
                     </td>
                     {/* Agent Contact */}
                     <td className="py-3 px-4 text-sm text-slate-700 whitespace-nowrap">
@@ -689,25 +717,6 @@ export default function Leads() {
                     {/* PI Sent At */}
                     <td className="py-3 px-4 text-sm text-slate-700 whitespace-nowrap">
                       {formatDateTime(lead.piSentAt)}
-                    </td>
-                    {/* Actions */}
-                    <td className="py-3 px-4">
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => openEdit(lead)}
-                          className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
-                          title="Edit"
-                        >
-                          <Edit className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(lead.id)}
-                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                          title="Delete"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
                     </td>
                   </tr>
                 );
@@ -837,6 +846,18 @@ export default function Leads() {
                         </option>
                       ))}
                     </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-400 mb-1.5">
+                      Group Name
+                    </label>
+                    <input
+                      type="text"
+                      value={form.groupName}
+                      onChange={(e) => setField("groupName", e.target.value)}
+                      placeholder="Group or booking party name"
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
+                    />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-slate-400 mb-1.5">

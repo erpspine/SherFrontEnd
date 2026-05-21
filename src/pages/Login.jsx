@@ -46,6 +46,8 @@ export default function Login() {
         token: data.token,
         tokenType: data.token_type,
         user: data.user,
+        roles: data.roles,
+        permissions: data.permissions,
         rememberMe,
       });
 

@@ -13,8 +13,10 @@ import {
   Phone,
   Globe,
   Clock,
+  KeyRound,
 } from "lucide-react";
 import { apiFetch } from "../utils/api";
+import { getAuthUser, updateAuthSession } from "../utils/auth";
 import Swal from "sweetalert2";
 import Select from "react-select";
 
@@ -430,6 +432,21 @@ export default function Users() {
         throw new Error(data?.message || "Unable to save user.");
       }
 
+      // If the logged-in user edited their own account, refresh the cached
+      // session so new roles/permissions take effect immediately (no re-login).
+      if (editingId && data?.user) {
+        const me = getAuthUser();
+        if (me && String(me.id) === String(editingId)) {
+          updateAuthSession({
+            user: data.user,
+            roles: Array.isArray(data.user.roles) ? data.user.roles : [],
+            permissions: Array.isArray(data.user.permissions)
+              ? data.user.permissions
+              : [],
+          });
+        }
+      }
+
       setIsModalOpen(false);
       await loadUsers();
       await Swal.fire({
@@ -498,6 +515,58 @@ export default function Users() {
       await Swal.fire({
         title: "Delete Failed",
         text: error.message || "Failed to delete user.",
+        icon: "error",
+        background: "#0f172a",
+        color: "#e2e8f0",
+      });
+    }
+  };
+
+  const handleResetPassword = async (user) => {
+    setErrorMessage("");
+
+    const confirmation = await Swal.fire({
+      title: "Reset password?",
+      text: `A new temporary password will be emailed to ${user.email}.`,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Yes, reset",
+      cancelButtonText: "Cancel",
+      background: "#0f172a",
+      color: "#e2e8f0",
+      confirmButtonColor: "#d97706",
+    });
+
+    if (!confirmation.isConfirmed) return;
+
+    try {
+      const response = await apiFetch(`/users/${user.id}/reset-password`, {
+        method: "POST",
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          payload?.message || "Unable to reset password for this user.",
+        );
+      }
+
+      await Swal.fire({
+        title: "Password Reset",
+        text:
+          payload?.message ||
+          "Password reset successfully. New credentials were sent by email.",
+        icon: "success",
+        timer: 2200,
+        showConfirmButton: false,
+        background: "#0f172a",
+        color: "#e2e8f0",
+      });
+    } catch (error) {
+      setErrorMessage(error.message || "Failed to reset password.");
+      await Swal.fire({
+        title: "Reset Failed",
+        text: error.message || "Failed to reset password.",
         icon: "error",
         background: "#0f172a",
         color: "#e2e8f0",
@@ -641,7 +710,7 @@ export default function Users() {
                     key={header}
                     className={`text-left py-4 px-6 text-xs font-semibold text-slate-500 uppercase tracking-wide ${
                       header === "Actions"
-                        ? "w-[88px]"
+                        ? "w-[124px]"
                         : header === "Phone"
                           ? "min-w-[220px]"
                           : ""
@@ -662,8 +731,15 @@ export default function Users() {
                       : "hover:bg-sky-50/60"
                   }`}
                 >
-                  <td className="py-4 px-6 w-[88px]">
+                  <td className="py-4 px-6 w-[124px]">
                     <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => handleResetPassword(user)}
+                        className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
+                        title="Reset password and email new credentials"
+                      >
+                        <KeyRound className="w-4 h-4" />
+                      </button>
                       <button
                         onClick={() => openEdit(user)}
                         className="p-1.5 text-slate-400 hover:text-amber-500 hover:bg-amber-50 rounded-lg transition-colors"
