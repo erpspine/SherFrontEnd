@@ -84,6 +84,7 @@ const toInputDate = (value) => {
 const normalizeLead = (lead) => ({
   id: lead.id,
   bookingRef: lead.booking_ref || lead.bookingRef || "-",
+  groupName: lead.group_name || lead.groupName || "-",
   clientCompany: lead.client_company || lead.clientCompany || "-",
   agentContact: lead.agent_contact || lead.agentContact || "-",
   clientCountry: lead.client_country || lead.clientCountry || "-",
@@ -106,6 +107,14 @@ const normalizeLead = (lead) => ({
 const normalizeVehicle = (vehicle) => ({
   id: Number(vehicle.id || 0),
   status: vehicle.status || "Available",
+  assignedDriverId:
+    vehicle.assigned_driver_id ||
+    vehicle.assignedDriverId ||
+    vehicle.assigned_driver?.id ||
+    vehicle.assignedDriver?.id ||
+    "",
+  assignedDriverName:
+    vehicle.assigned_driver?.name || vehicle.assignedDriver?.name || "",
   label: `${
     vehicle.vehicle_no ||
     vehicle.vehicleNo ||
@@ -115,6 +124,77 @@ const normalizeVehicle = (vehicle) => ({
     `Vehicle ${vehicle.id}`
   } (${vehicle.plate_no || vehicle.plateNo || "No Plate"})`,
 });
+
+const normalizeUser = (user) => ({
+  id: Number(user.id || 0),
+  name: user.name || "",
+  role: user.role || "",
+  status:
+    typeof user.status === "string"
+      ? user.status
+      : user.status === 1 || user.status === true
+        ? "Active"
+        : "Inactive",
+});
+
+const normalizeQuotation = (quotation) => ({
+  id: Number(quotation.id || 0),
+  leadId: Number(quotation.lead_id || quotation.leadId || 0),
+  groupName: quotation.group_name || quotation.groupName || "",
+  quoteDate:
+    quotation.quoteDate ||
+    quotation.quote_date ||
+    quotation.created_at ||
+    quotation.createdAt ||
+    "",
+  daySections: Array.isArray(quotation.day_sections)
+    ? quotation.day_sections
+    : Array.isArray(quotation.daySections)
+      ? quotation.daySections
+      : [],
+});
+
+const itineraryItemsToText = (items) => {
+  if (!Array.isArray(items) || items.length === 0) return "";
+
+  return items
+    .map((item) => {
+      if (typeof item === "string") return item.trim();
+      if (!item || typeof item !== "object") return "";
+
+      const datePart = String(
+        item.date || item.dayDate || item.dayTitle || "",
+      ).trim();
+      const descriptionPart = String(
+        item.dayDescription || item.dateDescription || item.description || "",
+      ).trim();
+
+      if (!datePart && !descriptionPart) return "";
+      if (!descriptionPart) return datePart;
+      if (!datePart) return descriptionPart;
+      return `${datePart} | ${descriptionPart}`;
+    })
+    .filter(Boolean)
+    .join("\n");
+};
+
+const itineraryTextToPayload = (text) => {
+  const lines = String(text || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  return lines.map((line) => {
+    const [left, ...rest] = line.split("|");
+    if (rest.length === 0) {
+      return { date: "", dayDescription: left.trim() };
+    }
+    return {
+      date: left.trim(),
+      dayDescription: rest.join("|").trim(),
+    };
+  });
+};
 
 const extractList = (payload, preferredKey) => {
   if (Array.isArray(payload)) return payload;
@@ -338,6 +418,7 @@ const createEmptyForm = () => ({
   pickupLocation: "",
   dropoffLocation: "",
   routeSummary: "",
+  routeItineraryText: "",
   additionalDetails: "",
   bookingReferenceNo: "",
   tourOperatorClientName: "",
@@ -382,6 +463,7 @@ const buildFormFromLead = (lead) => ({
   pickupLocation: "",
   dropoffLocation: "",
   routeSummary: lead.routeParks || "",
+  routeItineraryText: "",
   additionalDetails: lead.specialRequirements || "",
   bookingReferenceNo: lead.bookingRef || "",
   tourOperatorClientName: lead.clientCompany || "",
@@ -417,6 +499,7 @@ const buildFormFromJobCard = (jobCard) => ({
   pickupLocation: jobCard.pickupLocation || "",
   dropoffLocation: jobCard.dropoffLocation || "",
   routeSummary: jobCard.routeSummary || "",
+  routeItineraryText: itineraryItemsToText(jobCard.routeItinerary),
   additionalDetails: jobCard.additionalDetails || "",
   bookingReferenceNo: jobCard.bookingReferenceNo || "",
   tourOperatorClientName: jobCard.tourOperatorClientName || "",
@@ -441,7 +524,9 @@ const buildFormFromJobCard = (jobCard) => ({
 
 export default function JobCards() {
   const [leads, setLeads] = useState([]);
+  const [quotations, setQuotations] = useState([]);
   const [vehicles, setVehicles] = useState([]);
+  const [users, setUsers] = useState([]);
   const [jobCards, setJobCards] = useState([]);
   const [safariAllocations, setSafariAllocations] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -464,24 +549,32 @@ export default function JobCards() {
       const [
         jobCardsResponse,
         leadsResponse,
+        quotationsResponse,
         vehiclesResponse,
+        usersResponse,
         safariAllocationsResponse,
       ] = await Promise.all([
         apiFetch("/job-cards"),
         apiFetch("/leads"),
+        apiFetch("/quotations"),
         apiFetch("/vehicles"),
+        apiFetch("/users"),
         apiFetch("/safari-allocations"),
       ]);
 
       const [
         jobCardsPayload,
         leadsPayload,
+        quotationsPayload,
         vehiclesPayload,
+        usersPayload,
         safariAllocationsPayload,
       ] = await Promise.all([
         jobCardsResponse.json().catch(() => ({})),
         leadsResponse.json().catch(() => ({})),
+        quotationsResponse.json().catch(() => ({})),
         vehiclesResponse.json().catch(() => ({})),
+        usersResponse.json().catch(() => ({})),
         safariAllocationsResponse.json().catch(() => ({})),
       ]);
       if (!jobCardsResponse.ok) {
@@ -499,18 +592,34 @@ export default function JobCards() {
           vehiclesPayload?.message || "Unable to fetch vehicles.",
         );
       }
+      if (!quotationsResponse.ok) {
+        throw new Error(
+          quotationsPayload?.message || "Unable to fetch quotations.",
+        );
+      }
+      if (!usersResponse.ok) {
+        throw new Error(usersPayload?.message || "Unable to fetch users.");
+      }
 
       setJobCards(
         extractList(jobCardsPayload, "jobCards").map(normalizeJobCard),
       );
       setLeads(extractList(leadsPayload, "leads").map(normalizeLead));
+      setQuotations(
+        extractList(quotationsPayload, "quotations").map(normalizeQuotation),
+      );
       setVehicles(
         extractList(vehiclesPayload, "vehicles").map(normalizeVehicle),
       );
+      setUsers(extractList(usersPayload, "users").map(normalizeUser));
       setSafariAllocations(
         extractList(safariAllocationsPayload, "allocations").map((a) => ({
           leadId: Number(a.leadId ?? a.lead_id ?? 0),
           vehicleId: Number(a.vehicleId ?? a.vehicle_id ?? 0),
+          driverId: Number(a.driverId ?? a.driver_id ?? 0),
+          driverName: a.driver?.name || a.driverName || "",
+          vehicleNo: a.vehicle?.vehicle_no || a.vehicle?.vehicleNo || "",
+          plateNo: a.vehicle?.plate_no || a.vehicle?.plateNo || "",
         })),
       );
     } catch (error) {
@@ -553,6 +662,78 @@ export default function JobCards() {
     [eligibleLeads, allocatedSafariLeadIds],
   );
 
+  const leadById = useMemo(
+    () => new Map(leads.map((lead) => [String(lead.id), lead])),
+    [leads],
+  );
+
+  const latestQuotationByLead = useMemo(() => {
+    const map = new Map();
+    quotations.forEach((quotation) => {
+      if (!quotation.leadId) return;
+      const key = String(quotation.leadId);
+      const existing = map.get(key);
+      if (!existing) {
+        map.set(key, quotation);
+        return;
+      }
+
+      const currentTime = new Date(quotation.quoteDate || 0).getTime();
+      const existingTime = new Date(existing.quoteDate || 0).getTime();
+      if (currentTime >= existingTime) {
+        map.set(key, quotation);
+      }
+    });
+    return map;
+  }, [quotations]);
+
+  const activeUsers = useMemo(
+    () =>
+      users.filter((user) =>
+        String(user.status || "").toLowerCase().includes("active"),
+      ),
+    [users],
+  );
+
+  const driverOptions = useMemo(() => {
+    const fromUsers = activeUsers.map((user) => user.name).filter(Boolean);
+    const fromVehicles = vehicles
+      .map((vehicle) => vehicle.assignedDriverName)
+      .filter(Boolean);
+
+    return Array.from(new Set([...fromUsers, ...fromVehicles]));
+  }, [activeUsers, vehicles]);
+
+  const selectedLeadAllocations = useMemo(() => {
+    if (!form.leadId) return [];
+
+    return safariAllocations
+      .filter((allocation) => String(allocation.leadId) === String(form.leadId))
+      .map((allocation) => {
+        const vehicle = vehicles.find(
+          (item) => Number(item.id) === Number(allocation.vehicleId),
+        );
+        const driverFromUser = users.find(
+          (item) => Number(item.id) === Number(allocation.driverId),
+        );
+        const vehicleName =
+          allocation.vehicleNo ||
+          vehicle?.label ||
+          (vehicle
+            ? `${vehicle.label}`
+            : `Vehicle ${allocation.vehicleId || "-"}`);
+
+        return {
+          vehicleName,
+          driverName:
+            allocation.driverName ||
+            driverFromUser?.name ||
+            vehicle?.assignedDriverName ||
+            "Unassigned",
+        };
+      });
+  }, [form.leadId, safariAllocations, vehicles, users]);
+
   const filteredCards = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
     if (!query) return jobCards;
@@ -574,12 +755,15 @@ export default function JobCards() {
         String(card.type || "")
           .toLowerCase()
           .includes(query) ||
+        String(leadById.get(String(card.leadId || ""))?.groupName || "")
+          .toLowerCase()
+          .includes(query) ||
         String(card.routeSummary || "")
           .toLowerCase()
           .includes(query)
       );
     });
-  }, [jobCards, searchTerm]);
+  }, [jobCards, searchTerm, leadById]);
 
   const stats = useMemo(() => {
     const safariCards = filteredCards.filter((card) =>
@@ -655,10 +839,26 @@ export default function JobCards() {
     const allocation = safariAllocations.find(
       (a) => String(a.leadId) === String(lead.id),
     );
+    const latestQuotation = latestQuotationByLead.get(String(lead.id));
+    const itineraryText = itineraryItemsToText(latestQuotation?.daySections);
     setForm({
       ...buildFormFromLead(lead),
       vehicleId: allocation ? String(allocation.vehicleId) : "",
+      routeItineraryText: itineraryText,
     });
+  };
+
+  const onSelectNonSafariVehicle = (vehicleIdValue) => {
+    const selectedVehicle = vehicles.find(
+      (vehicle) => String(vehicle.id) === String(vehicleIdValue),
+    );
+    const defaultDriver = selectedVehicle?.assignedDriverName || "";
+
+    setForm((current) => ({
+      ...current,
+      vehicleId: vehicleIdValue,
+      driverDetails: defaultDriver || current.driverDetails || "",
+    }));
   };
 
   const handleTypeChange = (nextType) => {
@@ -1178,16 +1378,13 @@ export default function JobCards() {
                   Booking Ref
                 </th>
                 <th className="text-left py-3 px-3 text-xs font-semibold text-slate-600 uppercase">
+                  Group Name
+                </th>
+                <th className="text-left py-3 px-3 text-xs font-semibold text-slate-600 uppercase">
                   Client / Contact
                 </th>
                 <th className="text-left py-3 px-3 text-xs font-semibold text-slate-600 uppercase">
                   Dates
-                </th>
-                <th className="text-left py-3 px-3 text-xs font-semibold text-slate-600 uppercase">
-                  Pax
-                </th>
-                <th className="text-left py-3 px-3 text-xs font-semibold text-slate-600 uppercase">
-                  Nationality
                 </th>
                 <th className="text-left py-3 px-3 text-xs font-semibold text-slate-600 uppercase">
                   Itinerary / Destination
@@ -1258,6 +1455,9 @@ export default function JobCards() {
                     <td className="py-3 px-3 text-sm text-slate-700 font-medium">
                       {card.bookingReferenceNo}
                     </td>
+                    <td className="py-3 px-3 text-sm text-slate-700 font-medium">
+                      {leadById.get(String(card.leadId || ""))?.groupName || "-"}
+                    </td>
                     <td className="py-3 px-3 min-w-[220px]">
                       <div className="space-y-1">
                         <div className="flex items-center gap-2 text-slate-900 text-sm font-semibold">
@@ -1280,18 +1480,6 @@ export default function JobCards() {
                             In: {formatDate(card.safariEndDate)}
                           </div>
                         </div>
-                      </div>
-                    </td>
-                    <td className="py-3 px-3 text-sm text-slate-700">
-                      <div className="flex items-center gap-2">
-                        <Users className="w-4 h-4 text-slate-500" />
-                        {Number(card.adults || 0) + Number(card.children || 0)}
-                      </div>
-                    </td>
-                    <td className="py-3 px-3 text-sm text-slate-700">
-                      <div className="flex items-center gap-2">
-                        <Globe className="w-4 h-4 text-slate-500" />
-                        {card.nationality || "-"}
                       </div>
                     </td>
                     <td className="py-3 px-3 text-sm text-slate-700">
