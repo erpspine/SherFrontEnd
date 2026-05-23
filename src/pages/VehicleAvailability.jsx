@@ -85,16 +85,16 @@ const normalizeAllocation = (allocation) => ({
       0,
   ),
   startDate:
-    allocation?.lead?.start_date ||
-    allocation?.lead?.startDate ||
     allocation?.start_date ||
     allocation?.startDate ||
+    allocation?.lead?.start_date ||
+    allocation?.lead?.startDate ||
     "",
   endDate:
-    allocation?.lead?.end_date ||
-    allocation?.lead?.endDate ||
     allocation?.end_date ||
     allocation?.endDate ||
+    allocation?.lead?.end_date ||
+    allocation?.lead?.endDate ||
     "",
   bookingRef:
     allocation?.lead?.booking_ref ||
@@ -141,6 +141,11 @@ const normalizeAllocation = (allocation) => ({
     "Unknown",
 });
 
+const isInactiveAllocationStatus = (status) => {
+  const normalized = String(status || "").toLowerCase();
+  return ["cancelled", "canceled", "completed"].includes(normalized);
+};
+
 const extractVehicles = (payload) => {
   if (Array.isArray(payload)) return payload;
   if (Array.isArray(payload?.data)) return payload.data;
@@ -163,6 +168,8 @@ const allocationStatusColor = (status) => {
   switch (String(status || "").toLowerCase()) {
     case "assigned":
       return "bg-sky-100 text-sky-700 border-sky-200";
+    case "dispatched":
+      return "bg-amber-100 text-amber-700 border-amber-200";
     case "confirmed":
       return "bg-emerald-100 text-emerald-700 border-emerald-200";
     case "completed":
@@ -175,12 +182,39 @@ const allocationStatusColor = (status) => {
   }
 };
 
+const BOOKING_COLOR_CLASSES = [
+  "border-blue-300 bg-blue-100 text-blue-700",
+  "border-teal-300 bg-teal-100 text-teal-700",
+  "border-amber-300 bg-amber-100 text-amber-700",
+  "border-fuchsia-300 bg-fuchsia-100 text-fuchsia-700",
+  "border-lime-300 bg-lime-100 text-lime-700",
+  "border-cyan-300 bg-cyan-100 text-cyan-700",
+  "border-orange-300 bg-orange-100 text-orange-700",
+  "border-violet-300 bg-violet-100 text-violet-700",
+];
+
+const colorIndexFromBooking = (booking) => {
+  const rawKey = String(
+    booking?.bookingRef || booking?.id || booking?.vehicleId || "0",
+  );
+  let hash = 0;
+  for (let i = 0; i < rawKey.length; i += 1) {
+    hash = (hash * 31 + rawKey.charCodeAt(i)) % BOOKING_COLOR_CLASSES.length;
+  }
+  return Math.abs(hash) % BOOKING_COLOR_CLASSES.length;
+};
+
+const bookingColorClass = (booking) => {
+  return BOOKING_COLOR_CLASSES[colorIndexFromBooking(booking)];
+};
+
 export default function VehicleAvailability() {
   const [vehicles, setVehicles] = useState([]);
   const [allocations, setAllocations] = useState([]);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDateKey, setSelectedDateKey] = useState("");
   const [selectedVehicleId, setSelectedVehicleId] = useState(0);
+  const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
   const [vehicleSearch, setVehicleSearch] = useState("");
   const [selectedMonth, setSelectedMonth] = useState(() =>
     formatMonthInput(new Date()),
@@ -293,12 +327,16 @@ export default function VehicleAvailability() {
     );
   }, [vehicles, vehicleSearch]);
 
-  const getBookingsForDate = (vehicleId, date) => {
+  const getBookingsForDate = (vehicleId, date, options = {}) => {
     const dateKey = formatDateStr(date);
     const targetVehicleId = Number(vehicleId || 0);
+    const activeOnly = options.activeOnly === true;
 
     return allocations.filter((allocation) => {
       if (Number(allocation.vehicleId || 0) !== targetVehicleId) return false;
+      if (activeOnly && isInactiveAllocationStatus(allocation.status)) {
+        return false;
+      }
 
       const start = formatDateStr(allocation.startDate);
       const end = formatDateStr(allocation.endDate);
@@ -336,11 +374,7 @@ export default function VehicleAvailability() {
 
       const hasOverlappingBooking = allocations.some((allocation) => {
         if (Number(allocation.vehicleId || 0) !== vehicleId) return false;
-
-        const isCancelled = ["cancelled", "canceled"].includes(
-          String(allocation.status || "").toLowerCase(),
-        );
-        if (isCancelled) return false;
+        if (isInactiveAllocationStatus(allocation.status)) return false;
 
         return rangesOverlap(
           allocation.startDate,
@@ -382,6 +416,10 @@ export default function VehicleAvailability() {
     const id = Number(selectedVehicleId || 0);
     return vehicles.find((vehicle) => Number(vehicle.id) === id) || null;
   }, [vehicles, selectedVehicleId]);
+
+  const closeBookingModal = () => {
+    setIsBookingModalOpen(false);
+  };
 
   const applyCalendarMonth = (date) => {
     const monthValue = formatMonthInput(date);
@@ -486,7 +524,8 @@ export default function VehicleAvailability() {
 
       // A vehicle is "unavailable" only if every single day in the range is booked.
       const isBookedForEveryRangeDate = rangeDates.every(
-        (date) => getBookingsForDate(vehicleId, date).length > 0,
+        (date) =>
+          getBookingsForDate(vehicleId, date, { activeOnly: true }).length > 0,
       );
 
       if (isBookedForEveryRangeDate) {
@@ -745,17 +784,17 @@ export default function VehicleAvailability() {
           </div>
         ) : (
           <>
-            <div className="overflow-x-auto">
+            <div className="max-h-[70vh] overflow-auto">
               <table className="min-w-full text-sm">
                 <thead>
                   <tr>
-                    <th className="sticky left-0 z-10 min-w-[180px] border-b border-slate-200 bg-slate-50 px-3 py-3 text-left font-semibold text-slate-700">
+                    <th className="sticky left-0 top-0 z-30 min-w-[180px] border-b border-slate-200 bg-slate-50 px-3 py-3 text-left font-semibold text-slate-700">
                       Vehicle
                     </th>
                     {visibleCalendarDates.map((date, idx) => (
                       <th
                         key={idx}
-                        className="min-w-[60px] border-b border-slate-200 px-2 py-3 text-center text-xs font-semibold text-slate-700"
+                        className="sticky top-0 z-20 min-w-[60px] border-b border-slate-200 bg-slate-50 px-2 py-3 text-center text-xs font-semibold text-slate-700"
                       >
                         <div className="font-medium">
                           {date.toLocaleDateString("en-US", { day: "numeric" })}
@@ -827,17 +866,19 @@ export default function VehicleAvailability() {
                                 if (alreadySelected) {
                                   setSelectedVehicleId(0);
                                   setSelectedDateKey("");
+                                  setIsBookingModalOpen(false);
                                   return;
                                 }
 
                                 setSelectedVehicleId(nextVehicleId);
                                 setSelectedDateKey(dateKey);
+                                setIsBookingModalOpen(true);
                               }}
                               className={`group relative border-r border-slate-200 px-2 py-3 text-center transition ${
                                 isDisabledInRange
                                   ? "cursor-not-allowed bg-slate-100"
                                   : isBooked
-                                    ? "cursor-pointer bg-rose-500/20 hover:bg-rose-500/35"
+                                    ? "cursor-pointer bg-slate-100 hover:bg-slate-200"
                                     : "hover:bg-slate-50"
                               } ${isSelectedCell ? "ring-2 ring-cyan-400/70" : ""}`}
                               title={
@@ -861,12 +902,22 @@ export default function VehicleAvailability() {
                                 </div>
                               ) : isBooked ? (
                                 <div className="flex items-center justify-center">
-                                  <div className="w-full rounded-md border border-rose-300 bg-rose-100 px-2 py-1">
-                                    <span className="text-xs font-semibold text-rose-700">
-                                      {bookings.length > 1
-                                        ? `Booked (${bookings.length})`
-                                        : "Booked"}
-                                    </span>
+                                  <div className="w-full space-y-1 rounded-md border border-slate-300 bg-white px-1.5 py-1">
+                                    {bookings
+                                      .slice(0, 2)
+                                      .map((booking, bookingIndex) => (
+                                        <div
+                                          key={`${dateKey}-${vehicle.id}-${booking.id}-${bookingIndex}`}
+                                          className={`truncate rounded border px-1 py-0.5 text-[10px] font-semibold ${bookingColorClass(booking)}`}
+                                        >
+                                          {booking.bookingRef || "Booked"}
+                                        </div>
+                                      ))}
+                                    {bookings.length > 2 && (
+                                      <div className="text-[10px] font-semibold text-slate-600">
+                                        +{bookings.length - 2} more
+                                      </div>
+                                    )}
                                   </div>
                                 </div>
                               ) : (
@@ -902,6 +953,7 @@ export default function VehicleAvailability() {
                       onClick={() => {
                         setSelectedVehicleId(0);
                         setSelectedDateKey("");
+                        setIsBookingModalOpen(false);
                       }}
                       className="rounded-full border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
                     >
@@ -1009,12 +1061,131 @@ export default function VehicleAvailability() {
           <span className="text-sm text-slate-700">Available</span>
         </div>
         <div className="flex items-center gap-2">
-          <div className="rounded-md border border-rose-300 bg-rose-100 px-3 py-1.5">
-            <span className="text-xs font-semibold text-rose-700">Booked</span>
+          <div className="rounded-md border border-slate-300 bg-white px-3 py-1.5">
+            <span className="text-xs font-semibold text-slate-700">Booked</span>
           </div>
-          <span className="text-sm text-slate-700">Booked</span>
+          <span className="text-sm text-slate-700">
+            Booked (color by safari)
+          </span>
         </div>
       </div>
+
+      {isBookingModalOpen && selectedBookings.length > 0 && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4"
+          onClick={closeBookingModal}
+        >
+          <div
+            className="max-h-[85vh] w-full max-w-4xl overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 px-5 py-4 backdrop-blur">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-semibold text-slate-900">
+                    Booking Details ({selectedDateKey})
+                  </h3>
+                  <p className="text-xs text-slate-600">
+                    {selectedBookings.length} booking(s) for{" "}
+                    {selectedVehicle?.vehicleNo || "selected vehicle"}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeBookingModal}
+                  className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-3 p-5">
+              {selectedBookings.map((alloc, index) => (
+                <div
+                  key={`${selectedDateKey}-modal-${alloc.vehicleId}-${alloc.id}-${index}`}
+                  className="overflow-hidden rounded-2xl border border-slate-200 bg-white"
+                >
+                  <div className="border-b border-slate-200/80 bg-[linear-gradient(140deg,rgba(251,191,36,0.08),rgba(56,189,248,0.08))] px-4 py-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+                        <span
+                          className={`rounded-md border px-2 py-1 text-[10px] ${bookingColorClass(alloc)}`}
+                        >
+                          {alloc.bookingRef || "Booked"}
+                        </span>
+                        <span>Safari: {alloc.bookingRef}</span>
+                      </div>
+                      <span
+                        className={`rounded-md border px-2 py-1 text-xs ${allocationStatusColor(alloc.status)}`}
+                      >
+                        {alloc.status || "Assigned"}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3 p-4 text-xs md:grid-cols-3">
+                    <div className="rounded-xl border border-amber-100 bg-amber-50/60 p-3 text-slate-600">
+                      <div className="mb-2 flex items-center gap-2 text-amber-700">
+                        <MapPin className="h-3.5 w-3.5" />
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.08em]">
+                          Safari Details
+                        </p>
+                      </div>
+                      <div>
+                        <p className="font-medium text-slate-800">
+                          {alloc.routeParks}
+                        </p>
+                        <p>
+                          {alloc.startDate || "-"} to {alloc.endDate || "-"}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-cyan-100 bg-cyan-50/60 p-3 text-slate-600">
+                      <div className="mb-2 flex items-center gap-2 text-cyan-700">
+                        <Car className="h-3.5 w-3.5" />
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.08em]">
+                          Vehicle Details
+                        </p>
+                      </div>
+                      <div>
+                        <p className="font-medium text-slate-800">
+                          {alloc.vehicleNo ||
+                            selectedVehicle?.vehicleNo ||
+                            "Unknown"}
+                        </p>
+                        <p>
+                          Registration No:{" "}
+                          {alloc.registrationNo || alloc.plateNo}
+                        </p>
+                        <p>
+                          {alloc.vehicleMake} {alloc.vehicleModel}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-emerald-100 bg-emerald-50/60 p-3 text-slate-600">
+                      <div className="mb-2 flex items-center gap-2 text-emerald-700">
+                        <UserCheck className="h-3.5 w-3.5" />
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.08em]">
+                          Driver Details
+                        </p>
+                      </div>
+                      <div>
+                        <p className="font-medium text-slate-800">
+                          {alloc.driverName}
+                        </p>
+                        <p>{alloc.notes || "No notes"}</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">

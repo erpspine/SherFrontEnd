@@ -33,9 +33,22 @@ import VehicleAvailability from "./pages/VehicleAvailability";
 import Inspections from "./pages/Inspections";
 import LongTermLeasing from "./pages/LongTermLeasing";
 import { isAuthenticated, hasPermission } from "./utils/auth";
+
+function AccessDenied() {
+  return (
+    <div className="mx-auto max-w-2xl rounded-2xl border border-amber-200 bg-amber-50 p-6 text-amber-900 shadow-sm">
+      <h2 className="text-lg font-semibold">Access Denied</h2>
+      <p className="mt-2 text-sm">
+        You do not have permission to view this page. Please contact your
+        administrator to grant access.
+      </p>
+    </div>
+  );
+}
+
 function PermissionRoute({ permission, element }) {
   if (!hasPermission(permission)) {
-    return <Navigate to="/" replace />;
+    return <AccessDenied />;
   }
   return element;
 }

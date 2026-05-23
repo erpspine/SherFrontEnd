@@ -118,6 +118,12 @@ const createDaySection = (index = 1, dayDate = "") => ({
   items: [createDayItem()],
 });
 
+const createConvertAllocationRange = (startDate = "", endDate = "") => ({
+  startDate,
+  endDate,
+  vehicleIds: [],
+});
+
 const createFormState = () => {
   const today = new Date().toISOString().split("T")[0];
   return {
@@ -496,7 +502,9 @@ export default function Quotations() {
   const [convertLead, setConvertLead] = useState(null);
   const [availableVehicles, setAvailableVehicles] = useState([]);
   const [activeAllocations, setActiveAllocations] = useState([]);
-  const [selectedVehicleIds, setSelectedVehicleIds] = useState([]);
+  const [convertAllocationRanges, setConvertAllocationRanges] = useState([
+    createConvertAllocationRange(),
+  ]);
   const [isLoadingAvailability, setIsLoadingAvailability] = useState(false);
   const [convertError, setConvertError] = useState("");
   const [downloadingId, setDownloadingId] = useState(null);
@@ -644,51 +652,29 @@ export default function Quotations() {
     0,
   );
   const requestedVehicles = Math.max(0, Number(convertLead?.noOfVehicles || 0));
-  const vehicleAvailabilityRows = availableVehicles.map((vehicle) => {
-    const overlappingAllocations = activeAllocations.filter(
-      (allocation) =>
-        allocation.vehicleId === vehicle.id &&
-        rangesOverlap(
-          allocation.startDate,
-          allocation.endDate,
-          convertLead?.startDate,
-          convertLead?.endDate,
-        ) &&
-        String(allocation.status || "").toLowerCase() !== "cancelled",
-    );
+  const getVehiclesAvailableForRange = (startDate, endDate) =>
+    availableVehicles.filter((vehicle) => {
+      const isStatusAvailable = vehicle.status === "Available";
+      if (!isStatusAvailable || !startDate || !endDate) return false;
 
-    const isStatusAvailable = vehicle.status === "Available";
-    const hasAssignedDriver = Boolean(vehicle.assignedDriverId);
-    const isAvailableNow =
-      Boolean(convertLead?.startDate && convertLead?.endDate) &&
-      isStatusAvailable &&
-      overlappingAllocations.length === 0 &&
-      hasAssignedDriver;
+      const overlappingAllocations = activeAllocations.filter(
+        (allocation) =>
+          allocation.vehicleId === vehicle.id &&
+          rangesOverlap(
+            allocation.startDate,
+            allocation.endDate,
+            startDate,
+            endDate,
+          ) &&
+          String(allocation.status || "").toLowerCase() !== "cancelled",
+      );
 
-    return {
-      ...vehicle,
-      overlappingAllocations,
-      isStatusAvailable,
-      isAvailableForDates:
-        Boolean(convertLead?.startDate && convertLead?.endDate) &&
-        isStatusAvailable &&
-        overlappingAllocations.length === 0,
-      hasAssignedDriver,
-      isAvailableNow,
-      reason:
-        !convertLead?.startDate || !convertLead?.endDate
-          ? "Lead dates missing"
-          : !isStatusAvailable
-            ? vehicle.status
-            : !hasAssignedDriver
-              ? "Assign a driver to this vehicle first"
-              : overlappingAllocations.length > 0
-                ? `Booked for ${overlappingAllocations[0].bookingRef}`
-                : "Available now",
-    };
-  });
-  const availableVehicleRows = vehicleAvailabilityRows.filter(
-    (vehicle) => vehicle.isAvailableForDates,
+      return overlappingAllocations.length === 0;
+    });
+
+  const selectedVehiclesCount = convertAllocationRanges.reduce(
+    (sum, range) => sum + range.vehicleIds.length,
+    0,
   );
   const allItems = form.daySections.flatMap((section) => section.items);
   const subtotal = allItems.reduce(
@@ -1287,7 +1273,7 @@ export default function Quotations() {
     setConvertLead(null);
     setAvailableVehicles([]);
     setActiveAllocations([]);
-    setSelectedVehicleIds([]);
+    setConvertAllocationRanges([createConvertAllocationRange()]);
     setConvertError("");
   };
 
@@ -1299,7 +1285,15 @@ export default function Quotations() {
     );
     setAvailableVehicles([]);
     setActiveAllocations([]);
-    setSelectedVehicleIds([]);
+    const leadForRange =
+      leads.find((lead) => String(lead.id) === String(quotation.leadId)) ||
+      null;
+    setConvertAllocationRanges([
+      createConvertAllocationRange(
+        leadForRange?.startDate || "",
+        leadForRange?.endDate || "",
+      ),
+    ]);
     setConvertError("");
     setIsConvertModalOpen(true);
     setIsLoadingAvailability(true);
@@ -1347,37 +1341,71 @@ export default function Quotations() {
     }
   };
 
-  const toggleVehicleSelection = (vehicleId) => {
-    const nextVehicleId = Number(vehicleId);
-    const isSelected = selectedVehicleIds.includes(nextVehicleId);
+  const addConvertRange = () => {
+    setConvertAllocationRanges((current) => [
+      ...current,
+      createConvertAllocationRange(
+        convertLead?.startDate || "",
+        convertLead?.endDate || "",
+      ),
+    ]);
+  };
 
-    if (
-      !isSelected &&
-      requestedVehicles > 0 &&
-      selectedVehicleIds.length >= requestedVehicles
-    ) {
-      setConvertError(
-        `This lead requests ${requestedVehicles} vehicle(s). Remove one before adding another.`,
-      );
-      return;
-    }
+  const removeConvertRange = (rangeIndex) => {
+    setConvertAllocationRanges((current) =>
+      current.filter((_, index) => index !== rangeIndex),
+    );
+  };
 
+  const setConvertRangeField = (rangeIndex, field, value) => {
+    setConvertAllocationRanges((current) =>
+      current.map((range, index) =>
+        index === rangeIndex ? { ...range, [field]: value } : range,
+      ),
+    );
+  };
+
+  const toggleRangeVehicleSelection = (rangeIndex, vehicleId) => {
+    const id = Number(vehicleId);
     setConvertError("");
-    setSelectedVehicleIds((current) =>
-      current.includes(nextVehicleId)
-        ? current.filter((value) => value !== nextVehicleId)
-        : [...current, nextVehicleId],
+    setConvertAllocationRanges((current) =>
+      current.map((range, index) => {
+        if (index !== rangeIndex) return range;
+        const selected = range.vehicleIds.includes(id);
+        return {
+          ...range,
+          vehicleIds: selected
+            ? range.vehicleIds.filter((item) => item !== id)
+            : [...range.vehicleIds, id],
+        };
+      }),
     );
   };
 
   const submitQuotationConversion = async (allocationMode) => {
     if (!convertTarget) return;
 
-    if (allocationMode === "now" && selectedVehicleIds.length === 0) {
-      setConvertError(
-        "Select at least one available vehicle or choose Allocate Later.",
+    if (allocationMode === "now") {
+      if (convertAllocationRanges.length === 0) {
+        setConvertError("Add at least one allocation range.");
+        return;
+      }
+
+      const invalidRange = convertAllocationRanges.find(
+        (range) =>
+          !range.startDate ||
+          !range.endDate ||
+          range.startDate > range.endDate ||
+          !Array.isArray(range.vehicleIds) ||
+          range.vehicleIds.length === 0,
       );
-      return;
+
+      if (invalidRange) {
+        setConvertError(
+          "Each range must have valid start/end dates and at least one selected vehicle.",
+        );
+        return;
+      }
     }
 
     setConvertingId(convertTarget.id);
@@ -1391,7 +1419,14 @@ export default function Quotations() {
           method: "POST",
           body: {
             allocationMode,
-            vehicleIds: allocationMode === "now" ? selectedVehicleIds : [],
+            allocationRanges:
+              allocationMode === "now"
+                ? convertAllocationRanges.map((range) => ({
+                    startDate: range.startDate,
+                    endDate: range.endDate,
+                    vehicleIds: range.vehicleIds,
+                  }))
+                : [],
           },
         },
       );
@@ -2109,7 +2144,7 @@ export default function Quotations() {
                     Selected Now
                   </p>
                   <p className="mt-1 text-sm font-semibold text-slate-900">
-                    {selectedVehicleIds.length}
+                    {selectedVehiclesCount}
                   </p>
                 </div>
               </div>
@@ -2120,6 +2155,16 @@ export default function Quotations() {
                 </div>
               )}
 
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Allocation Layout
+                </p>
+                <p className="mt-1 text-sm text-slate-700">
+                  Use the same date-range allocation layout: add one or more
+                  ranges, then select vehicles for each range.
+                </p>
+              </div>
+
               {convertError && (
                 <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
                   {convertError}
@@ -2127,84 +2172,142 @@ export default function Quotations() {
               )}
 
               <div className="rounded-2xl border border-slate-200 overflow-hidden">
-                <div className="px-5 py-4 border-b border-slate-200 bg-slate-50 flex items-center gap-2">
-                  <Car className="w-4 h-4 text-slate-600" />
-                  <h3 className="text-sm font-semibold text-slate-900">
-                    Vehicle Availability
-                  </h3>
+                <div className="px-5 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Car className="w-4 h-4 text-slate-600" />
+                    <h3 className="text-sm font-semibold text-slate-900">
+                      Allocation Ranges
+                    </h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={addConvertRange}
+                    disabled={convertingId === convertTarget?.id}
+                    className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Add Range
+                  </button>
                 </div>
 
-                {isLoadingAvailability ? (
-                  <div className="px-5 py-12 text-center text-slate-500">
-                    Loading vehicle availability...
-                  </div>
-                ) : availableVehicleRows.length === 0 ? (
-                  <div className="px-5 py-12 text-center text-slate-500">
-                    No vehicles are available for the selected safari dates.
-                  </div>
-                ) : (
-                  <div className="divide-y divide-slate-200 max-h-[420px] overflow-y-auto">
-                    {availableVehicleRows.map((vehicle) => {
-                      const isChecked = selectedVehicleIds.includes(vehicle.id);
-                      return (
-                        <label
-                          key={vehicle.id}
-                          className={`flex items-start gap-4 px-5 py-4 ${
-                            vehicle.isAvailableNow
-                              ? "cursor-pointer hover:bg-amber-50/50"
-                              : "bg-slate-50"
-                          }`}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={isChecked}
-                            disabled={
-                              !vehicle.isAvailableNow ||
-                              convertingId === convertTarget?.id
-                            }
-                            onChange={() => toggleVehicleSelection(vehicle.id)}
-                            className="mt-1 h-4 w-4 rounded border-slate-300 text-amber-500 focus:ring-amber-500"
-                          />
-                          <div className="flex-1 min-w-0">
-                            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2">
-                              <div>
-                                <p className="text-sm font-semibold text-slate-900">
-                                  {vehicle.vehicleNo} ({vehicle.plateNo})
-                                </p>
-                                <p className="text-xs text-slate-500 mt-1">
-                                  {[vehicle.make, vehicle.model]
-                                    .filter(Boolean)
-                                    .join(" ") || "Vehicle"}
-                                </p>
-                              </div>
-                              <div className="flex flex-wrap gap-2">
-                                <span
-                                  className={`inline-flex items-center rounded-lg border px-2.5 py-1 text-xs font-medium ${vehicle.isAvailableNow ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-amber-200 bg-amber-50 text-amber-700"}`}
-                                >
-                                  {vehicle.reason}
-                                </span>
-                                <span
-                                  className={`inline-flex items-center rounded-lg border px-2.5 py-1 text-xs font-medium ${vehicle.hasAssignedDriver ? "border-blue-200 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-500"}`}
-                                >
-                                  {vehicle.hasAssignedDriver
-                                    ? `Driver: ${vehicle.assignedDriverName}`
-                                    : "No assigned driver"}
-                                </span>
-                              </div>
-                            </div>
+                <div className="p-4 space-y-4">
+                  {convertAllocationRanges.map((range, rangeIndex) => {
+                    const rangeVehicles = getVehiclesAvailableForRange(
+                      range.startDate,
+                      range.endDate,
+                    );
 
-                            {vehicle.overlappingAllocations.length > 0 && (
-                              <div className="mt-2 text-xs text-slate-500">
-                                Current booking:{" "}
-                                {vehicle.overlappingAllocations[0].bookingRef}
-                              </div>
-                            )}
+                    return (
+                      <div
+                        key={`range-${rangeIndex}`}
+                        className="rounded-xl border border-slate-200 bg-white"
+                      >
+                        <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                              Range {rangeIndex + 1}
+                            </span>
                           </div>
-                        </label>
-                      );
-                    })}
-                  </div>
-                )}
+                          {convertAllocationRanges.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => removeConvertRange(rangeIndex)}
+                              disabled={convertingId === convertTarget?.id}
+                              className="rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-100 disabled:opacity-50"
+                            >
+                              Remove
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="px-4 py-3 grid grid-cols-1 md:grid-cols-2 gap-3 border-b border-slate-200">
+                          <div>
+                            <label className="block text-xs text-slate-500 mb-1">
+                              From Date
+                            </label>
+                            <input
+                              type="date"
+                              value={range.startDate}
+                              onChange={(event) =>
+                                setConvertRangeField(
+                                  rangeIndex,
+                                  "startDate",
+                                  event.target.value,
+                                )
+                              }
+                              min={convertLead?.startDate || undefined}
+                              max={convertLead?.endDate || undefined}
+                              disabled={convertingId === convertTarget?.id}
+                              className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-xs text-slate-800 focus:border-amber-500 focus:outline-none"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-slate-500 mb-1">
+                              To Date
+                            </label>
+                            <input
+                              type="date"
+                              value={range.endDate}
+                              onChange={(event) =>
+                                setConvertRangeField(
+                                  rangeIndex,
+                                  "endDate",
+                                  event.target.value,
+                                )
+                              }
+                              min={convertLead?.startDate || undefined}
+                              max={convertLead?.endDate || undefined}
+                              disabled={convertingId === convertTarget?.id}
+                              className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-xs text-slate-800 focus:border-amber-500 focus:outline-none"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="max-h-56 overflow-y-auto divide-y divide-slate-100">
+                          {!range.startDate || !range.endDate ? (
+                            <div className="px-4 py-3 text-xs text-slate-500">
+                              Select From and To dates first.
+                            </div>
+                          ) : rangeVehicles.length === 0 ? (
+                            <div className="px-4 py-3 text-xs text-slate-500">
+                              No vehicles are available on this range.
+                            </div>
+                          ) : (
+                            rangeVehicles.map((vehicle) => {
+                              const checked = range.vehicleIds.includes(
+                                vehicle.id,
+                              );
+                              return (
+                                <label
+                                  key={`range-${rangeIndex}-${vehicle.id}`}
+                                  className="flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50"
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    disabled={
+                                      convertingId === convertTarget?.id
+                                    }
+                                    onChange={() =>
+                                      toggleRangeVehicleSelection(
+                                        rangeIndex,
+                                        vehicle.id,
+                                      )
+                                    }
+                                    className="h-4 w-4 rounded border-slate-300 text-amber-500 focus:ring-amber-500"
+                                  />
+                                  <span>
+                                    {vehicle.vehicleNo} ({vehicle.plateNo})
+                                  </span>
+                                </label>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
 
@@ -2236,9 +2339,7 @@ export default function Quotations() {
                   disabled={
                     convertingId === convertTarget?.id ||
                     isLoadingAvailability ||
-                    availableVehicleRows.every(
-                      (vehicle) => !vehicle.isAvailableNow,
-                    )
+                    selectedVehiclesCount === 0
                   }
                   className="px-5 py-2.5 rounded-xl text-sm font-medium bg-gradient-to-r from-amber-400 to-amber-600 text-white hover:opacity-90 transition-opacity disabled:opacity-50"
                 >
@@ -2513,8 +2614,9 @@ export default function Quotations() {
                                       <Plus className="w-3.5 h-3.5" />
                                       {item.item || "Select item"}
                                     </span>
-                                    <ChevronRight className="w-4 h-4 opacity-80" />
+                                    <ChevronRight className="w-3.5 h-3.5" />
                                   </button>
+
                                   {item.item === "Others" && (
                                     <input
                                       type="text"

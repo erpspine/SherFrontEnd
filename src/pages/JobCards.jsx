@@ -136,9 +136,7 @@ const extractSingle = (payload, preferredKey) =>
   payload;
 
 const JOB_CARD_TYPES = [
-  "Safari - Daily",
-  "Safari - Monthly",
-  "Safari - Yearly",
+  "Safari",
   "Test Drive",
   "Service",
   "Client Viewing",
@@ -213,8 +211,7 @@ const hasReturnDetails = (values) => {
   return Boolean(
     hasCapturedSafariDateRange(values) ||
     values.timeIn ||
-    String(values.odometerIn ?? "").trim() !== "" ||
-    String(values.fuelGaugeIn ?? "").trim() !== "",
+    String(values.odometerIn ?? "").trim() !== "",
   );
 };
 
@@ -247,8 +244,7 @@ const normalizeJobCard = (jobCard) => {
     id: jobCard.id,
     leadId: Number(jobCard.lead_id ?? jobCard.leadId ?? 0),
     vehicleId: Number(jobCard.vehicle_id ?? jobCard.vehicleId ?? 0),
-    type:
-      jobCard.type || jobCard.job_type || jobCard.jobType || "Safari - Daily",
+    type: jobCard.type || jobCard.job_type || jobCard.jobType || "Safari",
     jobCardNo: jobCard.job_card_no || jobCard.jobCardNo || "-",
     bookingReferenceNo:
       jobCard.booking_reference_no ||
@@ -333,7 +329,7 @@ const createEmptyForm = () => ({
   leadId: "",
   vehicleId: "",
   status: "Open",
-  type: "Safari - Daily",
+  type: "Safari",
   safariStartDate: "",
   safariEndDate: "",
   timeOut: "",
@@ -368,7 +364,7 @@ const buildFormFromLead = (lead) => ({
   leadId: String(lead.id),
   vehicleId: "",
   status: "Open",
-  type: "Safari - Daily",
+  type: "Safari",
   safariStartDate: toInputDate(lead.startDate),
   safariEndDate: toInputDate(lead.endDate),
   timeOut: "",
@@ -412,7 +408,7 @@ const buildFormFromJobCard = (jobCard) => ({
   leadId: String(jobCard.leadId || ""),
   vehicleId: String(jobCard.vehicleId || ""),
   status: jobCard.status || deriveJobCardStatus(jobCard),
-  type: jobCard.type || "Safari - Daily",
+  type: jobCard.type || "Safari",
   safariStartDate: toInputDate(jobCard.safariStartDate),
   safariEndDate: toInputDate(jobCard.safariEndDate),
   timeOut: jobCard.timeOut || "",
@@ -542,8 +538,7 @@ export default function JobCards() {
         jobCards
           .filter(
             (card) =>
-              String(card.type || "Safari").toLowerCase() === "safari" &&
-              Number(card.leadId || 0) > 0,
+              isSafariJobType(card.type) && Number(card.leadId || 0) > 0,
           )
           .map((card) => String(card.leadId)),
       ),
@@ -587,7 +582,12 @@ export default function JobCards() {
   }, [jobCards, searchTerm]);
 
   const stats = useMemo(() => {
-    const totalPax = filteredCards.reduce(
+    const safariCards = filteredCards.filter((card) =>
+      isSafariJobType(card.type),
+    );
+    const operationsCards = filteredCards.length - safariCards.length;
+
+    const totalPax = safariCards.reduce(
       (sum, card) =>
         sum + Number(card.adults || 0) + Number(card.children || 0),
       0,
@@ -595,6 +595,8 @@ export default function JobCards() {
 
     return {
       totalCards: filteredCards.length,
+      safariCards: safariCards.length,
+      operationsCards,
       totalPax,
       totalLeadsWithPI: availableSafariLeads.length,
     };
@@ -603,25 +605,20 @@ export default function JobCards() {
   const setField = (field, value) =>
     setForm((prev) => ({ ...prev, [field]: value }));
 
-  const requiresVehicleRunSection = [
-    "Test Drive",
-    "Service",
-    "Client Viewing",
-    "Others",
-  ].includes(form.type);
-  const requiresClientVisitSection = ["Client Viewing", "Others"].includes(
-    form.type,
-  );
-  const requiresReasonSection = form.type === "Others";
   const isSafariType = isSafariJobType(form.type);
+  const requiresVehicleRunSection = !isSafariType;
+  const requiresClientVisitSection = !isSafariType;
+  const requiresReasonSection = form.type === "Others";
   const isCreateMode = modalMode === "create";
   const isCloseMode = modalMode === "close";
   const derivedStatus = deriveJobCardStatus(form);
   const calculatedMileage = calculateMileage(form.odometerOut, form.odometerIn);
-  const calculatedFuelUsed = calculateApproxFuelUsed(
-    form.fuelGaugeOut,
-    form.fuelGaugeIn,
-  );
+  const routeSummaryLabel = isSafariType
+    ? "Itinerary / Route Plan"
+    : "Destination / Route";
+  const routeSummaryPlaceholder = isSafariType
+    ? "Example: Arusha -> Tarangire -> Ngorongoro -> Serengeti"
+    : "Example: Service center in Arusha / Client site visit";
 
   const selectableVehicles = useMemo(
     () =>
@@ -905,6 +902,21 @@ export default function JobCards() {
       return;
     }
 
+    if (
+      requiresVehicleRunSection &&
+      String(form.routeSummary || "").trim() === ""
+    ) {
+      setErrorMessage("Please enter destination / route for this movement.");
+      await Swal.fire({
+        title: "Missing Destination",
+        text: "Please capture where the vehicle is going.",
+        icon: "warning",
+        background: "#0f172a",
+        color: "#e2e8f0",
+      });
+      return;
+    }
+
     if (isCloseMode && String(form.safariEndDate || "").trim() === "") {
       setErrorMessage("Please capture Date In when closing the job card.");
       await Swal.fire({
@@ -960,25 +972,16 @@ export default function JobCards() {
               String(form.odometerIn || "").trim() !== ""
                 ? Number(form.odometerIn)
                 : null,
-            fuelGaugeIn:
-              requiresVehicleRunSection &&
-              String(form.fuelGaugeIn || "").trim() !== ""
-                ? Number(form.fuelGaugeIn)
-                : null,
             mileage:
               requiresVehicleRunSection && calculatedMileage !== ""
                 ? Number(calculatedMileage)
-                : null,
-            approximateFuelUsed:
-              requiresVehicleRunSection && calculatedFuelUsed !== ""
-                ? Number(calculatedFuelUsed)
                 : null,
           }
         : {
             leadId: isSafariType ? Number(form.leadId) : null,
             vehicleId: form.vehicleId ? Number(form.vehicleId) : null,
             status: selectedStatus,
-            type: form.type || "Safari - Daily",
+            type: form.type || "Safari",
             safariStartDate: form.safariStartDate || null,
             safari_start_date: form.safariStartDate || null,
             timeOut: form.timeOut || null,
@@ -1013,11 +1016,6 @@ export default function JobCards() {
               ? String(form.odometerOut || "").trim() === ""
                 ? null
                 : Number(form.odometerOut)
-              : null,
-            fuelGaugeOut: requiresVehicleRunSection
-              ? String(form.fuelGaugeOut || "").trim() === ""
-                ? null
-                : Number(form.fuelGaugeOut)
               : null,
             driverDetails: requiresVehicleRunSection
               ? form.driverDetails || null
@@ -1094,7 +1092,8 @@ export default function JobCards() {
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Job Cards</h1>
           <p className="text-slate-500 mt-1">
-            Safari operations issued to fleet manager, generated from PI leads.
+            Two flows: Safari job cards for itinerary movement, and Operations
+            job cards for test drive/service/viewing with odometer tracking.
           </p>
         </div>
         <button
@@ -1116,7 +1115,7 @@ export default function JobCards() {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            PI Job Cards
+            Total Job Cards
           </p>
           <p className="text-2xl font-bold text-slate-900 mt-1">
             {stats.totalCards}
@@ -1124,18 +1123,28 @@ export default function JobCards() {
         </div>
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">
-            Total Safari Pax
+            Safari / Operations
           </p>
-          <p className="text-2xl font-bold text-amber-700 mt-1">
-            {stats.totalPax}
+          <p className="text-2xl font-bold text-amber-700 mt-1 flex items-baseline gap-2">
+            <span>{stats.safariCards}</span>
+            <span className="text-sm font-medium text-amber-600">/</span>
+            <span>{stats.operationsCards}</span>
+          </p>
+          <p className="text-xs text-amber-700/80 mt-1">
+            Safari cards / Operations cards
           </p>
         </div>
         <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">
-            PI Eligible Leads
+            Safari Pax + PI Leads
           </p>
-          <p className="text-2xl font-bold text-blue-700 mt-1">
-            {stats.totalLeadsWithPI}
+          <p className="text-2xl font-bold text-blue-700 mt-1 flex items-baseline gap-2">
+            <span>{stats.totalPax}</span>
+            <span className="text-sm font-medium text-blue-600">|</span>
+            <span>{stats.totalLeadsWithPI}</span>
+          </p>
+          <p className="text-xs text-blue-700/80 mt-1">
+            Safari pax in list | PI-eligible safari leads
           </p>
         </div>
       </div>
@@ -1181,7 +1190,7 @@ export default function JobCards() {
                   Nationality
                 </th>
                 <th className="text-left py-3 px-3 text-xs font-semibold text-slate-600 uppercase">
-                  Route Summary
+                  Itinerary / Destination
                 </th>
                 <th className="text-left py-3 px-3 text-xs font-semibold text-slate-600 uppercase">
                   Created At
@@ -1217,7 +1226,17 @@ export default function JobCards() {
                     className="border-b border-slate-200 hover:bg-amber-50/70 transition-colors"
                   >
                     <td className="py-3 px-3 text-sm text-slate-700 whitespace-nowrap">
-                      {card.type || "Safari"}
+                      <span
+                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border ${
+                          isSafariJobType(card.type)
+                            ? "text-cyan-700 border-cyan-200 bg-cyan-50"
+                            : "text-violet-700 border-violet-200 bg-violet-50"
+                        }`}
+                      >
+                        {isSafariJobType(card.type)
+                          ? "Safari Job Card"
+                          : card.type || "Operations"}
+                      </span>
                     </td>
                     <td className="py-3 px-3 min-w-[160px]">
                       <div className="flex items-center gap-2 text-slate-900 text-sm font-semibold">
@@ -1440,6 +1459,19 @@ export default function JobCards() {
                         </option>
                       ))}
                     </select>
+                  </div>
+                )}
+
+                {!isCloseMode && (
+                  <div className="md:col-span-2 rounded-xl border border-slate-700 bg-slate-800/40 px-4 py-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-amber-300">
+                      {isSafariType ? "Safari Mode" : "Operations Mode"}
+                    </p>
+                    <p className="text-xs text-slate-300 mt-1">
+                      {isSafariType
+                        ? "Focus on itinerary and schedule. Odometer and fuel are not required."
+                        : "Focus on vehicle movement tracking with destination and odometer out/in."}
+                    </p>
                   </div>
                 )}
 
@@ -1822,7 +1854,7 @@ export default function JobCards() {
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                      Location
+                      Destination / Where Vehicle Is Going
                     </label>
                     <input
                       value={form.location}
@@ -1891,51 +1923,6 @@ export default function JobCards() {
                       className="w-full bg-slate-800/40 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-300 outline-none"
                     />
                   </div>
-
-                  {!isCloseMode && (
-                    <div>
-                      <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                        Fuel Gauge Out
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        max="100"
-                        value={form.fuelGaugeOut}
-                        onChange={(event) =>
-                          setField("fuelGaugeOut", event.target.value)
-                        }
-                        className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
-                      />
-                    </div>
-                  )}
-                  <div>
-                    <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                      Fuel Gauge In
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      max="100"
-                      value={form.fuelGaugeIn}
-                      onChange={(event) =>
-                        setField("fuelGaugeIn", event.target.value)
-                      }
-                      className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                      Approximate Fuel Used (Auto)
-                    </label>
-                    <input
-                      readOnly
-                      value={
-                        calculatedFuelUsed === "" ? "" : calculatedFuelUsed
-                      }
-                      className="w-full bg-slate-800/40 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-300 outline-none"
-                    />
-                  </div>
                 </div>
               )}
 
@@ -1958,7 +1945,7 @@ export default function JobCards() {
               {!isCloseMode && (
                 <div>
                   <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                    Route Summary
+                    {routeSummaryLabel}
                   </label>
                   <textarea
                     rows={2}
@@ -1966,6 +1953,7 @@ export default function JobCards() {
                     onChange={(event) =>
                       setField("routeSummary", event.target.value)
                     }
+                    placeholder={routeSummaryPlaceholder}
                     className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
                   />
                 </div>
@@ -2141,18 +2129,33 @@ export default function JobCards() {
                   <p className="text-slate-300 font-semibold">
                     Travel and Route
                   </p>
-                  <p className="text-slate-300">
-                    Pickup Location:{" "}
-                    <span className="text-white">
-                      {detailValue(selectedJobCard.pickupLocation)}
-                    </span>
-                  </p>
-                  <p className="text-slate-300">
-                    Dropoff Location:{" "}
-                    <span className="text-white">
-                      {detailValue(selectedJobCard.dropoffLocation)}
-                    </span>
-                  </p>
+                  {isSafariJobType(selectedJobCard.type) && (
+                    <>
+                      <p className="text-slate-300">
+                        Pickup Location:{" "}
+                        <span className="text-white">
+                          {detailValue(selectedJobCard.pickupLocation)}
+                        </span>
+                      </p>
+                      <p className="text-slate-300">
+                        Dropoff Location:{" "}
+                        <span className="text-white">
+                          {detailValue(selectedJobCard.dropoffLocation)}
+                        </span>
+                      </p>
+                    </>
+                  )}
+                  {!isSafariJobType(selectedJobCard.type) && (
+                    <p className="text-slate-300">
+                      Destination:{" "}
+                      <span className="text-white">
+                        {detailValue(
+                          selectedJobCard.location ||
+                            selectedJobCard.routeSummary,
+                        )}
+                      </span>
+                    </p>
+                  )}
                   <p className="text-slate-300">
                     Route Summary:{" "}
                     <span className="text-white">
@@ -2193,42 +2196,28 @@ export default function JobCards() {
                       {detailValue(selectedJobCard.driverDetails)}
                     </span>
                   </p>
-                  <p className="text-slate-300">
-                    Odometer Out:{" "}
-                    <span className="text-white">
-                      {detailValue(selectedJobCard.odometerOut)}
-                    </span>
-                  </p>
-                  <p className="text-slate-300">
-                    Odometer In:{" "}
-                    <span className="text-white">
-                      {detailValue(selectedJobCard.odometerIn)}
-                    </span>
-                  </p>
-                  <p className="text-slate-300">
-                    Mileage:{" "}
-                    <span className="text-white">
-                      {detailValue(selectedJobCard.mileage)}
-                    </span>
-                  </p>
-                  <p className="text-slate-300">
-                    Fuel Gauge Out:{" "}
-                    <span className="text-white">
-                      {detailValue(selectedJobCard.fuelGaugeOut)}
-                    </span>
-                  </p>
-                  <p className="text-slate-300">
-                    Fuel Gauge In:{" "}
-                    <span className="text-white">
-                      {detailValue(selectedJobCard.fuelGaugeIn)}
-                    </span>
-                  </p>
-                  <p className="text-slate-300">
-                    Approx Fuel Used:{" "}
-                    <span className="text-white">
-                      {detailValue(selectedJobCard.approximateFuelUsed)}
-                    </span>
-                  </p>
+                  {!isSafariJobType(selectedJobCard.type) && (
+                    <>
+                      <p className="text-slate-300">
+                        Odometer Out:{" "}
+                        <span className="text-white">
+                          {detailValue(selectedJobCard.odometerOut)}
+                        </span>
+                      </p>
+                      <p className="text-slate-300">
+                        Odometer In:{" "}
+                        <span className="text-white">
+                          {detailValue(selectedJobCard.odometerIn)}
+                        </span>
+                      </p>
+                      <p className="text-slate-300">
+                        Mileage:{" "}
+                        <span className="text-white">
+                          {detailValue(selectedJobCard.mileage)}
+                        </span>
+                      </p>
+                    </>
+                  )}
                 </div>
               </div>
 

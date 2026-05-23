@@ -1,10 +1,13 @@
-﻿import { useEffect, useRef, useState } from "react";
+﻿import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Bell, Search, Menu } from "lucide-react";
-import { getAuthUser } from "../utils/auth";
+import { getAuthUser, hasPermission } from "../utils/auth";
+import { menuGroups } from "./Sidebar";
 
 export default function Header({ toggleSidebar, isSidebarCollapsed }) {
   const [searchQuery, setSearchQuery] = useState("");
   const inputRef = useRef(null);
+  const navigate = useNavigate();
   const authUser = getAuthUser();
   const userName = authUser?.name || "Super Admin";
   const userInitials = userName
@@ -13,6 +16,20 @@ export default function Header({ toggleSidebar, isSidebarCollapsed }) {
     .join("")
     .slice(0, 2)
     .toUpperCase();
+
+  const searchablePages = useMemo(
+    () =>
+      menuGroups
+        .flatMap((group) => group.items)
+        .filter((item) => hasPermission(item.permission))
+        .map((item) => ({
+          path: item.path,
+          label: item.label,
+          labelLower: item.label.toLowerCase(),
+          pathLower: item.path.toLowerCase(),
+        })),
+    [],
+  );
 
   useEffect(() => {
     const handleKeydown = (event) => {
@@ -38,7 +55,36 @@ export default function Header({ toggleSidebar, isSidebarCollapsed }) {
   const runPageSearch = (backwards = false) => {
     const query = searchQuery.trim();
 
-    if (!query || typeof window.find !== "function") {
+    if (!query) {
+      return;
+    }
+
+    const queryLower = query.toLowerCase();
+    const bestMatch = searchablePages
+      .map((page) => {
+        let score = 0;
+
+        if (page.labelLower === queryLower) score = 100;
+        else if (page.labelLower.startsWith(queryLower)) score = 80;
+        else if (page.labelLower.includes(queryLower)) score = 60;
+        else if (
+          page.pathLower === queryLower ||
+          page.pathLower === `/${queryLower}`
+        )
+          score = 55;
+        else if (page.pathLower.includes(queryLower)) score = 40;
+
+        return { ...page, score };
+      })
+      .filter((page) => page.score > 0)
+      .sort((left, right) => right.score - left.score)[0];
+
+    if (bestMatch) {
+      navigate(bestMatch.path);
+      return;
+    }
+
+    if (typeof window.find !== "function") {
       return;
     }
 
@@ -63,7 +109,7 @@ export default function Header({ toggleSidebar, isSidebarCollapsed }) {
           <input
             ref={inputRef}
             type="text"
-            placeholder="Search vehicles, clients, quotes..."
+            placeholder="Search page (vehicles, leads, quotations...)"
             value={searchQuery}
             onChange={(event) => setSearchQuery(event.target.value)}
             onKeyDown={(event) => {

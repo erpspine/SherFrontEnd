@@ -25,7 +25,7 @@ import {
 import { clearAuthSession, getAuthUser, hasPermission } from "../utils/auth";
 import { apiFetch } from "../utils/api";
 
-const menuGroups = [
+export const menuGroups = [
   {
     label: "Overview",
     items: [
