@@ -154,46 +154,49 @@ const normalizeQuotation = (quotation) => ({
       : [],
 });
 
-const itineraryItemsToText = (items) => {
-  if (!Array.isArray(items) || items.length === 0) return "";
+const createItineraryLine = (date = "", dayDescription = "") => ({
+  date,
+  dayDescription,
+});
 
-  return items
+const normalizeItineraryLines = (items) => {
+  if (!Array.isArray(items) || items.length === 0) {
+    return [createItineraryLine()];
+  }
+
+  const mapped = items
     .map((item) => {
-      if (typeof item === "string") return item.trim();
-      if (!item || typeof item !== "object") return "";
+      if (typeof item === "string") {
+        return createItineraryLine("", item.trim());
+      }
 
-      const datePart = String(
+      if (!item || typeof item !== "object") return null;
+
+      const rawDate = String(
         item.date || item.dayDate || item.dayTitle || "",
       ).trim();
-      const descriptionPart = String(
+      const date = rawDate ? formatDate(rawDate) : "";
+      const dayDescription = String(
         item.dayDescription || item.dateDescription || item.description || "",
       ).trim();
 
-      if (!datePart && !descriptionPart) return "";
-      if (!descriptionPart) return datePart;
-      if (!datePart) return descriptionPart;
-      return `${datePart} | ${descriptionPart}`;
+      if (!date && !dayDescription) return null;
+      return createItineraryLine(date, dayDescription);
     })
-    .filter(Boolean)
-    .join("\n");
-};
-
-const itineraryTextToPayload = (text) => {
-  const lines = String(text || "")
-    .split("\n")
-    .map((line) => line.trim())
     .filter(Boolean);
 
-  return lines.map((line) => {
-    const [left, ...rest] = line.split("|");
-    if (rest.length === 0) {
-      return { date: "", dayDescription: left.trim() };
-    }
-    return {
-      date: left.trim(),
-      dayDescription: rest.join("|").trim(),
-    };
-  });
+  return mapped.length > 0 ? mapped : [createItineraryLine()];
+};
+
+const itineraryLinesToPayload = (lines) => {
+  if (!Array.isArray(lines)) return [];
+
+  return lines
+    .map((line) => ({
+      date: String(line?.date || "").trim(),
+      dayDescription: String(line?.dayDescription || "").trim(),
+    }))
+    .filter((line) => line.date || line.dayDescription);
 };
 
 const extractList = (payload, preferredKey) => {
@@ -203,8 +206,13 @@ const extractList = (payload, preferredKey) => {
     return payload[preferredKey];
   }
   if (Array.isArray(payload?.leads)) return payload.leads;
+  if (Array.isArray(payload?.quotations)) return payload.quotations;
+  if (Array.isArray(payload?.users)) return payload.users;
   if (Array.isArray(payload?.jobCards)) return payload.jobCards;
   if (Array.isArray(payload?.job_cards)) return payload.job_cards;
+  if (Array.isArray(payload?.safariAllocations))
+    return payload.safariAllocations;
+  if (Array.isArray(payload?.allocations)) return payload.allocations;
   return [];
 };
 
@@ -412,22 +420,17 @@ const createEmptyForm = () => ({
   type: "Safari",
   safariStartDate: "",
   safariEndDate: "",
-  timeOut: "",
   timeIn: "",
   numberOfDays: 1,
   pickupLocation: "",
   dropoffLocation: "",
   routeSummary: "",
-  routeItineraryText: "",
+  routeItineraryLines: [createItineraryLine()],
   additionalDetails: "",
   bookingReferenceNo: "",
   tourOperatorClientName: "",
-  contactPerson: "",
-  contactNumber: "",
-  contactEmail: "",
   adults: 0,
   children: 0,
-  nationality: "",
   reason: "",
   clientDetails: "",
   location: "",
@@ -448,7 +451,6 @@ const buildFormFromLead = (lead) => ({
   type: "Safari",
   safariStartDate: toInputDate(lead.startDate),
   safariEndDate: toInputDate(lead.endDate),
-  timeOut: "",
   timeIn: "",
   numberOfDays: Math.max(
     1,
@@ -463,16 +465,12 @@ const buildFormFromLead = (lead) => ({
   pickupLocation: "",
   dropoffLocation: "",
   routeSummary: lead.routeParks || "",
-  routeItineraryText: "",
+  routeItineraryLines: [createItineraryLine()],
   additionalDetails: lead.specialRequirements || "",
   bookingReferenceNo: lead.bookingRef || "",
   tourOperatorClientName: lead.clientCompany || "",
-  contactPerson: lead.agentContact || "",
-  contactNumber: lead.agentPhone || "",
-  contactEmail: lead.agentEmail || "",
   adults: Number(lead.paxAdults || 0),
   children: Number(lead.paxChildren || 0),
-  nationality: lead.clientCountry || "",
   reason: "",
   clientDetails: "",
   location: "",
@@ -493,22 +491,17 @@ const buildFormFromJobCard = (jobCard) => ({
   type: jobCard.type || "Safari",
   safariStartDate: toInputDate(jobCard.safariStartDate),
   safariEndDate: toInputDate(jobCard.safariEndDate),
-  timeOut: jobCard.timeOut || "",
   timeIn: jobCard.timeIn || "",
   numberOfDays: Number(jobCard.numberOfDays || 1),
   pickupLocation: jobCard.pickupLocation || "",
   dropoffLocation: jobCard.dropoffLocation || "",
   routeSummary: jobCard.routeSummary || "",
-  routeItineraryText: itineraryItemsToText(jobCard.routeItinerary),
+  routeItineraryLines: normalizeItineraryLines(jobCard.routeItinerary),
   additionalDetails: jobCard.additionalDetails || "",
   bookingReferenceNo: jobCard.bookingReferenceNo || "",
   tourOperatorClientName: jobCard.tourOperatorClientName || "",
-  contactPerson: jobCard.contactPerson || "",
-  contactNumber: jobCard.contactNumber || "",
-  contactEmail: jobCard.contactEmail || "",
   adults: Number(jobCard.adults || 0),
   children: Number(jobCard.children || 0),
-  nationality: jobCard.nationality || "",
   reason: jobCard.reason || "",
   clientDetails: jobCard.clientDetails || "",
   location: jobCard.location || "",
@@ -613,7 +606,7 @@ export default function JobCards() {
       );
       setUsers(extractList(usersPayload, "users").map(normalizeUser));
       setSafariAllocations(
-        extractList(safariAllocationsPayload, "allocations").map((a) => ({
+        extractList(safariAllocationsPayload, "safariAllocations").map((a) => ({
           leadId: Number(a.leadId ?? a.lead_id ?? 0),
           vehicleId: Number(a.vehicleId ?? a.vehicle_id ?? 0),
           driverId: Number(a.driverId ?? a.driver_id ?? 0),
@@ -689,8 +682,11 @@ export default function JobCards() {
 
   const activeUsers = useMemo(
     () =>
-      users.filter((user) =>
-        String(user.status || "").toLowerCase().includes("active"),
+      users.filter(
+        (user) =>
+          String(user.status || "")
+            .toLowerCase()
+            .trim() === "active",
       ),
     [users],
   );
@@ -747,9 +743,6 @@ export default function JobCards() {
           .toLowerCase()
           .includes(query) ||
         String(card.tourOperatorClientName || "")
-          .toLowerCase()
-          .includes(query) ||
-        String(card.contactPerson || "")
           .toLowerCase()
           .includes(query) ||
         String(card.type || "")
@@ -840,11 +833,13 @@ export default function JobCards() {
       (a) => String(a.leadId) === String(lead.id),
     );
     const latestQuotation = latestQuotationByLead.get(String(lead.id));
-    const itineraryText = itineraryItemsToText(latestQuotation?.daySections);
+    const itineraryLines = normalizeItineraryLines(
+      latestQuotation?.daySections,
+    );
     setForm({
       ...buildFormFromLead(lead),
       vehicleId: allocation ? String(allocation.vehicleId) : "",
-      routeItineraryText: itineraryText,
+      routeItineraryLines: itineraryLines,
     });
   };
 
@@ -858,6 +853,40 @@ export default function JobCards() {
       ...current,
       vehicleId: vehicleIdValue,
       driverDetails: defaultDriver || current.driverDetails || "",
+    }));
+  };
+
+  const addItineraryLine = () => {
+    setForm((current) => ({
+      ...current,
+      routeItineraryLines: [
+        ...(current.routeItineraryLines || []),
+        createItineraryLine(),
+      ],
+    }));
+  };
+
+  const removeItineraryLine = (indexToRemove) => {
+    setForm((current) => {
+      const nextLines = (current.routeItineraryLines || []).filter(
+        (_, index) => index !== indexToRemove,
+      );
+
+      return {
+        ...current,
+        routeItineraryLines:
+          nextLines.length > 0 ? nextLines : [createItineraryLine()],
+      };
+    });
+  };
+
+  const updateItineraryLine = (indexToUpdate, field, value) => {
+    setForm((current) => ({
+      ...current,
+      routeItineraryLines: (current.routeItineraryLines || []).map(
+        (line, index) =>
+          index === indexToUpdate ? { ...line, [field]: value } : line,
+      ),
     }));
   };
 
@@ -877,15 +906,12 @@ export default function JobCards() {
         safariEndDate: "",
         bookingReferenceNo: "",
         tourOperatorClientName: "",
-        contactPerson: "",
-        contactNumber: "",
-        contactEmail: "",
         adults: 0,
         children: 0,
-        nationality: "",
         numberOfDays: "",
         pickupLocation: "",
         dropoffLocation: "",
+        routeItineraryLines: [createItineraryLine()],
       };
     });
   };
@@ -950,28 +976,38 @@ export default function JobCards() {
     return String(value);
   };
 
-  const routeItineraryText = useMemo(() => {
+  const routeItineraryLines = useMemo(() => {
     const itinerary = selectedJobCard?.routeItinerary;
     if (Array.isArray(itinerary) && itinerary.length > 0) {
       return itinerary
         .map((item) => {
-          if (typeof item === "string") return item;
-          if (item && typeof item === "object") {
-            return (
-              item.label ||
-              item.name ||
-              item.place ||
-              item.park ||
-              item.location ||
-              JSON.stringify(item)
-            );
+          if (typeof item === "string") {
+            const trimmed = item.trim();
+            return trimmed ? { date: "", dayDescription: trimmed } : null;
           }
-          return String(item);
+          if (item && typeof item === "object") {
+            const date = String(
+              item.date || item.dayDate || item.dayTitle || "",
+            ).trim();
+            const dayDescription = String(
+              item.dayDescription ||
+                item.dateDescription ||
+                item.label ||
+                item.name ||
+                item.place ||
+                item.park ||
+                item.location ||
+                "",
+            ).trim();
+            if (!date && !dayDescription) return null;
+            return { date: date ? formatDate(date) : "", dayDescription };
+          }
+          return { date: "", dayDescription: String(item) };
         })
-        .join(", ");
+        .filter(Boolean);
     }
 
-    return "-";
+    return [];
   }, [selectedJobCard]);
 
   const handleDelete = async (id) => {
@@ -1067,6 +1103,18 @@ export default function JobCards() {
       await Swal.fire({
         title: "Missing Vehicle",
         text: "Please select a vehicle for this job card type.",
+        icon: "warning",
+        background: "#0f172a",
+        color: "#e2e8f0",
+      });
+      return;
+    }
+
+    if (!isSafariType && String(form.driverDetails || "").trim() === "") {
+      setErrorMessage("Please select a driver.");
+      await Swal.fire({
+        title: "Missing Driver",
+        text: "Please select a driver for this non-safari movement.",
         icon: "warning",
         background: "#0f172a",
         color: "#e2e8f0",
@@ -1184,11 +1232,14 @@ export default function JobCards() {
             type: form.type || "Safari",
             safariStartDate: form.safariStartDate || null,
             safari_start_date: form.safariStartDate || null,
-            timeOut: form.timeOut || null,
+            timeOut: null,
             numberOfDays: isSafariType ? calculatedNumberOfDays : null,
             pickupLocation: isSafariType ? form.pickupLocation || null : null,
             dropoffLocation: isSafariType ? form.dropoffLocation || null : null,
             routeSummary: form.routeSummary || null,
+            routeItinerary: isSafariType
+              ? itineraryLinesToPayload(form.routeItineraryLines)
+              : [],
             additionalDetails: form.additionalDetails || null,
             bookingReferenceNo: isSafariType
               ? form.bookingReferenceNo || undefined
@@ -1196,16 +1247,12 @@ export default function JobCards() {
             tourOperatorClientName: isSafariType
               ? form.tourOperatorClientName || undefined
               : null,
-            contactPerson: isSafariType
-              ? form.contactPerson || undefined
-              : null,
-            contactNumber: isSafariType
-              ? form.contactNumber || undefined
-              : null,
-            contactEmail: isSafariType ? form.contactEmail || null : null,
+            contactPerson: null,
+            contactNumber: null,
+            contactEmail: null,
             adults: isSafariType ? Number(form.adults || 0) : null,
             children: isSafariType ? Number(form.children || 0) : null,
-            nationality: isSafariType ? form.nationality || null : null,
+            nationality: null,
             reason: requiresReasonSection ? form.reason || null : null,
             clientDetails: requiresClientVisitSection
               ? form.clientDetails || null
@@ -1356,7 +1403,7 @@ export default function JobCards() {
             type="text"
             value={searchTerm}
             onChange={(event) => setSearchTerm(event.target.value)}
-            placeholder="Search by booking ref, company, contact, park route"
+            placeholder="Search by booking ref, group name, company, type, route"
             className="w-full bg-transparent text-sm text-slate-900 placeholder-slate-400 outline-none"
           />
         </div>
@@ -1365,6 +1412,9 @@ export default function JobCards() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-slate-200">
+                <th className="text-left py-3 px-3 text-xs font-semibold text-slate-600 uppercase">
+                  Actions
+                </th>
                 <th className="text-left py-3 px-3 text-xs font-semibold text-slate-600 uppercase">
                   Type
                 </th>
@@ -1392,16 +1442,13 @@ export default function JobCards() {
                 <th className="text-left py-3 px-3 text-xs font-semibold text-slate-600 uppercase">
                   Created At
                 </th>
-                <th className="text-right py-3 px-3 text-xs font-semibold text-slate-600 uppercase">
-                  Actions
-                </th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
                 <tr>
                   <td
-                    colSpan={11}
+                    colSpan={10}
                     className="py-8 text-center text-slate-400 text-sm"
                   >
                     Loading job cards...
@@ -1410,7 +1457,7 @@ export default function JobCards() {
               ) : filteredCards.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={11}
+                    colSpan={10}
                     className="py-8 text-center text-slate-400 text-sm"
                   >
                     No job cards found. Create one from a PI-issued lead.
@@ -1422,77 +1469,8 @@ export default function JobCards() {
                     key={card.id}
                     className="border-b border-slate-200 hover:bg-amber-50/70 transition-colors"
                   >
-                    <td className="py-3 px-3 text-sm text-slate-700 whitespace-nowrap">
-                      <span
-                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border ${
-                          isSafariJobType(card.type)
-                            ? "text-cyan-700 border-cyan-200 bg-cyan-50"
-                            : "text-violet-700 border-violet-200 bg-violet-50"
-                        }`}
-                      >
-                        {isSafariJobType(card.type)
-                          ? "Safari Job Card"
-                          : card.type || "Operations"}
-                      </span>
-                    </td>
-                    <td className="py-3 px-3 min-w-[160px]">
-                      <div className="flex items-center gap-2 text-slate-900 text-sm font-semibold">
-                        <ClipboardList className="w-4 h-4 text-amber-500" />
-                        {card.jobCardNo}
-                      </div>
-                    </td>
-                    <td className="py-3 px-3 text-sm whitespace-nowrap">
-                      <span
-                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border ${
-                          (card.status || "Open") === "Closed"
-                            ? "text-emerald-700 border-emerald-200 bg-emerald-50"
-                            : "text-amber-700 border-amber-200 bg-amber-50"
-                        }`}
-                      >
-                        {card.status || "Open"}
-                      </span>
-                    </td>
-                    <td className="py-3 px-3 text-sm text-slate-700 font-medium">
-                      {card.bookingReferenceNo}
-                    </td>
-                    <td className="py-3 px-3 text-sm text-slate-700 font-medium">
-                      {leadById.get(String(card.leadId || ""))?.groupName || "-"}
-                    </td>
-                    <td className="py-3 px-3 min-w-[220px]">
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2 text-slate-900 text-sm font-semibold">
-                          <User className="w-4 h-4 text-amber-500" />
-                          {card.tourOperatorClientName}
-                        </div>
-                        <div className="flex items-center gap-2 text-slate-600 text-xs">
-                          <span>{card.contactPerson}</span>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="py-3 px-3 text-sm text-slate-800 min-w-[170px]">
-                      <div className="flex items-start gap-2">
-                        <Calendar className="w-4 h-4 text-slate-500 mt-0.5" />
-                        <div>
-                          <div className="font-medium">
-                            Out: {formatDate(card.safariStartDate)}
-                          </div>
-                          <div className="text-xs text-slate-600">
-                            In: {formatDate(card.safariEndDate)}
-                          </div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="py-3 px-3 text-sm text-slate-700">
-                      <div className="flex items-start gap-2">
-                        <MapPin className="w-4 h-4 text-slate-500 mt-0.5" />
-                        <span>{card.routeSummary || "-"}</span>
-                      </div>
-                    </td>
-                    <td className="py-3 px-3 text-sm text-slate-700">
-                      {formatDateTime(card.createdAt)}
-                    </td>
                     <td className="py-3 px-3">
-                      <div className="flex justify-end items-center gap-2">
+                      <div className="flex items-center gap-2">
                         <button
                           onClick={() => handleDownloadPdf(card)}
                           disabled={downloadingJobCardId === card.id}
@@ -1540,6 +1518,71 @@ export default function JobCards() {
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
+                    </td>
+                    <td className="py-3 px-3 text-sm text-slate-700 whitespace-nowrap">
+                      <span
+                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border ${
+                          isSafariJobType(card.type)
+                            ? "text-cyan-700 border-cyan-200 bg-cyan-50"
+                            : "text-violet-700 border-violet-200 bg-violet-50"
+                        }`}
+                      >
+                        {isSafariJobType(card.type)
+                          ? "Safari Job Card"
+                          : card.type || "Operations"}
+                      </span>
+                    </td>
+                    <td className="py-3 px-3 min-w-[160px]">
+                      <div className="flex items-center gap-2 text-slate-900 text-sm font-semibold">
+                        <ClipboardList className="w-4 h-4 text-amber-500" />
+                        {card.jobCardNo}
+                      </div>
+                    </td>
+                    <td className="py-3 px-3 text-sm whitespace-nowrap">
+                      <span
+                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border ${
+                          (card.status || "Open") === "Closed"
+                            ? "text-emerald-700 border-emerald-200 bg-emerald-50"
+                            : "text-amber-700 border-amber-200 bg-amber-50"
+                        }`}
+                      >
+                        {card.status || "Open"}
+                      </span>
+                    </td>
+                    <td className="py-3 px-3 text-sm text-slate-700 font-medium">
+                      {card.bookingReferenceNo}
+                    </td>
+                    <td className="py-3 px-3 text-sm text-slate-700 font-medium">
+                      {leadById.get(String(card.leadId || ""))?.groupName ||
+                        "-"}
+                    </td>
+                    <td className="py-3 px-3 min-w-[220px]">
+                      <div className="flex items-center gap-2 text-slate-900 text-sm font-semibold">
+                        <User className="w-4 h-4 text-amber-500" />
+                        {card.tourOperatorClientName}
+                      </div>
+                    </td>
+                    <td className="py-3 px-3 text-sm text-slate-800 min-w-[170px]">
+                      <div className="flex items-start gap-2">
+                        <Calendar className="w-4 h-4 text-slate-500 mt-0.5" />
+                        <div>
+                          <div className="font-medium">
+                            Out: {formatDate(card.safariStartDate)}
+                          </div>
+                          <div className="text-xs text-slate-600">
+                            In: {formatDate(card.safariEndDate)}
+                          </div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="py-3 px-3 text-sm text-slate-700">
+                      <div className="flex items-start gap-2">
+                        <MapPin className="w-4 h-4 text-slate-500 mt-0.5" />
+                        <span>{card.routeSummary || "-"}</span>
+                      </div>
+                    </td>
+                    <td className="py-3 px-3 text-sm text-slate-700">
+                      {formatDateTime(card.createdAt)}
                     </td>
                   </tr>
                 ))
@@ -1614,16 +1657,20 @@ export default function JobCards() {
                     )}
                     {form.safariStartDate && (
                       <div>
-                        <span className="text-slate-400">Date Out:</span>{" "}
+                        <span className="text-slate-400">
+                          Safari Start Date:
+                        </span>{" "}
                         <span className="text-slate-200">
-                          {form.safariStartDate}
+                          {formatDate(form.safariStartDate)}
                         </span>
                       </div>
                     )}
-                    {form.timeOut && (
+                    {form.safariEndDate && (
                       <div>
-                        <span className="text-slate-400">Time Out:</span>{" "}
-                        <span className="text-slate-200">{form.timeOut}</span>
+                        <span className="text-slate-400">Safari End Date:</span>{" "}
+                        <span className="text-slate-200">
+                          {formatDate(form.safariEndDate)}
+                        </span>
                       </div>
                     )}
                   </div>
@@ -1677,7 +1724,8 @@ export default function JobCards() {
                       <option value="">Select lead</option>
                       {availableSafariLeads.map((lead) => (
                         <option key={lead.id} value={lead.id}>
-                          {lead.bookingRef} - {lead.clientCompany}
+                          {lead.bookingRef} -{" "}
+                          {lead.groupName || lead.clientCompany}
                         </option>
                       ))}
                     </select>
@@ -1695,24 +1743,33 @@ export default function JobCards() {
                 )}
 
                 {isSafariType && !isCloseMode && (
-                  <div>
+                  <div className="md:col-span-2">
                     <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                      Vehicle
+                      Vehicles Allocated To This Safari
                     </label>
-                    <select
-                      value={form.vehicleId}
-                      onChange={(event) =>
-                        setField("vehicleId", event.target.value)
-                      }
-                      className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
-                    >
-                      <option value="">Select vehicle</option>
-                      {selectableVehicles.map((vehicle) => (
-                        <option key={vehicle.id} value={vehicle.id}>
-                          {vehicle.label}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="rounded-xl border border-slate-700 bg-slate-800/40 px-3 py-3 space-y-2">
+                      {selectedLeadAllocations.length === 0 ? (
+                        <p className="text-xs text-slate-400">
+                          No allocations found for this safari lead yet.
+                        </p>
+                      ) : (
+                        selectedLeadAllocations.map((item, index) => (
+                          <div
+                            key={`${item.vehicleName}-${item.driverName}-${index}`}
+                            className="flex items-start justify-between gap-3 border border-slate-700/60 bg-slate-900/40 rounded-lg px-3 py-2"
+                          >
+                            <div className="text-sm text-slate-200">
+                              <span className="font-semibold">
+                                {item.vehicleName}
+                              </span>
+                            </div>
+                            <div className="text-xs text-slate-300">
+                              Driver: {item.driverName}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
                   </div>
                 )}
 
@@ -1760,7 +1817,7 @@ export default function JobCards() {
                     <select
                       value={form.vehicleId}
                       onChange={(event) =>
-                        setField("vehicleId", event.target.value)
+                        onSelectNonSafariVehicle(event.target.value)
                       }
                       className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
                     >
@@ -1774,10 +1831,42 @@ export default function JobCards() {
                   </div>
                 )}
 
-                {!isCloseMode && (
+                {!isSafariType && !isCloseMode && (
                   <div>
                     <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                      Date Out
+                      Driver <span className="text-red-400">*</span>
+                    </label>
+                    <select
+                      value={form.driverDetails}
+                      onChange={(event) =>
+                        setField("driverDetails", event.target.value)
+                      }
+                      className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
+                    >
+                      <option value="">Select driver</option>
+                      {form.driverDetails &&
+                        !driverOptions.includes(form.driverDetails) && (
+                          <option value={form.driverDetails}>
+                            {form.driverDetails}
+                          </option>
+                        )}
+                      {driverOptions.map((driverName) => (
+                        <option key={driverName} value={driverName}>
+                          {driverName}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Assigned driver is prefilled when a vehicle has one, but
+                      you can change it.
+                    </p>
+                  </div>
+                )}
+
+                {isSafariType && !isCloseMode && (
+                  <div>
+                    <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                      Safari Start Date
                     </label>
                     <input
                       type="date"
@@ -1790,23 +1879,23 @@ export default function JobCards() {
                   </div>
                 )}
 
-                {!isCloseMode && (
+                {isSafariType && !isCloseMode && (
                   <div>
                     <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                      Time Out
+                      Safari End Date
                     </label>
                     <input
-                      type="time"
-                      value={form.timeOut}
+                      type="date"
+                      value={form.safariEndDate}
                       onChange={(event) =>
-                        setField("timeOut", event.target.value)
+                        setField("safariEndDate", event.target.value)
                       }
                       className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
                     />
                   </div>
                 )}
 
-                {!isCreateMode && (
+                {isCloseMode && (
                   <div>
                     <label className="block text-xs font-medium text-slate-300 mb-1.5">
                       Date In
@@ -1822,7 +1911,7 @@ export default function JobCards() {
                   </div>
                 )}
 
-                {!isCreateMode && (
+                {isCloseMode && (
                   <div>
                     <label className="block text-xs font-medium text-slate-300 mb-1.5">
                       Time In
@@ -1889,52 +1978,6 @@ export default function JobCards() {
                 {isSafariType && !isCloseMode && (
                   <div>
                     <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                      Contact Person
-                    </label>
-                    <input
-                      value={form.contactPerson}
-                      onChange={(event) =>
-                        setField("contactPerson", event.target.value)
-                      }
-                      className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
-                    />
-                  </div>
-                )}
-
-                {isSafariType && !isCloseMode && (
-                  <div>
-                    <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                      Contact Number
-                    </label>
-                    <input
-                      value={form.contactNumber}
-                      onChange={(event) =>
-                        setField("contactNumber", event.target.value)
-                      }
-                      className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
-                    />
-                  </div>
-                )}
-
-                {isSafariType && !isCloseMode && (
-                  <div>
-                    <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                      Contact Email
-                    </label>
-                    <input
-                      type="email"
-                      value={form.contactEmail}
-                      onChange={(event) =>
-                        setField("contactEmail", event.target.value)
-                      }
-                      className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
-                    />
-                  </div>
-                )}
-
-                {isSafariType && !isCloseMode && (
-                  <div>
-                    <label className="block text-xs font-medium text-slate-300 mb-1.5">
                       Adults
                     </label>
                     <input
@@ -1960,21 +2003,6 @@ export default function JobCards() {
                       value={form.children}
                       onChange={(event) =>
                         setField("children", event.target.value)
-                      }
-                      className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
-                    />
-                  </div>
-                )}
-
-                {isSafariType && !isCloseMode && (
-                  <div>
-                    <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                      Nationality
-                    </label>
-                    <input
-                      value={form.nationality}
-                      onChange={(event) =>
-                        setField("nationality", event.target.value)
                       }
                       className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
                     />
@@ -2114,22 +2142,6 @@ export default function JobCards() {
                 </div>
               )}
 
-              {requiresVehicleRunSection && (
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                    Driver Details
-                  </label>
-                  <textarea
-                    rows={2}
-                    value={form.driverDetails}
-                    onChange={(event) =>
-                      setField("driverDetails", event.target.value)
-                    }
-                    className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
-                  />
-                </div>
-              )}
-
               {!isCloseMode && (
                 <div>
                   <label className="block text-xs font-medium text-slate-300 mb-1.5">
@@ -2144,6 +2156,66 @@ export default function JobCards() {
                     placeholder={routeSummaryPlaceholder}
                     className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
                   />
+                </div>
+              )}
+
+              {isSafariType && !isCloseMode && (
+                <div>
+                  <div className="flex items-center justify-between gap-3 mb-1.5">
+                    <label className="block text-xs font-medium text-slate-300">
+                      Itinerary (Line Items)
+                    </label>
+                    <button
+                      type="button"
+                      onClick={addItineraryLine}
+                      className="inline-flex items-center justify-center min-w-[88px] px-3 py-1.5 text-xs font-semibold text-white border border-amber-400/80 bg-amber-600 rounded-lg hover:bg-amber-500 shadow-sm shadow-amber-900/30"
+                    >
+                      Add Line
+                    </button>
+                  </div>
+                  <div className="space-y-2">
+                    {(form.routeItineraryLines || []).map((line, index) => (
+                      <div
+                        key={`itinerary-line-${index}`}
+                        className="grid grid-cols-1 md:grid-cols-[170px_1fr_auto] gap-2"
+                      >
+                        <input
+                          value={line.date}
+                          onChange={(event) =>
+                            updateItineraryLine(
+                              index,
+                              "date",
+                              event.target.value,
+                            )
+                          }
+                          placeholder="dd/mm/yyyy"
+                          className="bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
+                        />
+                        <input
+                          value={line.dayDescription}
+                          onChange={(event) =>
+                            updateItineraryLine(
+                              index,
+                              "dayDescription",
+                              event.target.value,
+                            )
+                          }
+                          placeholder="Day description"
+                          className="bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeItineraryLine(index)}
+                          className="inline-flex items-center justify-center min-w-[88px] px-3 py-2 text-xs font-semibold text-white border border-rose-400/80 bg-rose-600 rounded-lg hover:bg-rose-500 shadow-sm shadow-rose-900/30"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Enter date as dd/mm/yyyy and description for each line item.
+                  </p>
                 </div>
               )}
 
@@ -2244,19 +2316,13 @@ export default function JobCards() {
                 <div className="bg-slate-800/30 border border-slate-700/50 rounded-xl p-4 space-y-2">
                   <p className="text-slate-300 font-semibold">Schedule</p>
                   <p className="text-slate-300">
-                    Date Out:{" "}
+                    Safari Start Date:{" "}
                     <span className="text-white">
                       {formatDate(selectedJobCard.safariStartDate)}
                     </span>
                   </p>
                   <p className="text-slate-300">
-                    Time Out:{" "}
-                    <span className="text-white">
-                      {detailValue(selectedJobCard.timeOut)}
-                    </span>
-                  </p>
-                  <p className="text-slate-300">
-                    Date In:{" "}
+                    Safari End Date:{" "}
                     <span className="text-white">
                       {formatDate(selectedJobCard.safariEndDate)}
                     </span>
@@ -2276,37 +2342,11 @@ export default function JobCards() {
                 </div>
 
                 <div className="bg-slate-800/30 border border-slate-700/50 rounded-xl p-4 space-y-2">
-                  <p className="text-slate-300 font-semibold">
-                    Client and Contact
-                  </p>
+                  <p className="text-slate-300 font-semibold">Client</p>
                   <p className="text-slate-300">
                     Client Name:{" "}
                     <span className="text-white">
                       {detailValue(selectedJobCard.tourOperatorClientName)}
-                    </span>
-                  </p>
-                  <p className="text-slate-300">
-                    Contact Person:{" "}
-                    <span className="text-white">
-                      {detailValue(selectedJobCard.contactPerson)}
-                    </span>
-                  </p>
-                  <p className="text-slate-300">
-                    Contact Number:{" "}
-                    <span className="text-white">
-                      {detailValue(selectedJobCard.contactNumber)}
-                    </span>
-                  </p>
-                  <p className="text-slate-300">
-                    Contact Email:{" "}
-                    <span className="text-white">
-                      {detailValue(selectedJobCard.contactEmail)}
-                    </span>
-                  </p>
-                  <p className="text-slate-300">
-                    Nationality:{" "}
-                    <span className="text-white">
-                      {detailValue(selectedJobCard.nationality)}
                     </span>
                   </p>
                 </div>
@@ -2352,7 +2392,19 @@ export default function JobCards() {
                   </p>
                   <p className="text-slate-300">
                     Route Itinerary:{" "}
-                    <span className="text-white">{routeItineraryText}</span>
+                    {routeItineraryLines.length === 0 ? (
+                      <span className="text-white">-</span>
+                    ) : (
+                      <span className="text-white">
+                        {routeItineraryLines
+                          .map((line) =>
+                            line.date
+                              ? `${line.date} - ${line.dayDescription}`
+                              : line.dayDescription,
+                          )
+                          .join(", ")}
+                      </span>
+                    )}
                   </p>
                   <p className="text-slate-300">
                     Guide Language:{" "}
