@@ -523,6 +523,8 @@ export default function JobCards() {
   const [jobCards, setJobCards] = useState([]);
   const [safariAllocations, setSafariAllocations] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
+  const [filterFromDate, setFilterFromDate] = useState("");
+  const [filterToDate, setFilterToDate] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState("create");
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
@@ -732,10 +734,12 @@ export default function JobCards() {
 
   const filteredCards = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
-    if (!query) return jobCards;
+    const fromDate = filterFromDate ? parseDateValue(filterFromDate) : null;
+    const toDate = filterToDate ? parseDateValue(filterToDate) : null;
 
     return jobCards.filter((card) => {
-      return (
+      const matchesSearch =
+        !query ||
         String(card.jobCardNo || "")
           .toLowerCase()
           .includes(query) ||
@@ -753,10 +757,30 @@ export default function JobCards() {
           .includes(query) ||
         String(card.routeSummary || "")
           .toLowerCase()
-          .includes(query)
-      );
+          .includes(query);
+
+      if (!matchesSearch) return false;
+
+      if (!fromDate && !toDate) return true;
+
+      const createdDate = parseDateValue(card.createdAt);
+      if (!createdDate) return false;
+
+      if (fromDate) {
+        const fromStart = new Date(fromDate);
+        fromStart.setHours(0, 0, 0, 0);
+        if (createdDate < fromStart) return false;
+      }
+
+      if (toDate) {
+        const toEnd = new Date(toDate);
+        toEnd.setHours(23, 59, 59, 999);
+        if (createdDate > toEnd) return false;
+      }
+
+      return true;
     });
-  }, [jobCards, searchTerm, leadById]);
+  }, [jobCards, searchTerm, leadById, filterFromDate, filterToDate]);
 
   const stats = useMemo(() => {
     const safariCards = filteredCards.filter((card) =>
@@ -764,20 +788,12 @@ export default function JobCards() {
     );
     const operationsCards = filteredCards.length - safariCards.length;
 
-    const totalPax = safariCards.reduce(
-      (sum, card) =>
-        sum + Number(card.adults || 0) + Number(card.children || 0),
-      0,
-    );
-
     return {
       totalCards: filteredCards.length,
       safariCards: safariCards.length,
       operationsCards,
-      totalPax,
-      totalLeadsWithPI: availableSafariLeads.length,
     };
-  }, [filteredCards, availableSafariLeads.length]);
+  }, [filteredCards]);
 
   const setField = (field, value) =>
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -1359,7 +1375,7 @@ export default function JobCards() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
             Total Job Cards
@@ -1381,31 +1397,60 @@ export default function JobCards() {
             Safari cards / Operations cards
           </p>
         </div>
-        <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">
-            Safari Pax + PI Leads
-          </p>
-          <p className="text-2xl font-bold text-blue-700 mt-1 flex items-baseline gap-2">
-            <span>{stats.totalPax}</span>
-            <span className="text-sm font-medium text-blue-600">|</span>
-            <span>{stats.totalLeadsWithPI}</span>
-          </p>
-          <p className="text-xs text-blue-700/80 mt-1">
-            Safari pax in list | PI-eligible safari leads
-          </p>
-        </div>
       </div>
 
       <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div className="flex items-center gap-3 border-b border-slate-200 px-4 py-3 focus-within:border-amber-400 transition-colors">
-          <Search className="w-4 h-4 text-slate-400 shrink-0" />
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(event) => setSearchTerm(event.target.value)}
-            placeholder="Search by booking ref, group name, company, type, route"
-            className="w-full bg-transparent text-sm text-slate-900 placeholder-slate-400 outline-none"
-          />
+        <div className="border-b border-slate-200 px-4 py-3">
+          <div className="flex items-center gap-3 focus-within:border-amber-400 transition-colors">
+            <Search className="w-4 h-4 text-slate-400 shrink-0" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              placeholder="Search by booking ref, group name, company, type, route"
+              className="w-full bg-transparent text-sm text-slate-900 placeholder-slate-400 outline-none"
+            />
+          </div>
+
+          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div>
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                From Date
+              </label>
+              <input
+                type="date"
+                value={filterFromDate}
+                onChange={(event) => setFilterFromDate(event.target.value)}
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none [color-scheme:light] focus:border-amber-500"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                To Date
+              </label>
+              <input
+                type="date"
+                value={filterToDate}
+                min={filterFromDate || undefined}
+                onChange={(event) => setFilterToDate(event.target.value)}
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none [color-scheme:light] focus:border-amber-500"
+              />
+            </div>
+
+            <div className="flex items-end">
+              <button
+                type="button"
+                onClick={() => {
+                  setFilterFromDate("");
+                  setFilterToDate("");
+                }}
+                className="w-full rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-700 transition hover:bg-amber-100"
+              >
+                Clear Date Filter
+              </button>
+            </div>
+          </div>
         </div>
 
         <div className="overflow-x-auto">

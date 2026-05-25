@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  Car,
   Search,
   Receipt,
   Building2,
@@ -37,6 +38,18 @@ const statusConfig = {
   Converted: {
     color: "bg-purple-50 text-purple-700 border-purple-200",
     icon: Receipt,
+  },
+  Confirmed: {
+    color: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    icon: CheckCircle,
+  },
+  "Partially Allocated": {
+    color: "bg-amber-50 text-amber-700 border-amber-200",
+    icon: CheckCircle,
+  },
+  Allocated: {
+    color: "bg-teal-50 text-teal-700 border-teal-200",
+    icon: CheckCircle,
   },
 };
 
@@ -121,6 +134,24 @@ const addDays = (value, days) => {
   return parsed.toISOString().split("T")[0];
 };
 
+const createPIAllocationRange = (startDate = "", endDate = "") => ({
+  startDate,
+  endDate,
+  vehicleIds: [],
+});
+
+const normalizeAvailabilityVehicle = (vehicle) => ({
+  id: Number(vehicle?.id || 0),
+  vehicleNo:
+    vehicle?.vehicle_no ||
+    vehicle?.vehicleNo ||
+    vehicle?.car_no ||
+    vehicle?.carNo ||
+    `Vehicle ${vehicle?.id || "-"}`,
+  plateNo: vehicle?.plate_no || vehicle?.plateNo || "No Plate",
+  status: vehicle?.status || "Available",
+});
+
 const extractList = (payload, preferredKey) => {
   if (Array.isArray(payload)) return payload;
   if (Array.isArray(payload?.data)) return payload.data;
@@ -203,6 +234,9 @@ const normalizePI = (pi) => {
     tax: Number(pi.tax || 0),
     total: Number(pi.total || 0),
     status: pi.status || "Converted",
+    leadStartDate: pi.lead_start_date || pi.leadStartDate || "",
+    leadEndDate: pi.lead_end_date || pi.leadEndDate || "",
+    leadRouteParks: pi.lead_route_parks || pi.leadRouteParks || "",
   };
 };
 
@@ -224,6 +258,17 @@ export default function ProformaInvoices() {
   const [downloadingPiId, setDownloadingPiId] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
+  const [allocationPI, setAllocationPI] = useState(null);
+  const [allocationVehicles, setAllocationVehicles] = useState([]);
+  const [allocationRanges, setAllocationRanges] = useState([
+    createPIAllocationRange(),
+  ]);
+  const [allocationError, setAllocationError] = useState("");
+  const [isAllocationModalOpen, setIsAllocationModalOpen] = useState(false);
+  const [isLoadingAllocationVehicles, setIsLoadingAllocationVehicles] =
+    useState(false);
+  const [isSavingAllocation, setIsSavingAllocation] = useState(false);
+  const [confirmOnAllocate, setConfirmOnAllocate] = useState(false);
   const navigate = useNavigate();
 
   const loadPIs = async () => {
@@ -340,6 +385,243 @@ export default function ProformaInvoices() {
     }),
     [filtered],
   );
+
+  const selectedAllocationVehiclesCount = allocationRanges.reduce(
+    (sum, range) =>
+      sum + (Array.isArray(range.vehicleIds) ? range.vehicleIds.length : 0),
+    0,
+  );
+
+  const closeAllocationModal = () => {
+    if (isSavingAllocation) return;
+    setIsAllocationModalOpen(false);
+    setAllocationPI(null);
+    setAllocationVehicles([]);
+    setAllocationRanges([createPIAllocationRange()]);
+    setAllocationError("");
+    setConfirmOnAllocate(false);
+  };
+
+  const getVehiclesAvailableForRange = (startDate, endDate) =>
+    allocationVehicles.filter((vehicle) => {
+      const isStatusAvailable = vehicle.status === "Available";
+      if (!isStatusAvailable || !startDate || !endDate) return false;
+      return true;
+    });
+
+  const openAllocationModal = async (pi, options = {}) => {
+    const defaultStart = normalizeIsoDateOnly(pi?.leadStartDate || "");
+    const defaultEnd = normalizeIsoDateOnly(pi?.leadEndDate || "");
+
+    setConfirmOnAllocate(Boolean(options.confirmOnAllocate));
+    setAllocationPI(pi);
+    setAllocationRanges([createPIAllocationRange(defaultStart, defaultEnd)]);
+    setAllocationError("");
+    setAllocationVehicles([]);
+    setIsAllocationModalOpen(true);
+    setIsLoadingAllocationVehicles(true);
+
+    try {
+      const vehiclesResponse = await apiFetch("/vehicles");
+      const vehiclesPayload = await vehiclesResponse.json().catch(() => ({}));
+
+      if (!vehiclesResponse.ok) {
+        throw new Error(
+          vehiclesPayload?.message || "Unable to load vehicles for allocation.",
+        );
+      }
+
+      setAllocationVehicles(
+        extractList(vehiclesPayload, "vehicles").map(
+          normalizeAvailabilityVehicle,
+        ),
+      );
+    } catch (error) {
+      setAllocationError(
+        error.message || "Failed to load vehicle availability for allocation.",
+      );
+    } finally {
+      setIsLoadingAllocationVehicles(false);
+    }
+  };
+
+  const addAllocationRange = () => {
+    setAllocationRanges((current) => {
+      const fallbackStart = normalizeIsoDateOnly(
+        allocationPI?.leadStartDate || "",
+      );
+      const fallbackEnd = normalizeIsoDateOnly(allocationPI?.leadEndDate || "");
+      return [...current, createPIAllocationRange(fallbackStart, fallbackEnd)];
+    });
+  };
+
+  const removeAllocationRange = (rangeIndex) => {
+    setAllocationRanges((current) =>
+      current.length <= 1
+        ? [createPIAllocationRange()]
+        : current.filter((_, index) => index !== rangeIndex),
+    );
+  };
+
+  const setAllocationRangeField = (rangeIndex, field, value) => {
+    setAllocationError("");
+    setAllocationRanges((current) =>
+      current.map((range, index) =>
+        index === rangeIndex ? { ...range, [field]: value } : range,
+      ),
+    );
+  };
+
+  const toggleAllocationVehicleSelection = (rangeIndex, vehicleId) => {
+    const id = Number(vehicleId);
+    setAllocationError("");
+    setAllocationRanges((current) =>
+      current.map((range, index) => {
+        if (index !== rangeIndex) return range;
+        const selected = range.vehicleIds.includes(id);
+        return {
+          ...range,
+          vehicleIds: selected
+            ? range.vehicleIds.filter((item) => item !== id)
+            : [...range.vehicleIds, id],
+        };
+      }),
+    );
+  };
+
+  const handleConfirmPI = async (pi) => {
+    try {
+      const decision = await Swal.fire({
+        title: "Confirm PI",
+        text: "Choose how you want to continue.",
+        icon: "question",
+        showCancelButton: true,
+        showDenyButton: true,
+        confirmButtonText: "Confirm & Allocate Later",
+        denyButtonText: "Allocate Vehicle",
+        cancelButtonText: "Exit",
+        background: "#ffffff",
+        color: "#111827",
+      });
+
+      if (decision.isConfirmed) {
+        const response = await apiFetch(`/proforma-invoices/${pi.id}/confirm`, {
+          method: "POST",
+        });
+        const payload = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          throw new Error(payload?.message || "Unable to confirm PI.");
+        }
+
+        const normalized = normalizePI(extractSingle(payload));
+        setAllPIs((current) =>
+          current.map((item) =>
+            item.id === pi.id ? { ...item, ...normalized } : item,
+          ),
+        );
+
+        await Swal.fire({
+          title: "Confirmed",
+          text: "PI confirmed. You can allocate vehicles later.",
+          icon: "success",
+          background: "#ffffff",
+          color: "#111827",
+        });
+        return;
+      }
+
+      if (decision.isDenied) {
+        await openAllocationModal(pi, { confirmOnAllocate: true });
+      }
+    } catch (error) {
+      await Swal.fire({
+        title: "Confirm Failed",
+        text: error.message || "Failed to confirm PI.",
+        icon: "error",
+        background: "#ffffff",
+        color: "#111827",
+      });
+    }
+  };
+
+  const submitPIAllocation = async () => {
+    if (!allocationPI) return;
+
+    if (allocationRanges.length === 0) {
+      setAllocationError("Add at least one allocation range.");
+      return;
+    }
+
+    const invalidRange = allocationRanges.find(
+      (range) =>
+        !range.startDate ||
+        !range.endDate ||
+        range.startDate > range.endDate ||
+        !Array.isArray(range.vehicleIds) ||
+        range.vehicleIds.length === 0,
+    );
+
+    if (invalidRange) {
+      setAllocationError(
+        "Each range must have valid start/end dates and at least one selected vehicle.",
+      );
+      return;
+    }
+
+    setIsSavingAllocation(true);
+    setAllocationError("");
+
+    try {
+      const response = await apiFetch(
+        `/proforma-invoices/${allocationPI.id}/allocate-vehicles`,
+        {
+          method: "POST",
+          body: {
+            allocationRanges: allocationRanges.map((range) => ({
+              startDate: range.startDate,
+              endDate: range.endDate,
+              vehicleIds: range.vehicleIds,
+            })),
+          },
+        },
+      );
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const fieldError = payload?.errors
+          ? Object.values(payload.errors).flat().find(Boolean)
+          : null;
+        throw new Error(
+          fieldError ||
+            payload?.message ||
+            "Unable to allocate vehicles for PI.",
+        );
+      }
+
+      const normalized = normalizePI(extractSingle(payload));
+      setAllPIs((current) =>
+        current.map((item) =>
+          item.id === allocationPI.id ? { ...item, ...normalized } : item,
+        ),
+      );
+
+      const summary = payload?.allocationSummary || {};
+      await Swal.fire({
+        title: "Allocation Saved",
+        text: `${summary.allocationsCreated || 0} safari allocation(s) and ${summary.jobCardsCreated || 0} job card(s) created.${confirmOnAllocate ? " PI is now confirmed and allocation status updated." : ""}`,
+        icon: "success",
+        background: "#ffffff",
+        color: "#111827",
+      });
+
+      closeAllocationModal();
+    } catch (error) {
+      setAllocationError(error.message || "Failed to allocate vehicles.");
+    } finally {
+      setIsSavingAllocation(false);
+    }
+  };
 
   const handleDownloadPdf = async (pi) => {
     setDownloadingPiId(pi.id);
@@ -563,6 +845,32 @@ export default function ProformaInvoices() {
                             <Download className="w-4 h-4" />
                           )}
                         </button>
+                        {pi.status === "Converted" && (
+                          <button
+                            onClick={() => handleConfirmPI(pi)}
+                            className="px-2 py-1 text-xs font-medium text-emerald-700 border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors"
+                            title="Confirm PI"
+                          >
+                            Confirm
+                          </button>
+                        )}
+                        {[
+                          "Confirmed",
+                          "Partially Allocated",
+                          "Allocated",
+                        ].includes(pi.status) && (
+                          <button
+                            onClick={() =>
+                              openAllocationModal(pi, {
+                                confirmOnAllocate: false,
+                              })
+                            }
+                            className="px-2 py-1 text-xs font-medium text-amber-700 border border-amber-200 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors"
+                            title="Allocate Vehicles"
+                          >
+                            Allocate
+                          </button>
+                        )}
                       </div>
                     </td>
                     <td className="py-4 px-4 min-w-[180px]">
@@ -741,6 +1049,247 @@ export default function ProformaInvoices() {
               >
                 Close
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isAllocationModalOpen && allocationPI && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-5xl shadow-xl max-h-[92vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-6 border-b border-slate-200">
+              <div>
+                <h2 className="text-xl font-bold text-slate-900">
+                  Allocate Vehicles for {allocationPI.piNo}
+                </h2>
+                <p className="text-sm text-slate-500 mt-1">
+                  {confirmOnAllocate
+                    ? "Complete allocation to confirm this PI and allocate vehicles in one step."
+                    : "Save allocations now, or close and return later from this PI."}
+                </p>
+              </div>
+              <button
+                onClick={closeAllocationModal}
+                className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg"
+                disabled={isSavingAllocation}
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    PI Number
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900">
+                    {allocationPI.piNo}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Lead Dates
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900">
+                    {allocationPI.leadStartDate && allocationPI.leadEndDate
+                      ? `${formatDate(allocationPI.leadStartDate)} - ${formatDate(allocationPI.leadEndDate)}`
+                      : "Not available"}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Selected Vehicles
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900">
+                    {selectedAllocationVehiclesCount}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Status
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-emerald-700">
+                    {allocationPI.status}
+                  </p>
+                </div>
+              </div>
+
+              {allocationPI.leadRouteParks && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                  Route: {allocationPI.leadRouteParks}
+                </div>
+              )}
+
+              {allocationError && (
+                <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                  {allocationError}
+                </div>
+              )}
+
+              <div className="rounded-2xl border border-slate-200 overflow-hidden">
+                <div className="px-5 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Car className="w-4 h-4 text-slate-600" />
+                    <h3 className="text-sm font-semibold text-slate-900">
+                      Allocation Ranges
+                    </h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={addAllocationRange}
+                    disabled={isSavingAllocation}
+                    className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+                  >
+                    Add Range
+                  </button>
+                </div>
+
+                <div className="p-4 space-y-4">
+                  {allocationRanges.map((range, rangeIndex) => {
+                    const rangeVehicles = getVehiclesAvailableForRange(
+                      range.startDate,
+                      range.endDate,
+                    );
+
+                    return (
+                      <div
+                        key={`pi-range-${rangeIndex}`}
+                        className="rounded-xl border border-slate-200 bg-white"
+                      >
+                        <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
+                          <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Range {rangeIndex + 1}
+                          </span>
+                          {allocationRanges.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => removeAllocationRange(rangeIndex)}
+                              disabled={isSavingAllocation}
+                              className="rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-100 disabled:opacity-50"
+                            >
+                              Remove
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="px-4 py-3 grid grid-cols-1 md:grid-cols-2 gap-3 border-b border-slate-200">
+                          <div>
+                            <label className="block text-xs text-slate-500 mb-1">
+                              From Date
+                            </label>
+                            <input
+                              type="date"
+                              value={range.startDate}
+                              onChange={(event) =>
+                                setAllocationRangeField(
+                                  rangeIndex,
+                                  "startDate",
+                                  event.target.value,
+                                )
+                              }
+                              min={allocationPI?.leadStartDate || undefined}
+                              max={allocationPI?.leadEndDate || undefined}
+                              disabled={isSavingAllocation}
+                              className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-xs text-slate-800 focus:border-amber-500 focus:outline-none"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-slate-500 mb-1">
+                              To Date
+                            </label>
+                            <input
+                              type="date"
+                              value={range.endDate}
+                              onChange={(event) =>
+                                setAllocationRangeField(
+                                  rangeIndex,
+                                  "endDate",
+                                  event.target.value,
+                                )
+                              }
+                              min={allocationPI?.leadStartDate || undefined}
+                              max={allocationPI?.leadEndDate || undefined}
+                              disabled={isSavingAllocation}
+                              className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-xs text-slate-800 focus:border-amber-500 focus:outline-none"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="max-h-56 overflow-y-auto divide-y divide-slate-100">
+                          {!range.startDate || !range.endDate ? (
+                            <div className="px-4 py-3 text-xs text-slate-500">
+                              Select From and To dates first.
+                            </div>
+                          ) : isLoadingAllocationVehicles ? (
+                            <div className="px-4 py-3 text-xs text-slate-500">
+                              Loading vehicles...
+                            </div>
+                          ) : rangeVehicles.length === 0 ? (
+                            <div className="px-4 py-3 text-xs text-slate-500">
+                              No vehicles are available on this range.
+                            </div>
+                          ) : (
+                            rangeVehicles.map((vehicle) => {
+                              const checked = range.vehicleIds.includes(
+                                vehicle.id,
+                              );
+                              return (
+                                <label
+                                  key={`pi-range-${rangeIndex}-${vehicle.id}`}
+                                  className="flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50"
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    disabled={isSavingAllocation}
+                                    onChange={() =>
+                                      toggleAllocationVehicleSelection(
+                                        rangeIndex,
+                                        vehicle.id,
+                                      )
+                                    }
+                                    className="h-4 w-4 rounded border-slate-300 text-amber-500 focus:ring-amber-500"
+                                  />
+                                  <span>
+                                    {vehicle.vehicleNo} ({vehicle.plateNo})
+                                  </span>
+                                </label>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            <div className="px-6 py-4 border-t border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white">
+              <p className="text-sm text-slate-500">
+                Save allocations now, or close and return later from this PI.
+              </p>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={closeAllocationModal}
+                  disabled={isSavingAllocation}
+                  className="px-4 py-2.5 rounded-xl text-sm font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={submitPIAllocation}
+                  disabled={
+                    isSavingAllocation ||
+                    isLoadingAllocationVehicles ||
+                    selectedAllocationVehiclesCount === 0
+                  }
+                  className="px-5 py-2.5 rounded-xl text-sm font-medium bg-gradient-to-r from-amber-400 to-amber-600 text-white hover:opacity-90 transition-opacity disabled:opacity-50"
+                >
+                  {isSavingAllocation ? "Saving..." : "Save Allocation"}
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -1309,31 +1309,8 @@ export default function Quotations() {
     );
   };
 
-  const submitQuotationConversion = async (allocationMode) => {
+  const submitQuotationConversion = async () => {
     if (!convertTarget) return;
-
-    if (allocationMode === "now") {
-      if (convertAllocationRanges.length === 0) {
-        setConvertError("Add at least one allocation range.");
-        return;
-      }
-
-      const invalidRange = convertAllocationRanges.find(
-        (range) =>
-          !range.startDate ||
-          !range.endDate ||
-          range.startDate > range.endDate ||
-          !Array.isArray(range.vehicleIds) ||
-          range.vehicleIds.length === 0,
-      );
-
-      if (invalidRange) {
-        setConvertError(
-          "Each range must have valid start/end dates and at least one selected vehicle.",
-        );
-        return;
-      }
-    }
 
     setConvertingId(convertTarget.id);
     setErrorMessage("");
@@ -1345,15 +1322,8 @@ export default function Quotations() {
         {
           method: "POST",
           body: {
-            allocationMode,
-            allocationRanges:
-              allocationMode === "now"
-                ? convertAllocationRanges.map((range) => ({
-                    startDate: range.startDate,
-                    endDate: range.endDate,
-                    vehicleIds: range.vehicleIds,
-                  }))
-                : [],
+            allocationMode: "later",
+            allocationRanges: [],
           },
         },
       );
@@ -1376,11 +1346,8 @@ export default function Quotations() {
 
       closeConvertModal(true);
 
-      const allocationSummary = data?.allocationSummary || {};
       const successText =
-        allocationMode === "later"
-          ? "Quotation converted to PI. Vehicle allocation can be completed later."
-          : `Quotation converted to PI. ${allocationSummary.allocationsCreated || 0} safari allocation(s) and ${allocationSummary.jobCardsCreated || 0} job card(s) are ready.`;
+        "Quotation converted to PI. Confirm PI in Proforma Invoices, then allocate vehicles.";
 
       await Swal.fire({
         title: "Converted",
@@ -2240,9 +2207,8 @@ export default function Quotations() {
 
             <div className="px-6 py-4 border-t border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white">
               <p className="text-sm text-slate-500">
-                Allocate now to auto-create Safari Allocation and Job Card
-                entries. Choose Allocate Later to convert the PI without
-                assigning vehicles yet.
+                Vehicle allocation has moved to Proforma Invoices. Convert this
+                quotation first, then confirm PI and allocate vehicles there.
               </p>
               <div className="flex items-center gap-3">
                 <button
@@ -2253,26 +2219,13 @@ export default function Quotations() {
                   Cancel
                 </button>
                 <button
-                  onClick={() => submitQuotationConversion("later")}
+                  onClick={submitQuotationConversion}
                   disabled={convertingId === convertTarget?.id}
                   className="px-4 py-2.5 rounded-xl text-sm font-medium text-white bg-gradient-to-r from-amber-400 to-amber-600 hover:opacity-90 transition-opacity disabled:opacity-50"
                 >
                   {convertingId === convertTarget?.id
-                    ? "Working..."
-                    : "Allocate Later"}
-                </button>
-                <button
-                  onClick={() => submitQuotationConversion("now")}
-                  disabled={
-                    convertingId === convertTarget?.id ||
-                    isLoadingAvailability ||
-                    selectedVehiclesCount === 0
-                  }
-                  className="px-5 py-2.5 rounded-xl text-sm font-medium bg-gradient-to-r from-amber-400 to-amber-600 text-white hover:opacity-90 transition-opacity disabled:opacity-50"
-                >
-                  {convertingId === convertTarget?.id
                     ? "Converting..."
-                    : "Convert & Allocate"}
+                    : "Convert to PI"}
                 </button>
               </div>
             </div>
