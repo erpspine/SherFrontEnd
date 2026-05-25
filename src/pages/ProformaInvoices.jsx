@@ -337,11 +337,8 @@ export default function ProformaInvoices() {
   );
 
   const statusOptions = useMemo(
-    () => [
-      "All",
-      ...Array.from(new Set(allPIs.map((pi) => pi.status).filter(Boolean))),
-    ],
-    [allPIs],
+    () => ["All", "Sent", "Allocate", "Allocated"],
+    [],
   );
 
   const filtered = useMemo(
@@ -358,7 +355,10 @@ export default function ProformaInvoices() {
           quoteNumber.toLowerCase().includes(query) ||
           groupName.toLowerCase().includes(query);
         const matchStatus =
-          statusFilter === "All" || pi.status === statusFilter;
+          statusFilter === "All" ||
+          (statusFilter === "Allocate"
+            ? ["Confirmed", "Partially Allocated"].includes(pi.status)
+            : pi.status === statusFilter);
 
         const piDate = normalizeIsoDateOnly(pi.date);
         const matchDateStart =
@@ -804,7 +804,6 @@ export default function ProformaInvoices() {
                   "PI #",
                   "Quotation #",
                   "Date",
-                  "Due Date",
                   "Client",
                   "Group Name",
                   "Service Summary",
@@ -869,11 +868,9 @@ export default function ProformaInvoices() {
                             Confirm
                           </button>
                         )}
-                        {[
-                          "Confirmed",
-                          "Partially Allocated",
-                          "Allocated",
-                        ].includes(pi.status) && (
+                        {["Confirmed", "Partially Allocated"].includes(
+                          pi.status,
+                        ) && (
                           <button
                             onClick={() =>
                               openAllocationModal(pi, {
@@ -903,9 +900,6 @@ export default function ProformaInvoices() {
                     </td>
                     <td className="py-4 px-4 text-sm text-slate-700 whitespace-nowrap">
                       {formatDate(pi.date)}
-                    </td>
-                    <td className="py-4 px-4 text-sm text-slate-700 whitespace-nowrap">
-                      {formatDate(pi.dueDate)}
                     </td>
                     <td className="py-4 px-4">
                       <div className="flex items-center gap-1.5">

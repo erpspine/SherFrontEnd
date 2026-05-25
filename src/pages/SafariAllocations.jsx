@@ -403,8 +403,14 @@ export default function SafariAllocations() {
   }, [quotations]);
 
   const safariOptions = useMemo(() => {
+    // Only PIs that are confirmed (or partially allocated) can receive new allocations.
+    // Sent = not yet confirmed; Allocated = already fully allocated.
+    const allocatablePIs = proformas.filter((pi) =>
+      ["Confirmed", "Partially Allocated"].includes(pi.status),
+    );
+
     const latestProformaByLead = new Map();
-    proformas.forEach((pi) => {
+    allocatablePIs.forEach((pi) => {
       if (!pi.leadId) return;
       const existing = latestProformaByLead.get(String(pi.leadId));
       if (!existing) {

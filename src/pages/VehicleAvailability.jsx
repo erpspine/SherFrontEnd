@@ -25,6 +25,31 @@ const formatDateStr = (value) => {
   return `${year}-${month}-${day}`;
 };
 
+const MONTH_ABBREV = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+const formatDateDisplay = (value) => {
+  if (!value) return "";
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  const day = String(date.getDate()).padStart(2, "0");
+  const month = MONTH_ABBREV[date.getMonth()];
+  const year = date.getFullYear();
+  return `${day}/${month}/${year}`;
+};
+
 const formatMonthInput = (value) => {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return "";
@@ -1156,7 +1181,7 @@ export default function VehicleAvailability() {
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <h3 className="text-base font-semibold text-slate-900">
-                    Booking Details ({selectedDateKey})
+                    Booking Details ({formatDateDisplay(selectedDateKey)})
                   </h3>
                   <p className="text-xs text-slate-600">
                     {selectedBookings.length} booking(s) for{" "}
@@ -1210,7 +1235,8 @@ export default function VehicleAvailability() {
                           {alloc.routeParks}
                         </p>
                         <p>
-                          {alloc.startDate || "-"} to {alloc.endDate || "-"}
+                          {formatDateDisplay(alloc.startDate) || "-"} to{" "}
+                          {formatDateDisplay(alloc.endDate) || "-"}
                         </p>
                       </div>
                     </div>
@@ -1263,7 +1289,9 @@ export default function VehicleAvailability() {
                               key={`${alloc.id}-itinerary-${itemIndex}`}
                               className="text-slate-800"
                             >
-                              {item.date ? `${item.date} - ` : ""}
+                              {item.date
+                                ? `${formatDateDisplay(item.date) || item.date} - `
+                                : ""}
                               {item.dayDescription}
                             </p>
                           ))}
