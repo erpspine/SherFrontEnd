@@ -217,6 +217,8 @@ export default function ProformaInvoices() {
   const [quotationMap, setQuotationMap] = useState({});
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
+  const [dateFilterStart, setDateFilterStart] = useState("");
+  const [dateFilterEnd, setDateFilterEnd] = useState("");
   const [viewPI, setViewPI] = useState(null);
   const [isViewLoading, setIsViewLoading] = useState(false);
   const [downloadingPiId, setDownloadingPiId] = useState(null);
@@ -284,7 +286,6 @@ export default function ProformaInvoices() {
   const stats = useMemo(
     () => ({
       total: allPIs.length,
-      converted: allPIs.filter((pi) => pi.status === "Converted").length,
       totalAmount: allPIs.reduce((sum, pi) => sum + Number(pi.total || 0), 0),
     }),
     [allPIs],
@@ -313,9 +314,31 @@ export default function ProformaInvoices() {
           groupName.toLowerCase().includes(query);
         const matchStatus =
           statusFilter === "All" || pi.status === statusFilter;
-        return matchSearch && matchStatus;
+
+        const piDate = normalizeIsoDateOnly(pi.date);
+        const matchDateStart =
+          !dateFilterStart || (piDate && piDate >= dateFilterStart);
+        const matchDateEnd =
+          !dateFilterEnd || (piDate && piDate <= dateFilterEnd);
+
+        return matchSearch && matchStatus && matchDateStart && matchDateEnd;
       }),
-    [allPIs, quotationMap, searchTerm, statusFilter],
+    [
+      allPIs,
+      quotationMap,
+      searchTerm,
+      statusFilter,
+      dateFilterStart,
+      dateFilterEnd,
+    ],
+  );
+
+  const dateFilteredStats = useMemo(
+    () => ({
+      count: filtered.length,
+      totalAmount: filtered.reduce((sum, pi) => sum + Number(pi.total || 0), 0),
+    }),
+    [filtered],
   );
 
   const handleDownloadPdf = async (pi) => {
@@ -401,7 +424,7 @@ export default function ProformaInvoices() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <p className="text-slate-500 text-sm">Total PI Value</p>
           <p className="text-xl font-bold text-slate-900 mt-1">
@@ -410,18 +433,37 @@ export default function ProformaInvoices() {
           <p className="text-xs text-slate-500 mt-1">{stats.total} invoices</p>
         </div>
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-slate-500 text-sm">Converted</p>
-          <p className="text-2xl font-bold text-purple-600 mt-1">
-            {stats.converted}
-          </p>
-          <p className="text-xs text-slate-500 mt-1">from quotations</p>
-        </div>
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-slate-500 text-sm">Average PI</p>
-          <p className="text-xl font-bold text-amber-600 mt-1">
-            {formatCurrency(stats.total ? stats.totalAmount / stats.total : 0)}
-          </p>
-          <p className="text-xs text-slate-500 mt-1">per invoice</p>
+          <p className="text-slate-500 text-sm">Date Filter</p>
+          <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <input
+              type="date"
+              value={dateFilterStart}
+              onChange={(event) => setDateFilterStart(event.target.value)}
+              className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-amber-400"
+            />
+            <input
+              type="date"
+              value={dateFilterEnd}
+              onChange={(event) => setDateFilterEnd(event.target.value)}
+              className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-amber-400"
+            />
+          </div>
+          <div className="mt-2 flex items-center justify-between">
+            <p className="text-xs text-slate-500">
+              {dateFilteredStats.count} invoice(s) |{" "}
+              {formatCurrency(dateFilteredStats.totalAmount)}
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setDateFilterStart("");
+                setDateFilterEnd("");
+              }}
+              className="text-xs font-medium text-amber-700 hover:text-amber-800"
+            >
+              Clear
+            </button>
+          </div>
         </div>
       </div>
 

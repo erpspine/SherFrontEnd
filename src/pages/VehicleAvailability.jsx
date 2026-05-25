@@ -9,6 +9,8 @@ import {
   Download,
   Loader,
   MapPin,
+  Maximize2,
+  Minimize2,
   UserCheck,
 } from "lucide-react";
 import { apiFetch } from "../utils/api";
@@ -108,6 +110,27 @@ const normalizeAllocation = (allocation) => ({
     allocation?.route_parks ||
     allocation?.routeParks ||
     "-",
+  clientCompany:
+    allocation?.lead?.client_company ||
+    allocation?.lead?.clientCompany ||
+    allocation?.client_company ||
+    allocation?.clientCompany ||
+    "-",
+  groupName:
+    allocation?.lead?.group_name ||
+    allocation?.lead?.groupName ||
+    allocation?.group_name ||
+    allocation?.groupName ||
+    allocation?.proformaInvoice?.groupName ||
+    "-",
+  itinerary:
+    allocation?.lead?.itinerary ||
+    allocation?.lead?.daySections ||
+    allocation?.lead?.route_itinerary ||
+    allocation?.itinerary ||
+    allocation?.daySections ||
+    allocation?.routeItinerary ||
+    [],
   status: allocation?.status || "Assigned",
   notes: allocation?.notes || "",
   vehicleNo:
@@ -140,6 +163,16 @@ const normalizeAllocation = (allocation) => ({
     allocation?.driver_name ||
     "Unknown",
 });
+
+const bookingIdentityKey = (booking) =>
+  [
+    booking?.bookingRef || "",
+    booking?.vehicleId || "",
+    booking?.startDate || "",
+    booking?.endDate || "",
+    booking?.driverName || "",
+    booking?.routeParks || "",
+  ].join("|");
 
 const isInactiveAllocationStatus = (status) => {
   const normalized = String(status || "").toLowerCase();
@@ -225,6 +258,7 @@ export default function VehicleAvailability() {
     useState(true);
   const [isExporting, setIsExporting] = useState(false);
   const [exportType, setExportType] = useState("");
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -332,7 +366,7 @@ export default function VehicleAvailability() {
     const targetVehicleId = Number(vehicleId || 0);
     const activeOnly = options.activeOnly === true;
 
-    return allocations.filter((allocation) => {
+    const filtered = allocations.filter((allocation) => {
       if (Number(allocation.vehicleId || 0) !== targetVehicleId) return false;
       if (activeOnly && isInactiveAllocationStatus(allocation.status)) {
         return false;
@@ -343,6 +377,16 @@ export default function VehicleAvailability() {
 
       return dateKey >= start && dateKey <= end;
     });
+
+    const unique = new Map();
+    filtered.forEach((booking) => {
+      const key = bookingIdentityKey(booking);
+      if (!unique.has(key)) {
+        unique.set(key, booking);
+      }
+    });
+
+    return [...unique.values()];
   };
 
   const rangesOverlap = (startA, endA, startB, endB) => {
@@ -416,6 +460,14 @@ export default function VehicleAvailability() {
     const id = Number(selectedVehicleId || 0);
     return vehicles.find((vehicle) => Number(vehicle.id) === id) || null;
   }, [vehicles, selectedVehicleId]);
+
+  const calendarContainerClassName = isFullscreen
+    ? "fixed inset-0 z-40 flex flex-col rounded-none border-0 bg-white p-4 shadow-none"
+    : "rounded-2xl border border-slate-200 bg-white p-5 shadow-sm";
+
+  const calendarViewportClassName = isFullscreen
+    ? "min-h-0 flex-1 overflow-auto"
+    : "max-h-[70vh] overflow-auto";
 
   const closeBookingModal = () => {
     setIsBookingModalOpen(false);
@@ -723,14 +775,27 @@ export default function VehicleAvailability() {
         )}
       </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className={calendarContainerClassName}>
         <div className="mb-6 flex items-center justify-between">
           <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
             <Calendar className="h-5 w-5 text-sher-teal" />
             {monthYear}
           </h2>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
             <button
+              type="button"
+              onClick={() => setIsFullscreen((current) => !current)}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-600 transition hover:bg-slate-50"
+              title={isFullscreen ? "Exit full screen" : "Full screen"}
+            >
+              {isFullscreen ? (
+                <Minimize2 className="h-4 w-4" />
+              ) : (
+                <Maximize2 className="h-4 w-4" />
+              )}
+            </button>
+            <button
+              type="button"
               onClick={() => {
                 applyCalendarMonth(
                   new Date(
@@ -784,7 +849,7 @@ export default function VehicleAvailability() {
           </div>
         ) : (
           <>
-            <div className="max-h-[70vh] overflow-auto">
+            <div className={calendarViewportClassName}>
               <table className="min-w-full text-sm">
                 <thead>
                   <tr>
@@ -902,15 +967,23 @@ export default function VehicleAvailability() {
                                 </div>
                               ) : isBooked ? (
                                 <div className="flex items-center justify-center">
-                                  <div className="w-full space-y-1 rounded-md border border-slate-300 bg-white px-1.5 py-1">
+                                  <div className="w-full space-y-1 rounded-md border border-slate-300 bg-white px-1.5 py-1 text-left">
                                     {bookings
                                       .slice(0, 2)
                                       .map((booking, bookingIndex) => (
                                         <div
                                           key={`${dateKey}-${vehicle.id}-${booking.id}-${bookingIndex}`}
-                                          className={`truncate rounded border px-1 py-0.5 text-[10px] font-semibold ${bookingColorClass(booking)}`}
+                                          className={`rounded border px-1 py-0.5 text-[10px] font-semibold ${bookingColorClass(booking)}`}
                                         >
-                                          {booking.bookingRef || "Booked"}
+                                          <div className="truncate">
+                                            {booking.bookingRef || "Booked"}
+                                          </div>
+                                          <div className="truncate text-[9px] font-medium opacity-80">
+                                            {booking.clientCompany || "Client"}
+                                          </div>
+                                          <div className="truncate text-[9px] font-medium opacity-80">
+                                            {booking.groupName || "Group"}
+                                          </div>
                                         </div>
                                       ))}
                                     {bookings.length > 2 && (
@@ -1139,6 +1212,67 @@ export default function VehicleAvailability() {
                         <p>
                           {alloc.startDate || "-"} to {alloc.endDate || "-"}
                         </p>
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-violet-100 bg-violet-50/60 p-3 text-slate-600">
+                      <div className="mb-2 flex items-center gap-2 text-violet-700">
+                        <MapPin className="h-3.5 w-3.5" />
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.08em]">
+                          Client and Group
+                        </p>
+                      </div>
+                      <div>
+                        <p className="font-medium text-slate-800">
+                          {alloc.clientCompany}
+                        </p>
+                        <p>Group: {alloc.groupName}</p>
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-amber-100 bg-amber-50/60 p-3 text-slate-600 md:col-span-3">
+                      <div className="mb-2 flex items-center gap-2 text-amber-700">
+                        <Calendar className="h-3.5 w-3.5" />
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.08em]">
+                          Itinerary
+                        </p>
+                      </div>
+                      <div className="space-y-1">
+                        {(Array.isArray(alloc.itinerary) ? alloc.itinerary : [])
+                          .map((item) => {
+                            if (typeof item === "string") {
+                              return { date: "", dayDescription: item };
+                            }
+
+                            return {
+                              date:
+                                item?.date ||
+                                item?.dayDate ||
+                                item?.dayTitle ||
+                                "",
+                              dayDescription:
+                                item?.dayDescription ||
+                                item?.dateDescription ||
+                                item?.description ||
+                                "",
+                            };
+                          })
+                          .filter((item) => item.date || item.dayDescription)
+                          .map((item, itemIndex) => (
+                            <p
+                              key={`${alloc.id}-itinerary-${itemIndex}`}
+                              className="text-slate-800"
+                            >
+                              {item.date ? `${item.date} - ` : ""}
+                              {item.dayDescription}
+                            </p>
+                          ))}
+                        {(!Array.isArray(alloc.itinerary) ||
+                          alloc.itinerary.length === 0) && (
+                          <p className="text-slate-500">
+                            No itinerary available.
+                          </p>
+                        )}
                       </div>
                     </div>
 

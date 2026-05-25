@@ -441,6 +441,22 @@ export default function SafariAllocations() {
       });
   }, [leads, proformas, groupNameByLead]);
 
+  const allocatedLeadIds = useMemo(() => {
+    return new Set(
+      allocations
+        .map((allocation) => String(allocation.leadId || ""))
+        .filter(Boolean),
+    );
+  }, [allocations]);
+
+  const createSafariOptions = useMemo(
+    () =>
+      safariOptions.filter(
+        (safari) => !allocatedLeadIds.has(String(safari.leadId)),
+      ),
+    [safariOptions, allocatedLeadIds],
+  );
+
   useEffect(() => {
     if (safariOptions.length === 0) {
       return;
@@ -589,27 +605,6 @@ export default function SafariAllocations() {
   const rangesOverlap = (aStart, aEnd, bStart, bEnd) => {
     if (!aStart || !aEnd || !bStart || !bEnd) return false;
     return aStart <= bEnd && aEnd >= bStart;
-  };
-
-  const getUnavailableIdsForRange = (range, key) => {
-    if (!range) return new Set();
-
-    return new Set(
-      allocations
-        .filter((item) => item.id !== editingId)
-        .filter((item) => {
-          const itemStart = item.startDate || item.lead?.startDate;
-          const itemEnd = item.endDate || item.lead?.endDate;
-
-          return rangesOverlap(
-            itemStart,
-            itemEnd,
-            range.startDate,
-            range.endDate,
-          );
-        })
-        .map((item) => String(item[key])),
-    );
   };
 
   const stats = useMemo(() => {
@@ -785,11 +780,6 @@ export default function SafariAllocations() {
 
   const getVehiclesForRow = (rangeIdx, pairIdx) => {
     const currentRange = form.ranges[rangeIdx] || createEmptyRange();
-    const range = {
-      startDate: currentRange.startDate,
-      endDate: currentRange.endDate,
-    };
-    const unavailableVehicleIds = getUnavailableIdsForRange(range, "vehicleId");
     const otherSelected = new Set(
       currentRange.pairs
         .filter((_, i) => i !== pairIdx)
@@ -806,7 +796,6 @@ export default function SafariAllocations() {
           (selectedDriverId
             ? String(v.assignedDriverId || "") === selectedDriverId
             : Boolean(v.assignedDriverId)) &&
-          !unavailableVehicleIds.has(String(v.id)) &&
           !otherSelected.has(String(v.id))) ||
         String(v.id) === current,
     );
@@ -814,11 +803,6 @@ export default function SafariAllocations() {
 
   const getDriversForRow = (rangeIdx, pairIdx) => {
     const currentRange = form.ranges[rangeIdx] || createEmptyRange();
-    const range = {
-      startDate: currentRange.startDate,
-      endDate: currentRange.endDate,
-    };
-    const unavailableDriverIds = getUnavailableIdsForRange(range, "driverId");
     const otherSelected = new Set(
       currentRange.pairs
         .filter((_, i) => i !== pairIdx)
@@ -836,10 +820,9 @@ export default function SafariAllocations() {
     const current = currentRange.pairs[pairIdx]?.driverId || "";
     return driverOptions.filter(
       (d) =>
-        (!unavailableDriverIds.has(String(d.id)) &&
-          (vehicleAssignedDriverId
-            ? String(d.id) === vehicleAssignedDriverId
-            : true) &&
+        ((vehicleAssignedDriverId
+          ? String(d.id) === vehicleAssignedDriverId
+          : true) &&
           !otherSelected.has(String(d.id))) ||
         String(d.id) === current,
     );
@@ -1217,7 +1200,7 @@ export default function SafariAllocations() {
             {stats.safarisInRange}
           </p>
           <p className="mt-1 text-xs text-slate-500">
-            With PI and overlapping selected dates
+            With PI and selected dates
           </p>
         </div>
         <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4 shadow-sm">
@@ -1239,7 +1222,7 @@ export default function SafariAllocations() {
             {stats.allocatedSlots}
           </p>
           <p className="mt-1 text-xs text-emerald-700/80">
-            Allocation rows overlapping range
+            Allocation rows in selected range
           </p>
         </div>
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
@@ -1421,10 +1404,10 @@ export default function SafariAllocations() {
           </table>
         </div>
 
-        {!isLoading && safariOptions.length === 0 && (
+        {!isLoading && createSafariOptions.length === 0 && (
           <div className="m-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
-            No eligible safaris found. A safari becomes eligible when a lead has
-            a proforma invoice.
+            No eligible safaris found for new allocation. A safari must have a
+            proforma invoice and must not already be allocated.
           </div>
         )}
       </section>
@@ -1475,12 +1458,14 @@ export default function SafariAllocations() {
                     className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
                   >
                     <option value="">Select safari</option>
-                    {safariOptions.map((safari) => (
-                      <option key={safari.leadId} value={safari.leadId}>
-                        Group: {safari.groupName || "-"} | {safari.bookingRef} |{" "}
-                        {safari.clientCompany} | {safari.piNo}
-                      </option>
-                    ))}
+                    {(editingId ? safariOptions : createSafariOptions).map(
+                      (safari) => (
+                        <option key={safari.leadId} value={safari.leadId}>
+                          Group: {safari.groupName || "-"} | {safari.bookingRef}{" "}
+                          | {safari.clientCompany} | {safari.piNo}
+                        </option>
+                      ),
+                    )}
                   </select>
                   {form.leadId && (
                     <p className="text-xs text-amber-300 mt-1.5">

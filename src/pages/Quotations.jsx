@@ -266,46 +266,6 @@ const normalizeAvailabilityVehicle = (vehicle) => ({
     vehicle?.assigned_driver?.name || vehicle?.assignedDriver?.name || "",
 });
 
-const normalizeAvailabilityAllocation = (allocation) => ({
-  id: allocation?.id,
-  vehicleId: Number(
-    allocation?.vehicleId ||
-      allocation?.vehicle_id ||
-      allocation?.vehicle?.id ||
-      0,
-  ),
-  startDate:
-    allocation?.lead?.startDate ||
-    allocation?.lead?.start_date ||
-    allocation?.startDate ||
-    allocation?.start_date ||
-    "",
-  endDate:
-    allocation?.lead?.endDate ||
-    allocation?.lead?.end_date ||
-    allocation?.endDate ||
-    allocation?.end_date ||
-    "",
-  bookingRef:
-    allocation?.lead?.bookingRef ||
-    allocation?.lead?.booking_ref ||
-    allocation?.bookingRef ||
-    allocation?.booking_ref ||
-    "-",
-  status: allocation?.status || "Assigned",
-});
-
-const rangesOverlap = (startA, endA, startB, endB) => {
-  const fromA = toIsoDate(startA);
-  const toA = toIsoDate(endA);
-  const fromB = toIsoDate(startB);
-  const toB = toIsoDate(endB);
-
-  if (!fromA || !toA || !fromB || !toB) return false;
-
-  return fromA <= toB && toA >= fromB;
-};
-
 const extractApiList = (payload, key) => {
   if (Array.isArray(payload)) return payload;
   if (Array.isArray(payload?.data)) return payload.data;
@@ -501,7 +461,6 @@ export default function Quotations() {
   const [convertTarget, setConvertTarget] = useState(null);
   const [convertLead, setConvertLead] = useState(null);
   const [availableVehicles, setAvailableVehicles] = useState([]);
-  const [activeAllocations, setActiveAllocations] = useState([]);
   const [convertAllocationRanges, setConvertAllocationRanges] = useState([
     createConvertAllocationRange(),
   ]);
@@ -657,19 +616,7 @@ export default function Quotations() {
       const isStatusAvailable = vehicle.status === "Available";
       if (!isStatusAvailable || !startDate || !endDate) return false;
 
-      const overlappingAllocations = activeAllocations.filter(
-        (allocation) =>
-          allocation.vehicleId === vehicle.id &&
-          rangesOverlap(
-            allocation.startDate,
-            allocation.endDate,
-            startDate,
-            endDate,
-          ) &&
-          String(allocation.status || "").toLowerCase() !== "cancelled",
-      );
-
-      return overlappingAllocations.length === 0;
+      return true;
     });
 
   const selectedVehiclesCount = convertAllocationRanges.reduce(
@@ -1272,7 +1219,6 @@ export default function Quotations() {
     setConvertTarget(null);
     setConvertLead(null);
     setAvailableVehicles([]);
-    setActiveAllocations([]);
     setConvertAllocationRanges([createConvertAllocationRange()]);
     setConvertError("");
   };
@@ -1284,7 +1230,6 @@ export default function Quotations() {
         null,
     );
     setAvailableVehicles([]);
-    setActiveAllocations([]);
     const leadForRange =
       leads.find((lead) => String(lead.id) === String(quotation.leadId)) ||
       null;
@@ -1299,15 +1244,9 @@ export default function Quotations() {
     setIsLoadingAvailability(true);
 
     try {
-      const [vehiclesResponse, allocationsResponse] = await Promise.all([
-        apiFetch("/vehicles"),
-        apiFetch("/safari-allocations"),
-      ]);
+      const vehiclesResponse = await apiFetch("/vehicles");
 
       const vehiclesPayload = await vehiclesResponse.json().catch(() => ({}));
-      const allocationsPayload = await allocationsResponse
-        .json()
-        .catch(() => ({}));
 
       if (!vehiclesResponse.ok) {
         throw new Error(
@@ -1315,21 +1254,9 @@ export default function Quotations() {
         );
       }
 
-      if (!allocationsResponse.ok) {
-        throw new Error(
-          allocationsPayload?.message ||
-            "Unable to load current safari allocations.",
-        );
-      }
-
       setAvailableVehicles(
         extractApiList(vehiclesPayload, "vehicles").map(
           normalizeAvailabilityVehicle,
-        ),
-      );
-      setActiveAllocations(
-        extractApiList(allocationsPayload, "allocations").map(
-          normalizeAvailabilityAllocation,
         ),
       );
     } catch (error) {
