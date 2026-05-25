@@ -490,21 +490,32 @@ export default function ProformaInvoices() {
   };
 
   const handleConfirmPI = async (pi) => {
-    try {
-      const decision = await Swal.fire({
-        title: "Confirm PI",
-        text: "Choose how you want to continue.",
-        icon: "question",
-        showCancelButton: true,
-        showDenyButton: true,
-        confirmButtonText: "Confirm & Allocate Later",
-        denyButtonText: "Allocate Vehicle",
-        cancelButtonText: "Exit",
-        background: "#ffffff",
-        color: "#111827",
-      });
+    // Just open the decision dialog — nothing is changed on the PI at this point.
+    const decision = await Swal.fire({
+      title: `Confirm PI: ${pi.piNo}`,
+      html: `<p class="text-slate-600 text-sm">Choose how you want to proceed with this proforma invoice.</p>`,
+      icon: "question",
+      showCancelButton: true,
+      showDenyButton: true,
+      confirmButtonText: "Confirm Now & Allocate Later",
+      denyButtonText: "Confirm and Allocate",
+      cancelButtonText: "Exit",
+      confirmButtonColor: "#10b981",
+      denyButtonColor: "#f59e0b",
+      cancelButtonColor: "#6b7280",
+      background: "#ffffff",
+      color: "#111827",
+      reverseButtons: false,
+    });
 
-      if (decision.isConfirmed) {
+    if (decision.isDismissed) {
+      // "Exit" clicked — do nothing.
+      return;
+    }
+
+    if (decision.isConfirmed) {
+      // "Confirm Now & Allocate Later" — confirm PI only, no allocation.
+      try {
         const response = await apiFetch(`/proforma-invoices/${pi.id}/confirm`, {
           method: "POST",
         });
@@ -522,26 +533,30 @@ export default function ProformaInvoices() {
         );
 
         await Swal.fire({
-          title: "Confirmed",
-          text: "PI confirmed. You can allocate vehicles later.",
+          title: "PI Confirmed",
+          text: "PI confirmed. You can allocate vehicles from the Allocate button at any time.",
           icon: "success",
+          timer: 2000,
+          showConfirmButton: false,
           background: "#ffffff",
           color: "#111827",
         });
-        return;
+      } catch (error) {
+        await Swal.fire({
+          title: "Confirm Failed",
+          text: error.message || "Failed to confirm PI.",
+          icon: "error",
+          background: "#ffffff",
+          color: "#111827",
+        });
       }
+      return;
+    }
 
-      if (decision.isDenied) {
-        await openAllocationModal(pi, { confirmOnAllocate: true });
-      }
-    } catch (error) {
-      await Swal.fire({
-        title: "Confirm Failed",
-        text: error.message || "Failed to confirm PI.",
-        icon: "error",
-        background: "#ffffff",
-        color: "#111827",
-      });
+    if (decision.isDenied) {
+      // "Confirm and Allocate" — open allocation screen.
+      // PI will be confirmed atomically when the user submits the allocation.
+      await openAllocationModal(pi, { confirmOnAllocate: true });
     }
   };
 
@@ -845,7 +860,7 @@ export default function ProformaInvoices() {
                             <Download className="w-4 h-4" />
                           )}
                         </button>
-                        {pi.status === "Converted" && (
+                        {["Converted", "Sent"].includes(pi.status) && (
                           <button
                             onClick={() => handleConfirmPI(pi)}
                             className="px-2 py-1 text-xs font-medium text-emerald-700 border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors"
@@ -1268,7 +1283,9 @@ export default function ProformaInvoices() {
 
             <div className="px-6 py-4 border-t border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white">
               <p className="text-sm text-slate-500">
-                Save allocations now, or close and return later from this PI.
+                {confirmOnAllocate
+                  ? 'Complete the allocation below and click "Confirm & Allocate" to confirm this PI and create the allocation. Closing without saving will not change anything.'
+                  : "Save allocations now, or close and return later."}
               </p>
               <div className="flex items-center gap-3">
                 <button
@@ -1287,7 +1304,11 @@ export default function ProformaInvoices() {
                   }
                   className="px-5 py-2.5 rounded-xl text-sm font-medium bg-gradient-to-r from-amber-400 to-amber-600 text-white hover:opacity-90 transition-opacity disabled:opacity-50"
                 >
-                  {isSavingAllocation ? "Saving..." : "Save Allocation"}
+                  {isSavingAllocation
+                    ? "Saving..."
+                    : confirmOnAllocate
+                      ? "Confirm & Allocate"
+                      : "Save Allocation"}
                 </button>
               </div>
             </div>
