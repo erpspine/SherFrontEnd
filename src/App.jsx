@@ -32,6 +32,8 @@ import VehicleAvailability from "./pages/VehicleAvailability";
 // import RouteDistances from "./pages/RouteDistances";
 import Inspections from "./pages/Inspections";
 import LongTermLeasing from "./pages/LongTermLeasing";
+import LeaseCalendar from "./pages/LeaseCalendar";
+import LeaseAllocations from "./pages/LeaseAllocations";
 import { isAuthenticated, hasPermission } from "./utils/auth";
 
 function AccessDenied() {
@@ -107,6 +109,24 @@ function ProtectedRoutes() {
             <PermissionRoute
               permission="vehicles.view"
               element={<LongTermLeasing />}
+            />
+          }
+        />
+        <Route
+          path="/lease-calendar"
+          element={
+            <PermissionRoute
+              permission="vehicles.view"
+              element={<LeaseCalendar />}
+            />
+          }
+        />
+        <Route
+          path="/lease-allocations"
+          element={
+            <PermissionRoute
+              permission="vehicles.view"
+              element={<LeaseAllocations />}
             />
           }
         />

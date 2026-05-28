@@ -1231,42 +1231,10 @@ export default function Quotations() {
         null,
     );
     setAvailableVehicles([]);
-    const leadForRange =
-      leads.find((lead) => String(lead.id) === String(quotation.leadId)) ||
-      null;
-    setConvertAllocationRanges([
-      createConvertAllocationRange(
-        leadForRange?.startDate || "",
-        leadForRange?.endDate || "",
-      ),
-    ]);
+    setConvertAllocationRanges([]);
     setConvertError("");
     setIsConvertModalOpen(true);
-    setIsLoadingAvailability(true);
-
-    try {
-      const vehiclesResponse = await apiFetch("/vehicles");
-
-      const vehiclesPayload = await vehiclesResponse.json().catch(() => ({}));
-
-      if (!vehiclesResponse.ok) {
-        throw new Error(
-          vehiclesPayload?.message || "Unable to load vehicles for allocation.",
-        );
-      }
-
-      setAvailableVehicles(
-        extractApiList(vehiclesPayload, "vehicles").map(
-          normalizeAvailabilityVehicle,
-        ),
-      );
-    } catch (error) {
-      setConvertError(
-        error.message || "Failed to load vehicle availability for conversion.",
-      );
-    } finally {
-      setIsLoadingAvailability(false);
-    }
+    setIsLoadingAvailability(false);
   };
 
   const addConvertRange = () => {
@@ -1993,8 +1961,9 @@ export default function Quotations() {
                   Convert Quotation to PI
                 </h2>
                 <p className="text-sm text-slate-500 mt-1">
-                  Review vehicle availability, allocate now, or continue with
-                  Allocate Later.
+                  Vehicle allocation is now done on the Proforma Invoice.
+                  Convert this quotation first, then allocate vehicles in
+                  Proforma Invoices.
                 </p>
               </div>
               <button
@@ -2006,7 +1975,7 @@ export default function Quotations() {
             </div>
 
             <div className="p-6 overflow-y-auto space-y-5">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Quotation
@@ -2035,14 +2004,6 @@ export default function Quotations() {
                     {requestedVehicles || "Not specified"}
                   </p>
                 </div>
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Selected Now
-                  </p>
-                  <p className="mt-1 text-sm font-semibold text-slate-900">
-                    {selectedVehiclesCount}
-                  </p>
-                </div>
               </div>
 
               {convertLead?.routeParks && (
@@ -2051,14 +2012,11 @@ export default function Quotations() {
                 </div>
               )}
 
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Allocation Layout
-                </p>
-                <p className="mt-1 text-sm text-slate-700">
-                  Use the same date-range allocation layout: add one or more
-                  ranges, then select vehicles for each range.
-                </p>
+              <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+                Vehicle allocation has moved to Proforma Invoices. Click
+                <span className="font-semibold"> Convert to PI </span>
+                below, then open the PI in Proforma Invoices to allocate
+                vehicles for each date range.
               </div>
 
               {convertError && (
@@ -2066,170 +2024,25 @@ export default function Quotations() {
                   {convertError}
                 </div>
               )}
-
-              <div className="rounded-2xl border border-slate-200 overflow-hidden">
-                <div className="px-5 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <Car className="w-4 h-4 text-slate-600" />
-                    <h3 className="text-sm font-semibold text-slate-900">
-                      Allocation Ranges
-                    </h3>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={addConvertRange}
-                    disabled={convertingId === convertTarget?.id}
-                    className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    Add Range
-                  </button>
-                </div>
-
-                <div className="p-4 space-y-4">
-                  {convertAllocationRanges.map((range, rangeIndex) => {
-                    const rangeVehicles = getVehiclesAvailableForRange(
-                      range.startDate,
-                      range.endDate,
-                    );
-
-                    return (
-                      <div
-                        key={`range-${rangeIndex}`}
-                        className="rounded-xl border border-slate-200 bg-white"
-                      >
-                        <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                              Range {rangeIndex + 1}
-                            </span>
-                          </div>
-                          {convertAllocationRanges.length > 1 && (
-                            <button
-                              type="button"
-                              onClick={() => removeConvertRange(rangeIndex)}
-                              disabled={convertingId === convertTarget?.id}
-                              className="rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-100 disabled:opacity-50"
-                            >
-                              Remove
-                            </button>
-                          )}
-                        </div>
-
-                        <div className="px-4 py-3 grid grid-cols-1 md:grid-cols-2 gap-3 border-b border-slate-200">
-                          <div>
-                            <label className="block text-xs text-slate-500 mb-1">
-                              From Date
-                            </label>
-                            <input
-                              type="date"
-                              value={range.startDate}
-                              onChange={(event) =>
-                                setConvertRangeField(
-                                  rangeIndex,
-                                  "startDate",
-                                  event.target.value,
-                                )
-                              }
-                              min={convertLead?.startDate || undefined}
-                              max={convertLead?.endDate || undefined}
-                              disabled={convertingId === convertTarget?.id}
-                              className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-xs text-slate-800 focus:border-amber-500 focus:outline-none"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs text-slate-500 mb-1">
-                              To Date
-                            </label>
-                            <input
-                              type="date"
-                              value={range.endDate}
-                              onChange={(event) =>
-                                setConvertRangeField(
-                                  rangeIndex,
-                                  "endDate",
-                                  event.target.value,
-                                )
-                              }
-                              min={convertLead?.startDate || undefined}
-                              max={convertLead?.endDate || undefined}
-                              disabled={convertingId === convertTarget?.id}
-                              className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-xs text-slate-800 focus:border-amber-500 focus:outline-none"
-                            />
-                          </div>
-                        </div>
-
-                        <div className="max-h-56 overflow-y-auto divide-y divide-slate-100">
-                          {!range.startDate || !range.endDate ? (
-                            <div className="px-4 py-3 text-xs text-slate-500">
-                              Select From and To dates first.
-                            </div>
-                          ) : rangeVehicles.length === 0 ? (
-                            <div className="px-4 py-3 text-xs text-slate-500">
-                              No vehicles are available on this range.
-                            </div>
-                          ) : (
-                            rangeVehicles.map((vehicle) => {
-                              const checked = range.vehicleIds.includes(
-                                vehicle.id,
-                              );
-                              return (
-                                <label
-                                  key={`range-${rangeIndex}-${vehicle.id}`}
-                                  className="flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50"
-                                >
-                                  <input
-                                    type="checkbox"
-                                    checked={checked}
-                                    disabled={
-                                      convertingId === convertTarget?.id
-                                    }
-                                    onChange={() =>
-                                      toggleRangeVehicleSelection(
-                                        rangeIndex,
-                                        vehicle.id,
-                                      )
-                                    }
-                                    className="h-4 w-4 rounded border-slate-300 text-amber-500 focus:ring-amber-500"
-                                  />
-                                  <span>
-                                    {vehicle.vehicleNo} ({vehicle.plateNo})
-                                  </span>
-                                </label>
-                              );
-                            })
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
             </div>
 
-            <div className="px-6 py-4 border-t border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white">
-              <p className="text-sm text-slate-500">
-                Vehicle allocation has moved to Proforma Invoices. Convert this
-                quotation first, then confirm PI and allocate vehicles there.
-              </p>
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={closeConvertModal}
-                  disabled={convertingId === convertTarget?.id}
-                  className="px-4 py-2.5 rounded-xl text-sm font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors disabled:opacity-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={submitQuotationConversion}
-                  disabled={convertingId === convertTarget?.id}
-                  className="px-4 py-2.5 rounded-xl text-sm font-medium text-white bg-gradient-to-r from-amber-400 to-amber-600 hover:opacity-90 transition-opacity disabled:opacity-50"
-                >
-                  {convertingId === convertTarget?.id
-                    ? "Converting..."
-                    : "Convert to PI"}
-                </button>
-              </div>
+            <div className="px-6 py-4 border-t border-slate-200 flex items-center justify-end gap-3 bg-white">
+              <button
+                onClick={closeConvertModal}
+                disabled={convertingId === convertTarget?.id}
+                className="px-4 py-2.5 rounded-xl text-sm font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={submitQuotationConversion}
+                disabled={convertingId === convertTarget?.id}
+                className="px-4 py-2.5 rounded-xl text-sm font-medium text-white bg-gradient-to-r from-amber-400 to-amber-600 hover:opacity-90 transition-opacity disabled:opacity-50"
+              >
+                {convertingId === convertTarget?.id
+                  ? "Converting..."
+                  : "Convert to PI"}
+              </button>
             </div>
           </div>
         </div>

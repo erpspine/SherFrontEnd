@@ -268,7 +268,6 @@ export default function ProformaInvoices() {
   const [isLoadingAllocationVehicles, setIsLoadingAllocationVehicles] =
     useState(false);
   const [isSavingAllocation, setIsSavingAllocation] = useState(false);
-  const [confirmOnAllocate, setConfirmOnAllocate] = useState(false);
   const navigate = useNavigate();
 
   const loadPIs = async () => {
@@ -360,11 +359,26 @@ export default function ProformaInvoices() {
             ? ["Confirmed", "Partially Allocated"].includes(pi.status)
             : pi.status === statusFilter);
 
-        const piDate = normalizeIsoDateOnly(pi.date);
+        const itineraryDates = (pi.daySections || [])
+          .map((section) =>
+            normalizeIsoDateOnly(
+              section?.dayDate ||
+                section?.day_date ||
+                section?.dayTitle ||
+                section?.day_title ||
+                "",
+            ),
+          )
+          .filter(Boolean)
+          .sort();
+        const itineraryStartDate =
+          itineraryDates[0] || normalizeIsoDateOnly(pi.leadStartDate);
         const matchDateStart =
-          !dateFilterStart || (piDate && piDate >= dateFilterStart);
+          !dateFilterStart ||
+          (itineraryStartDate && itineraryStartDate >= dateFilterStart);
         const matchDateEnd =
-          !dateFilterEnd || (piDate && piDate <= dateFilterEnd);
+          !dateFilterEnd ||
+          (itineraryStartDate && itineraryStartDate <= dateFilterEnd);
 
         return matchSearch && matchStatus && matchDateStart && matchDateEnd;
       }),
@@ -399,7 +413,6 @@ export default function ProformaInvoices() {
     setAllocationVehicles([]);
     setAllocationRanges([createPIAllocationRange()]);
     setAllocationError("");
-    setConfirmOnAllocate(false);
   };
 
   const getVehiclesAvailableForRange = (startDate, endDate) =>
@@ -409,11 +422,10 @@ export default function ProformaInvoices() {
       return true;
     });
 
-  const openAllocationModal = async (pi, options = {}) => {
+  const openAllocationModal = async (pi) => {
     const defaultStart = normalizeIsoDateOnly(pi?.leadStartDate || "");
     const defaultEnd = normalizeIsoDateOnly(pi?.leadEndDate || "");
 
-    setConfirmOnAllocate(Boolean(options.confirmOnAllocate));
     setAllocationPI(pi);
     setAllocationRanges([createPIAllocationRange(defaultStart, defaultEnd)]);
     setAllocationError("");
@@ -490,7 +502,6 @@ export default function ProformaInvoices() {
   };
 
   const handleConfirmPI = async (pi) => {
-    // Just open the decision dialog — nothing is changed on the PI at this point.
     const decision = await Swal.fire({
       title: `Confirm PI: ${pi.piNo}`,
       html: `<p class="text-slate-600 text-sm">Choose how you want to proceed with this proforma invoice.</p>`,
@@ -554,9 +565,37 @@ export default function ProformaInvoices() {
     }
 
     if (decision.isDenied) {
-      // "Confirm and Allocate" — open allocation screen.
-      // PI will be confirmed atomically when the user submits the allocation.
-      await openAllocationModal(pi, { confirmOnAllocate: true });
+      // "Confirm and Allocate" — confirm the PI first, then open the allocation modal.
+      let confirmedPi = pi;
+      try {
+        const response = await apiFetch(`/proforma-invoices/${pi.id}/confirm`, {
+          method: "POST",
+        });
+        const payload = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          throw new Error(payload?.message || "Unable to confirm PI.");
+        }
+
+        const normalized = normalizePI(extractSingle(payload));
+        confirmedPi = { ...pi, ...normalized };
+        setAllPIs((current) =>
+          current.map((item) =>
+            item.id === pi.id ? { ...item, ...normalized } : item,
+          ),
+        );
+      } catch (error) {
+        await Swal.fire({
+          title: "Confirm Failed",
+          text: error.message || "Failed to confirm PI.",
+          icon: "error",
+          background: "#ffffff",
+          color: "#111827",
+        });
+        return;
+      }
+
+      await openAllocationModal(confirmedPi);
     }
   };
 
@@ -624,7 +663,7 @@ export default function ProformaInvoices() {
       const summary = payload?.allocationSummary || {};
       await Swal.fire({
         title: "Allocation Saved",
-        text: `${summary.allocationsCreated || 0} safari allocation(s) and ${summary.jobCardsCreated || 0} job card(s) created.${confirmOnAllocate ? " PI is now confirmed and allocation status updated." : ""}`,
+        text: `${summary.allocationsCreated || 0} safari allocation(s) created. Allocation status updated.`,
         icon: "success",
         background: "#ffffff",
         color: "#111827",
@@ -872,11 +911,7 @@ export default function ProformaInvoices() {
                           pi.status,
                         ) && (
                           <button
-                            onClick={() =>
-                              openAllocationModal(pi, {
-                                confirmOnAllocate: false,
-                              })
-                            }
+                            onClick={() => openAllocationModal(pi)}
                             className="px-2 py-1 text-xs font-medium text-amber-700 border border-amber-200 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors"
                             title="Allocate Vehicles"
                           >
@@ -972,11 +1007,14 @@ export default function ProformaInvoices() {
 
       {viewPI && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-2xl shadow-xl">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-4xl shadow-xl max-h-[92vh] flex flex-col">
             <div className="flex items-center justify-between p-6 border-b border-slate-800">
               <div>
                 <h2 className="text-xl font-bold text-white">{viewPI.piNo}</h2>
-                <p className="text-sm text-slate-400">Ref: {viewPI.quoteRef}</p>
+                <p className="text-sm text-slate-400">
+                  Ref: {viewPI.quoteRef}
+                  {viewPI.groupName ? ` · ${viewPI.groupName}` : ""}
+                </p>
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -999,23 +1037,276 @@ export default function ProformaInvoices() {
                 </button>
               </div>
             </div>
-            <div className="p-6 space-y-4">
-              <div className="flex justify-between text-sm">
-                <span className="text-slate-400">Client</span>
-                <span className="text-white font-medium">{viewPI.client}</span>
+            <div className="p-6 space-y-6 overflow-y-auto">
+              {/* Summary grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                <div className="rounded-xl border border-slate-800 bg-slate-800/40 p-3">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">
+                    Client
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-white">
+                    {viewPI.client || "-"}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-800 bg-slate-800/40 p-3">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">
+                    Attention
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-white">
+                    {viewPI.attention || "-"}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-800 bg-slate-800/40 p-3">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">
+                    Group
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-white">
+                    {viewPI.groupName || "-"}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-800 bg-slate-800/40 p-3">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">
+                    Invoice Date
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-white">
+                    {viewPI.date ? formatDate(viewPI.date) : "-"}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-800 bg-slate-800/40 p-3">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">
+                    Due Date
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-white">
+                    {viewPI.dueDate ? formatDate(viewPI.dueDate) : "-"}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-800 bg-slate-800/40 p-3">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">
+                    Status
+                  </p>
+                  <p className="mt-1">
+                    <span
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-xs font-medium border ${statusConfig[viewPI.status]?.color || statusConfig.Converted.color}`}
+                    >
+                      {viewPI.status}
+                    </span>
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-800 bg-slate-800/40 p-3">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">
+                    Itinerary Start
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-white">
+                    {viewPI.leadStartDate
+                      ? formatDate(viewPI.leadStartDate)
+                      : "-"}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-800 bg-slate-800/40 p-3">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">
+                    Itinerary End
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-white">
+                    {viewPI.leadEndDate ? formatDate(viewPI.leadEndDate) : "-"}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-800 bg-slate-800/40 p-3">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">
+                    Route / Parks
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-white">
+                    {viewPI.leadRouteParks || "-"}
+                  </p>
+                </div>
               </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-slate-400">Invoice Date</span>
-                <span className="text-slate-300">
-                  {formatDate(viewPI.date)}
-                </span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-slate-400">Due Date</span>
-                <span className="text-slate-300">
-                  {formatDate(viewPI.dueDate)}
-                </span>
-              </div>
+
+              {/* Service summary */}
+              {viewPI.serviceSummary && (
+                <div>
+                  <h3 className="text-sm font-semibold text-white mb-2">
+                    Service Summary
+                  </h3>
+                  <p className="text-sm text-slate-300 whitespace-pre-line">
+                    {viewPI.serviceSummary}
+                  </p>
+                </div>
+              )}
+
+              {/* Itinerary / day sections */}
+              {Array.isArray(viewPI.daySections) &&
+                viewPI.daySections.length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-semibold text-white mb-2">
+                      Itinerary
+                    </h3>
+                    <div className="space-y-2">
+                      {viewPI.daySections.map((section, idx) => {
+                        const title =
+                          section?.dayTitle ||
+                          section?.day_title ||
+                          `Day ${idx + 1}`;
+                        const description =
+                          section?.dayDescription ||
+                          section?.day_description ||
+                          "";
+                        const dayDate =
+                          section?.dayDate || section?.day_date || "";
+                        return (
+                          <div
+                            key={idx}
+                            className="rounded-lg border border-slate-800 bg-slate-800/30 p-3"
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <p className="text-sm font-semibold text-white">
+                                {title}
+                              </p>
+                              {dayDate && (
+                                <p className="text-xs text-slate-400">
+                                  {formatDate(dayDate)}
+                                </p>
+                              )}
+                            </div>
+                            {description && (
+                              <p className="mt-1 text-sm text-slate-300 whitespace-pre-line">
+                                {description}
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+              {/* Line items - grouped by day to match PDF */}
+              {Array.isArray(viewPI.lineItems) &&
+                viewPI.lineItems.length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-semibold text-white mb-2">
+                      Service Details
+                    </h3>
+                    <div className="overflow-x-auto rounded-xl border border-slate-800">
+                      <table className="w-full text-sm">
+                        <thead className="bg-slate-800/60 text-slate-400">
+                          <tr>
+                            <th className="text-center px-2 py-2 font-medium w-10">
+                              #
+                            </th>
+                            <th className="text-left px-3 py-2 font-medium">
+                              Type
+                            </th>
+                            <th className="text-left px-3 py-2 font-medium">
+                              Description
+                            </th>
+                            <th className="text-center px-2 py-2 font-medium">
+                              Unit
+                            </th>
+                            <th className="text-right px-2 py-2 font-medium">
+                              Qty
+                            </th>
+                            <th className="text-right px-3 py-2 font-medium">
+                              Rate
+                            </th>
+                            <th className="text-right px-3 py-2 font-medium">
+                              Total
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-800">
+                          {(() => {
+                            const groups = viewPI.lineItems.reduce(
+                              (acc, item) => {
+                                const key =
+                                  item.dayTitle || item.day_title || "";
+                                if (!acc.has(key)) acc.set(key, []);
+                                acc.get(key).push(item);
+                                return acc;
+                              },
+                              new Map(),
+                            );
+                            let rowNum = 1;
+                            const rows = [];
+                            groups.forEach((items, dayTitle) => {
+                              const firstItem = items[0] || {};
+                              const dayDescription =
+                                firstItem.dayDescription ||
+                                firstItem.day_description ||
+                                "";
+                              const formattedTitle = dayTitle
+                                ? /^\d{4}-\d{2}-\d{2}$/.test(dayTitle)
+                                  ? formatDate(dayTitle)
+                                  : dayTitle
+                                : "";
+                              if (formattedTitle || dayDescription) {
+                                rows.push(
+                                  <tr
+                                    key={`day-${dayTitle || rowNum}`}
+                                    className="bg-amber-400 text-slate-900"
+                                  >
+                                    <td
+                                      colSpan={7}
+                                      className="px-3 py-2 font-bold"
+                                    >
+                                      {formattedTitle}
+                                      {dayDescription
+                                        ? ` — ${dayDescription}`
+                                        : ""}
+                                    </td>
+                                  </tr>,
+                                );
+                              }
+                              items.forEach((item, idx) => {
+                                rows.push(
+                                  <tr
+                                    key={item.id || `${dayTitle}-${idx}`}
+                                    className="text-slate-300"
+                                  >
+                                    <td className="px-2 py-2 text-center">
+                                      {rowNum++}
+                                    </td>
+                                    <td className="px-3 py-2">
+                                      {item.item || "-"}
+                                    </td>
+                                    <td className="px-3 py-2">
+                                      {item.description || "-"}
+                                    </td>
+                                    <td className="px-2 py-2 text-center">
+                                      {item.unit || "-"}
+                                    </td>
+                                    <td className="px-2 py-2 text-right">
+                                      {Number(item.qty || 0)}
+                                    </td>
+                                    <td className="px-3 py-2 text-right">
+                                      {formatCurrency(item.rate)}
+                                    </td>
+                                    <td className="px-3 py-2 text-right text-white font-medium">
+                                      {formatCurrency(item.total)}
+                                    </td>
+                                  </tr>,
+                                );
+                              });
+                            });
+                            return rows;
+                          })()}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+              {/* Notes */}
+              {viewPI.notes && (
+                <div>
+                  <h3 className="text-sm font-semibold text-white mb-2">
+                    Notes
+                  </h3>
+                  <p className="text-sm text-slate-300 whitespace-pre-line">
+                    {viewPI.notes}
+                  </p>
+                </div>
+              )}
+
+              {/* Totals */}
               <div className="border-t border-slate-800 pt-4 space-y-2">
                 <div className="flex justify-between text-sm">
                   <span className="text-slate-400">Subtotal</span>
@@ -1036,16 +1327,96 @@ export default function ProformaInvoices() {
                   </span>
                 </div>
               </div>
-              <div className="flex justify-between items-center">
-                <span className="text-slate-400 text-sm">Status</span>
-                <span
-                  className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-sm font-medium border ${statusConfig[viewPI.status]?.color || statusConfig.Converted.color}`}
-                >
-                  {viewPI.status}
-                </span>
+
+              {/* Payment Terms (matches PDF) */}
+              <div>
+                <h3 className="text-sm font-semibold text-white mb-2">
+                  Payment Terms
+                </h3>
+                <div className="rounded-xl border border-slate-800 bg-slate-800/30 p-4 space-y-3 text-sm text-slate-300">
+                  <div>
+                    <p className="font-semibold text-amber-300">
+                      PEAK SEASON RATES (JUNE - OCTOBER)
+                    </p>
+                    <ul className="list-disc pl-5 space-y-1 mt-1">
+                      <li>
+                        A non-refundable deposit of 30% shall be payable upon
+                        issuance and confirmation of the Proforma Invoice.
+                      </li>
+                      <li>
+                        Full and final payment shall be made no later than
+                        thirty (30) days prior to the commencement of the
+                        safari.
+                      </li>
+                      <li>
+                        No refunds shall be issued for cancellations made within
+                        thirty (30) days prior to the safari.
+                      </li>
+                    </ul>
+                  </div>
+                  <div>
+                    <p className="font-semibold text-amber-300">
+                      HIGH &amp; LOW SEASON RATES (JANUARY - MAY, NOVEMBER)
+                    </p>
+                    <ul className="list-disc pl-5 space-y-1 mt-1">
+                      <li>
+                        A non-refundable deposit of 30% shall be payable sixty
+                        (60) days prior to booking date.
+                      </li>
+                      <li>
+                        Full and final payment shall be made no later than
+                        fourteen (14) days prior to the commencement of the
+                        safari.
+                      </li>
+                      <li>
+                        No refunds shall be issued for cancellations made within
+                        thirty (30) days prior to the safari.
+                      </li>
+                    </ul>
+                  </div>
+                  <ul className="list-disc pl-5 space-y-1">
+                    <li>
+                      An administrative fee of five percent (5%) shall apply to
+                      all park fees, concession fees or related expenses paid by
+                      Sher East Africa Ltd on behalf of the Client.
+                    </li>
+                    <li>
+                      Deployment of any vehicle is strictly conditional upon
+                      receipt of cleared funds.
+                    </li>
+                  </ul>
+                </div>
+              </div>
+
+              {/* Bank Details (matches PDF) */}
+              <div>
+                <h3 className="text-sm font-semibold text-white mb-2">
+                  Bank Details
+                </h3>
+                <div className="rounded-xl border border-slate-700 bg-slate-800/60 p-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 text-sm">
+                    {[
+                      ["Bank Name", "Azania Bank Plc"],
+                      ["Account Name", "Sher East Africa Limited"],
+                      ["Account No.", "010010003888"],
+                      ["Currency", "USD"],
+                      ["Swift Code", "AZANTZTZ"],
+                    ].map(([label, value]) => (
+                      <div
+                        key={label}
+                        className="flex items-center justify-between gap-3 border-b border-slate-700/60 pb-2 last:border-b-0"
+                      >
+                        <span className="text-slate-400">{label}</span>
+                        <span className="text-white font-medium text-right">
+                          {value}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
-            <div className="p-6 pt-0 flex justify-end gap-3">
+            <div className="p-6 pt-4 border-t border-slate-800 flex justify-end gap-3">
               <button
                 onClick={() => navigate("/quotations")}
                 className="px-6 py-2.5 bg-slate-800 text-slate-300 rounded-xl hover:bg-slate-700"
@@ -1072,9 +1443,7 @@ export default function ProformaInvoices() {
                   Allocate Vehicles for {allocationPI.piNo}
                 </h2>
                 <p className="text-sm text-slate-500 mt-1">
-                  {confirmOnAllocate
-                    ? "Complete allocation to confirm this PI and allocate vehicles in one step."
-                    : "Save allocations now, or close and return later from this PI."}
+                  Save allocations now, or close and return later from this PI.
                 </p>
               </div>
               <button
@@ -1277,9 +1646,7 @@ export default function ProformaInvoices() {
 
             <div className="px-6 py-4 border-t border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white">
               <p className="text-sm text-slate-500">
-                {confirmOnAllocate
-                  ? 'Complete the allocation below and click "Confirm & Allocate" to confirm this PI and create the allocation. Closing without saving will not change anything.'
-                  : "Save allocations now, or close and return later."}
+                Save allocations now, or close and return later.
               </p>
               <div className="flex items-center gap-3">
                 <button
@@ -1298,11 +1665,7 @@ export default function ProformaInvoices() {
                   }
                   className="px-5 py-2.5 rounded-xl text-sm font-medium bg-gradient-to-r from-amber-400 to-amber-600 text-white hover:opacity-90 transition-opacity disabled:opacity-50"
                 >
-                  {isSavingAllocation
-                    ? "Saving..."
-                    : confirmOnAllocate
-                      ? "Confirm & Allocate"
-                      : "Save Allocation"}
+                  {isSavingAllocation ? "Saving..." : "Save Allocation"}
                 </button>
               </div>
             </div>

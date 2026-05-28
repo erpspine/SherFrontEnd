@@ -53,12 +53,6 @@ export const menuGroups = [
         permission: "vehicles.view",
       },
       {
-        path: "/long-term-leasing",
-        icon: Car,
-        label: "Lease",
-        permission: "vehicles.view",
-      },
-      {
         path: "/job-cards",
         icon: ClipboardList,
         label: "Job Cards",
@@ -86,6 +80,29 @@ export const menuGroups = [
         path: "/vehicle-services",
         icon: Wrench,
         label: "Vehicle Service",
+        permission: "vehicles.view",
+      },
+    ],
+  },
+  {
+    label: "Lease",
+    items: [
+      {
+        path: "/long-term-leasing",
+        icon: FileText,
+        label: "Lease Contracts",
+        permission: "vehicles.view",
+      },
+      {
+        path: "/lease-allocations",
+        icon: ClipboardList,
+        label: "Lease Allocations",
+        permission: "vehicles.view",
+      },
+      {
+        path: "/lease-calendar",
+        icon: Calendar,
+        label: "Lease Calendar",
         permission: "vehicles.view",
       },
     ],
