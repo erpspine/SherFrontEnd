@@ -402,6 +402,8 @@ const normalizeJobCard = (jobCard) => {
     ),
     driverDetails:
       jobCard.driver_details || jobCard.driverDetails || jobCard.driver || "",
+    driverAllowance:
+      jobCard.driver_allowance ?? jobCard.driverAllowance ?? null,
     additionalDetails:
       jobCard.additional_details || jobCard.additionalDetails || "",
     status: normalizeStatusValue(
@@ -459,6 +461,7 @@ const createEmptyForm = () => ({
   fuelGaugeIn: "",
   approximateFuelUsed: "",
   driverDetails: "",
+  driverAllowance: "",
 });
 
 const buildFormFromLead = (lead) => ({
@@ -499,6 +502,7 @@ const buildFormFromLead = (lead) => ({
   fuelGaugeIn: "",
   approximateFuelUsed: "",
   driverDetails: "",
+  driverAllowance: "",
 });
 
 const buildFormFromJobCard = (jobCard) => ({
@@ -532,6 +536,10 @@ const buildFormFromJobCard = (jobCard) => ({
   fuelGaugeIn: String(jobCard.fuelGaugeIn || ""),
   approximateFuelUsed: String(jobCard.approximateFuelUsed || ""),
   driverDetails: jobCard.driverDetails || "",
+  driverAllowance:
+    jobCard.driverAllowance != null && jobCard.driverAllowance !== ""
+      ? String(jobCard.driverAllowance)
+      : "",
 });
 
 export default function JobCards() {
@@ -1463,6 +1471,12 @@ export default function JobCards() {
             driverDetails: requiresVehicleRunSection
               ? form.driverDetails || null
               : null,
+            driverAllowance:
+              isSafariType || isLeaseType
+                ? String(form.driverAllowance || "").trim() === ""
+                  ? null
+                  : Number(form.driverAllowance)
+                : null,
           };
 
       const response = editingId
@@ -1685,6 +1699,9 @@ export default function JobCards() {
                 <th className="text-left py-3 px-3 text-xs font-semibold text-slate-600 uppercase">
                   Itinerary / Destination
                 </th>
+                <th className="text-right py-3 px-3 text-xs font-semibold text-slate-600 uppercase whitespace-nowrap">
+                  Driver Allowance
+                </th>
                 <th className="text-left py-3 px-3 text-xs font-semibold text-slate-600 uppercase">
                   Created At
                 </th>
@@ -1694,7 +1711,7 @@ export default function JobCards() {
               {isLoading ? (
                 <tr>
                   <td
-                    colSpan={10}
+                    colSpan={11}
                     className="py-8 text-center text-slate-400 text-sm"
                   >
                     Loading job cards...
@@ -1703,7 +1720,7 @@ export default function JobCards() {
               ) : filteredCards.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={10}
+                    colSpan={11}
                     className="py-8 text-center text-slate-400 text-sm"
                   >
                     No job cards found. Create one from a PI-issued lead.
@@ -1830,6 +1847,17 @@ export default function JobCards() {
                         <MapPin className="w-4 h-4 text-slate-500 mt-0.5" />
                         <span>{card.routeSummary || "-"}</span>
                       </div>
+                    </td>
+                    <td className="py-3 px-3 text-sm text-right text-slate-800 whitespace-nowrap">
+                      {(isSafariJobType(card.type) ||
+                        isLeaseJobType(card.type)) &&
+                      card.driverAllowance != null &&
+                      card.driverAllowance !== ""
+                        ? Number(card.driverAllowance).toLocaleString(
+                            undefined,
+                            { maximumFractionDigits: 2 },
+                          )
+                        : "-"}
                     </td>
                     <td className="py-3 px-3 text-sm text-slate-700">
                       {formatDateTime(card.createdAt)}
@@ -2145,6 +2173,31 @@ export default function JobCards() {
                         ))
                       )}
                     </div>
+                  </div>
+                )}
+
+                {(isSafariType || isLeaseType) && !isCloseMode && (
+                  <div>
+                    <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                      Driver Allowance{" "}
+                      <span className="text-slate-500">(optional)</span>
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      inputMode="decimal"
+                      value={form.driverAllowance ?? ""}
+                      onChange={(event) =>
+                        setField("driverAllowance", event.target.value)
+                      }
+                      placeholder="e.g. 50000"
+                      className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
+                    />
+                    <p className="text-xs text-slate-500 mt-1">
+                      Optional driver allowance for this{" "}
+                      {isLeaseType ? "lease" : "safari"} job card.
+                    </p>
                   </div>
                 )}
 
@@ -2811,6 +2864,20 @@ export default function JobCards() {
                       {detailValue(selectedJobCard.driverDetails)}
                     </span>
                   </p>
+                  {(isSafariJobType(selectedJobCard.type) ||
+                    isLeaseJobType(selectedJobCard.type)) && (
+                    <p className="text-slate-300">
+                      Driver Allowance:{" "}
+                      <span className="text-white">
+                        {selectedJobCard.driverAllowance != null &&
+                        selectedJobCard.driverAllowance !== ""
+                          ? Number(
+                              selectedJobCard.driverAllowance,
+                            ).toLocaleString()
+                          : "-"}
+                      </span>
+                    </p>
+                  )}
                   {!isSafariJobType(selectedJobCard.type) && (
                     <>
                       <p className="text-slate-300">

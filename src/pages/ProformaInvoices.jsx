@@ -13,6 +13,7 @@ import {
   CheckCircle,
   AlertTriangle,
   Loader2,
+  RefreshCw,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import Swal from "sweetalert2";
@@ -53,7 +54,10 @@ const statusConfig = {
   },
 };
 
-const formatCurrency = (n) => `USD ${Number(n || 0).toLocaleString()}`;
+const formatCurrency = (n, currency = "USD") =>
+  `${currency || "USD"} ${Number(n || 0).toLocaleString(undefined, {
+    maximumFractionDigits: 2,
+  })}`;
 
 const formatDate = (value) => {
   if (!value) return "-";
@@ -233,6 +237,8 @@ const normalizePI = (pi) => {
     subtotal: Number(pi.subtotal || 0),
     tax: Number(pi.tax || 0),
     total: Number(pi.total || 0),
+    currency: (pi.currency || "USD").toUpperCase(),
+    exchangeRate: Number(pi.exchangeRate ?? pi.exchange_rate ?? 1) || 1,
     status: pi.status || "Converted",
     leadStartDate: pi.lead_start_date || pi.leadStartDate || "",
     leadEndDate: pi.lead_end_date || pi.leadEndDate || "",
@@ -268,6 +274,11 @@ export default function ProformaInvoices() {
   const [isLoadingAllocationVehicles, setIsLoadingAllocationVehicles] =
     useState(false);
   const [isSavingAllocation, setIsSavingAllocation] = useState(false);
+  const [currencyPI, setCurrencyPI] = useState(null);
+  const [currencyChoice, setCurrencyChoice] = useState("USD");
+  const [currencyRate, setCurrencyRate] = useState("");
+  const [currencyError, setCurrencyError] = useState("");
+  const [isSavingCurrency, setIsSavingCurrency] = useState(false);
   const navigate = useNavigate();
 
   const loadPIs = async () => {
@@ -499,6 +510,75 @@ export default function ProformaInvoices() {
         };
       }),
     );
+  };
+
+  const openCurrencyModal = (pi) => {
+    setCurrencyPI(pi);
+    setCurrencyChoice(pi.currency || "USD");
+    setCurrencyRate(pi.currency === "TZS" ? String(pi.exchangeRate || "") : "");
+    setCurrencyError("");
+  };
+
+  const closeCurrencyModal = () => {
+    if (isSavingCurrency) return;
+    setCurrencyPI(null);
+    setCurrencyChoice("USD");
+    setCurrencyRate("");
+    setCurrencyError("");
+  };
+
+  const submitCurrencyChange = async () => {
+    if (!currencyPI) return;
+    if (currencyChoice === "TZS") {
+      const rate = Number(currencyRate);
+      if (!Number.isFinite(rate) || rate <= 0) {
+        setCurrencyError("Enter a valid TZS conversion rate (e.g. 2600).");
+        return;
+      }
+    }
+    setIsSavingCurrency(true);
+    setCurrencyError("");
+    try {
+      const response = await apiFetch(
+        `/proforma-invoices/${currencyPI.id}/currency`,
+        {
+          method: "POST",
+          body: {
+            currency: currencyChoice,
+            exchangeRate: currencyChoice === "TZS" ? Number(currencyRate) : 1,
+          },
+        },
+      );
+      const data = await response.json();
+      if (!response.ok) {
+        const fieldError = data?.errors
+          ? Object.values(data.errors).flat().find(Boolean)
+          : null;
+        throw new Error(
+          fieldError || data?.message || "Unable to update currency.",
+        );
+      }
+      const updated = transformProformaInvoice(extractSingle(data));
+      setAllPIs((current) =>
+        current.map((p) => (p.id === updated.id ? updated : p)),
+      );
+      setCurrencyPI(null);
+      setCurrencyChoice("USD");
+      setCurrencyRate("");
+      await Swal.fire({
+        title: "Currency updated",
+        text: `PI is now in ${updated.currency}.`,
+        icon: "success",
+        timer: 1800,
+        showConfirmButton: false,
+        background: "#0f172a",
+        color: "#e2e8f0",
+      });
+    } catch (error) {
+      setCurrencyError(error.message || "Failed to update currency.");
+    } finally {
+      setIsSavingCurrency(false);
+    }
   };
 
   const handleConfirmPI = async (pi) => {
@@ -846,6 +926,7 @@ export default function ProformaInvoices() {
                   "Client",
                   "Group Name",
                   "Service Summary",
+                  "Currency",
                   "Total",
                   "Status",
                 ].map((h) => (
@@ -898,6 +979,17 @@ export default function ProformaInvoices() {
                             <Download className="w-4 h-4" />
                           )}
                         </button>
+                        {["Converted", "Sent", "Confirmed"].includes(
+                          pi.status,
+                        ) && (
+                          <button
+                            onClick={() => openCurrencyModal(pi)}
+                            className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                            title="Change Currency"
+                          >
+                            <RefreshCw className="w-4 h-4" />
+                          </button>
+                        )}
                         {["Converted", "Sent"].includes(pi.status) && (
                           <button
                             onClick={() => handleConfirmPI(pi)}
@@ -963,8 +1055,24 @@ export default function ProformaInvoices() {
                       </div>
                     </td>
                     <td className="py-4 px-4">
+                      <span
+                        className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold border whitespace-nowrap ${
+                          pi.currency === "TZS"
+                            ? "bg-indigo-50 text-indigo-700 border-indigo-200"
+                            : "bg-slate-50 text-slate-700 border-slate-200"
+                        }`}
+                      >
+                        {pi.currency || "USD"}
+                      </span>
+                      {pi.currency === "TZS" && pi.exchangeRate ? (
+                        <p className="text-[10px] text-slate-500 mt-1">
+                          @ {Number(pi.exchangeRate).toLocaleString()}
+                        </p>
+                      ) : null}
+                    </td>
+                    <td className="py-4 px-4">
                       <span className="text-slate-900 font-semibold text-sm whitespace-nowrap">
-                        {formatCurrency(pi.total)}
+                        {formatCurrency(pi.total, pi.currency)}
                       </span>
                     </td>
                     <td className="py-4 px-4">
@@ -1277,10 +1385,16 @@ export default function ProformaInvoices() {
                                       {Number(item.qty || 0)}
                                     </td>
                                     <td className="px-3 py-2 text-right">
-                                      {formatCurrency(item.rate)}
+                                      {formatCurrency(
+                                        item.rate,
+                                        viewPI.currency,
+                                      )}
                                     </td>
                                     <td className="px-3 py-2 text-right text-white font-medium">
-                                      {formatCurrency(item.total)}
+                                      {formatCurrency(
+                                        item.total,
+                                        viewPI.currency,
+                                      )}
                                     </td>
                                   </tr>,
                                 );
@@ -1311,19 +1425,19 @@ export default function ProformaInvoices() {
                 <div className="flex justify-between text-sm">
                   <span className="text-slate-400">Subtotal</span>
                   <span className="text-slate-300">
-                    {formatCurrency(viewPI.subtotal)}
+                    {formatCurrency(viewPI.subtotal, viewPI.currency)}
                   </span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-slate-400">VAT (18%)</span>
                   <span className="text-slate-300">
-                    {formatCurrency(viewPI.tax)}
+                    {formatCurrency(viewPI.tax, viewPI.currency)}
                   </span>
                 </div>
                 <div className="flex justify-between text-base font-bold border-t border-slate-800 pt-2">
                   <span className="text-white">Total</span>
                   <span className="text-white">
-                    {formatCurrency(viewPI.total)}
+                    {formatCurrency(viewPI.total, viewPI.currency)}
                   </span>
                 </div>
               </div>
@@ -1399,7 +1513,12 @@ export default function ProformaInvoices() {
                       ["Bank Name", "Azania Bank Plc"],
                       ["Account Name", "Sher East Africa Limited"],
                       ["Account No.", "010010003888"],
-                      ["Currency", "USD"],
+                      [
+                        "Currency",
+                        viewPI.currency === "TZS" && viewPI.exchangeRate
+                          ? `${viewPI.currency} (1 USD = ${Number(viewPI.exchangeRate).toLocaleString()})`
+                          : viewPI.currency || "USD",
+                      ],
                       ["Swift Code", "AZANTZTZ"],
                     ].map(([label, value]) => (
                       <div
@@ -1428,6 +1547,117 @@ export default function ProformaInvoices() {
                 className="px-6 py-2.5 bg-gradient-to-r from-amber-400 to-amber-600 text-white rounded-xl hover:opacity-90"
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {currencyPI && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-lg shadow-xl">
+            <div className="flex items-center justify-between p-6 border-b border-slate-200">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900">
+                  Change PI Currency
+                </h2>
+                <p className="text-sm text-slate-500">
+                  {currencyPI.piNo} — current: {currencyPI.currency}
+                  {currencyPI.currency === "TZS" && currencyPI.exchangeRate
+                    ? ` @ ${Number(currencyPI.exchangeRate).toLocaleString()}`
+                    : ""}
+                </p>
+              </div>
+              <button
+                onClick={closeCurrencyModal}
+                disabled={isSavingCurrency}
+                className="p-2 hover:bg-slate-100 rounded-lg disabled:opacity-50"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <p className="text-xs text-slate-500">
+                Updates this PI's currency. Existing amounts will be re-scaled
+                using the new exchange rate. The PDF will reflect the chosen
+                currency.
+              </p>
+              <label className="block">
+                <span className="block text-xs font-medium text-slate-600 mb-1">
+                  PI Currency
+                </span>
+                <select
+                  value={currencyChoice}
+                  onChange={(e) => setCurrencyChoice(e.target.value)}
+                  disabled={isSavingCurrency}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                >
+                  <option value="USD">USD</option>
+                  <option value="TZS">TZS</option>
+                </select>
+              </label>
+              {currencyChoice === "TZS" && (
+                <label className="block">
+                  <span className="block text-xs font-medium text-slate-600 mb-1">
+                    Conversion rate (1 USD = ? TZS)
+                  </span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.0001"
+                    inputMode="decimal"
+                    value={currencyRate}
+                    onChange={(e) => setCurrencyRate(e.target.value)}
+                    disabled={isSavingCurrency}
+                    placeholder="e.g. 2600"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  />
+                </label>
+              )}
+              {(() => {
+                const newRate =
+                  currencyChoice === "TZS" ? Number(currencyRate) : 1;
+                const oldRate = Number(currencyPI.exchangeRate || 1) || 1;
+                if (
+                  Number.isFinite(newRate) &&
+                  newRate > 0 &&
+                  currencyPI.total != null
+                ) {
+                  const projected =
+                    (Number(currencyPI.total) * newRate) / oldRate;
+                  return (
+                    <p className="text-xs text-slate-600">
+                      New total:{" "}
+                      <span className="font-semibold text-slate-900">
+                        {formatCurrency(projected, currencyChoice)}
+                      </span>{" "}
+                      (was{" "}
+                      {formatCurrency(currencyPI.total, currencyPI.currency)})
+                    </p>
+                  );
+                }
+                return null;
+              })()}
+              {currencyError && (
+                <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                  {currencyError}
+                </div>
+              )}
+            </div>
+            <div className="px-6 py-4 border-t border-slate-200 flex items-center justify-end gap-3">
+              <button
+                onClick={closeCurrencyModal}
+                disabled={isSavingCurrency}
+                className="px-4 py-2.5 rounded-xl text-sm font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={submitCurrencyChange}
+                disabled={isSavingCurrency}
+                className="px-4 py-2.5 rounded-xl text-sm font-medium text-white bg-gradient-to-r from-amber-400 to-amber-600 hover:opacity-90 disabled:opacity-50"
+              >
+                {isSavingCurrency ? "Saving..." : "Update Currency"}
               </button>
             </div>
           </div>
