@@ -154,9 +154,14 @@ const normalizeQuotation = (quotation) => ({
       : [],
 });
 
-const createItineraryLine = (date = "", dayDescription = "") => ({
+const createItineraryLine = (
+  date = "",
+  dayDescription = "",
+  allowancePerDay = "",
+) => ({
   date,
   dayDescription,
+  allowancePerDay,
 });
 
 const normalizeItineraryLines = (items) => {
@@ -179,9 +184,14 @@ const normalizeItineraryLines = (items) => {
       const dayDescription = String(
         item.dayDescription || item.dateDescription || item.description || "",
       ).trim();
+      const allowanceRaw = item.allowancePerDay ?? item.allowance_per_day ?? "";
+      const allowancePerDay =
+        allowanceRaw === null || allowanceRaw === undefined
+          ? ""
+          : String(allowanceRaw).trim();
 
-      if (!date && !dayDescription) return null;
-      return createItineraryLine(date, dayDescription);
+      if (!date && !dayDescription && !allowancePerDay) return null;
+      return createItineraryLine(date, dayDescription, allowancePerDay);
     })
     .filter(Boolean);
 
@@ -192,11 +202,21 @@ const itineraryLinesToPayload = (lines) => {
   if (!Array.isArray(lines)) return [];
 
   return lines
-    .map((line) => ({
-      date: String(line?.date || "").trim(),
-      dayDescription: String(line?.dayDescription || "").trim(),
-    }))
-    .filter((line) => line.date || line.dayDescription);
+    .map((line) => {
+      const date = String(line?.date || "").trim();
+      const dayDescription = String(line?.dayDescription || "").trim();
+      const allowanceStr = String(line?.allowancePerDay ?? "").trim();
+      const allowance = allowanceStr === "" ? null : Number(allowanceStr);
+      return {
+        date,
+        dayDescription,
+        allowancePerDay: Number.isFinite(allowance) ? allowance : null,
+      };
+    })
+    .filter(
+      (line) =>
+        line.date || line.dayDescription || line.allowancePerDay !== null,
+    );
 };
 
 const extractList = (payload, preferredKey) => {
@@ -691,6 +711,11 @@ export default function JobCards() {
           startDate: a.startDate || a.start_date || "",
           endDate: a.endDate || a.end_date || "",
           itinerary: a.itinerary || "",
+          itineraryItems: Array.isArray(a.itineraryItems)
+            ? a.itineraryItems
+            : Array.isArray(a.itinerary_items)
+              ? a.itinerary_items
+              : [],
           status: a.status || "",
           clientName: a.contract?.clientName || a.contract?.client_name || "",
           leaseType: a.contract?.leaseType || a.contract?.lease_type || "",
@@ -969,6 +994,16 @@ export default function JobCards() {
     }));
   };
 
+  const sumLineAllowances = (lines) => {
+    if (!Array.isArray(lines)) return 0;
+    return lines.reduce((acc, line) => {
+      const value = String(line?.allowancePerDay ?? "").trim();
+      if (value === "") return acc;
+      const num = Number(value);
+      return Number.isFinite(num) ? acc + num : acc;
+    }, 0);
+  };
+
   const addItineraryLine = () => {
     setForm((current) => ({
       ...current,
@@ -984,23 +1019,31 @@ export default function JobCards() {
       const nextLines = (current.routeItineraryLines || []).filter(
         (_, index) => index !== indexToRemove,
       );
+      const finalLines =
+        nextLines.length > 0 ? nextLines : [createItineraryLine()];
+      const total = sumLineAllowances(finalLines);
 
       return {
         ...current,
-        routeItineraryLines:
-          nextLines.length > 0 ? nextLines : [createItineraryLine()],
+        routeItineraryLines: finalLines,
+        driverAllowance: total > 0 ? String(total) : current.driverAllowance,
       };
     });
   };
 
   const updateItineraryLine = (indexToUpdate, field, value) => {
-    setForm((current) => ({
-      ...current,
-      routeItineraryLines: (current.routeItineraryLines || []).map(
+    setForm((current) => {
+      const nextLines = (current.routeItineraryLines || []).map(
         (line, index) =>
           index === indexToUpdate ? { ...line, [field]: value } : line,
-      ),
-    }));
+      );
+      const next = { ...current, routeItineraryLines: nextLines };
+      if (field === "allowancePerDay") {
+        const total = sumLineAllowances(nextLines);
+        next.driverAllowance = total > 0 ? String(total) : "";
+      }
+      return next;
+    });
   };
 
   const handleTypeChange = (nextType) => {
@@ -1082,24 +1125,47 @@ export default function JobCards() {
       setField("leaseAllocationId", allocationIdValue);
       return;
     }
-    setForm((prev) => ({
-      ...prev,
-      leaseAllocationId: String(allocation.id),
-      leaseContractId: allocation.leaseContractId
-        ? String(allocation.leaseContractId)
-        : prev.leaseContractId,
-      vehicleId: allocation.vehicleId
-        ? String(allocation.vehicleId)
-        : prev.vehicleId,
-      tourOperatorClientName:
-        allocation.clientName || prev.tourOperatorClientName,
-      safariStartDate:
-        toInputDate(allocation.startDate) || prev.safariStartDate,
-      safariEndDate: toInputDate(allocation.endDate) || prev.safariEndDate,
-      routeSummary: allocation.itinerary || prev.routeSummary,
-      additionalDetails: allocation.itinerary || prev.additionalDetails,
-      driverDetails: allocation.driverName || prev.driverDetails,
-    }));
+    setForm((prev) => {
+      const allocationItineraryLines =
+        Array.isArray(allocation.itineraryItems) &&
+        allocation.itineraryItems.length > 0
+          ? allocation.itineraryItems.map((it) =>
+              createItineraryLine(
+                it?.date ? formatDate(it.date) : "",
+                it?.details || it?.dayDescription || "",
+                "",
+              ),
+            )
+          : null;
+
+      const currentLinesEmpty =
+        !Array.isArray(prev.routeItineraryLines) ||
+        prev.routeItineraryLines.length === 0 ||
+        prev.routeItineraryLines.every(
+          (l) => !l.date && !l.dayDescription && !l.allowancePerDay,
+        );
+
+      return {
+        ...prev,
+        leaseAllocationId: String(allocation.id),
+        leaseContractId: allocation.leaseContractId
+          ? String(allocation.leaseContractId)
+          : prev.leaseContractId,
+        vehicleId: allocation.vehicleId
+          ? String(allocation.vehicleId)
+          : prev.vehicleId,
+        tourOperatorClientName:
+          allocation.clientName || prev.tourOperatorClientName,
+        safariStartDate:
+          toInputDate(allocation.startDate) || prev.safariStartDate,
+        safariEndDate: toInputDate(allocation.endDate) || prev.safariEndDate,
+        driverDetails: allocation.driverName || prev.driverDetails,
+        routeItineraryLines:
+          allocationItineraryLines && currentLinesEmpty
+            ? allocationItineraryLines
+            : prev.routeItineraryLines,
+      };
+    });
   };
 
   const openEdit = async (jobCard) => {
@@ -1441,9 +1507,10 @@ export default function JobCards() {
             pickupLocation: isSafariType ? form.pickupLocation || null : null,
             dropoffLocation: isSafariType ? form.dropoffLocation || null : null,
             routeSummary: form.routeSummary || null,
-            routeItinerary: isSafariType
-              ? itineraryLinesToPayload(form.routeItineraryLines)
-              : [],
+            routeItinerary:
+              isSafariType || isLeaseType
+                ? itineraryLinesToPayload(form.routeItineraryLines)
+                : [],
             additionalDetails: form.additionalDetails || null,
             bookingReferenceNo: isSafariType
               ? form.bookingReferenceNo || undefined
@@ -2195,8 +2262,8 @@ export default function JobCards() {
                       className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
                     />
                     <p className="text-xs text-slate-500 mt-1">
-                      Optional driver allowance for this{" "}
-                      {isLeaseType ? "lease" : "safari"} job card.
+                      Auto-calculated as the sum of Allowance/day across all
+                      itinerary line items. You may override this value.
                     </p>
                   </div>
                 )}
@@ -2587,7 +2654,7 @@ export default function JobCards() {
                 </div>
               )}
 
-              {isSafariType && !isCloseMode && (
+              {(isSafariType || isLeaseType) && !isCloseMode && (
                 <div>
                   <div className="flex items-center justify-between gap-3 mb-1.5">
                     <label className="block text-xs font-medium text-slate-300">
@@ -2605,7 +2672,7 @@ export default function JobCards() {
                     {(form.routeItineraryLines || []).map((line, index) => (
                       <div
                         key={`itinerary-line-${index}`}
-                        className="grid grid-cols-1 md:grid-cols-[170px_1fr_auto] gap-2"
+                        className="grid grid-cols-1 md:grid-cols-[150px_1fr_140px_auto] gap-2"
                       >
                         <input
                           value={line.date}
@@ -2631,6 +2698,22 @@ export default function JobCards() {
                           placeholder="Day description"
                           className="bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
                         />
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          inputMode="decimal"
+                          value={line.allowancePerDay ?? ""}
+                          onChange={(event) =>
+                            updateItineraryLine(
+                              index,
+                              "allowancePerDay",
+                              event.target.value,
+                            )
+                          }
+                          placeholder="Allowance/day"
+                          className="bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
+                        />
                         <button
                           type="button"
                           onClick={() => removeItineraryLine(index)}
@@ -2643,6 +2726,8 @@ export default function JobCards() {
                   </div>
                   <p className="text-xs text-slate-500 mt-1">
                     Enter date as dd/mm/yyyy and description for each line item.
+                    Allowance per day is summed automatically into Driver
+                    Allowance.
                   </p>
                 </div>
               )}
@@ -2825,11 +2910,18 @@ export default function JobCards() {
                     ) : (
                       <span className="text-white">
                         {routeItineraryLines
-                          .map((line) =>
-                            line.date
+                          .map((line) => {
+                            const base = line.date
                               ? `${line.date} - ${line.dayDescription}`
-                              : line.dayDescription,
-                          )
+                              : line.dayDescription;
+                            const allowance =
+                              line.allowancePerDay !== "" &&
+                              line.allowancePerDay !== null &&
+                              line.allowancePerDay !== undefined
+                                ? ` (Allowance/day: ${line.allowancePerDay})`
+                                : "";
+                            return base + allowance;
+                          })
                           .join(", ")}
                       </span>
                     )}

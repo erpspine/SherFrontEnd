@@ -45,6 +45,7 @@ const emptyForm = () => ({
   startDate: "",
   endDate: "",
   itinerary: "",
+  itineraryItems: [{ date: "", details: "" }],
   fuelNotes: "",
   status: "Scheduled",
   notes: "",
@@ -228,6 +229,16 @@ export default function LeaseAllocations() {
       startDate: allocation.startDate || "",
       endDate: allocation.endDate || "",
       itinerary: allocation.itinerary || "",
+      itineraryItems:
+        Array.isArray(allocation.itineraryItems) &&
+        allocation.itineraryItems.length > 0
+          ? allocation.itineraryItems.map((it) => ({
+              date: it?.date || "",
+              details: it?.details || "",
+            }))
+          : allocation.itinerary
+            ? [{ date: "", details: allocation.itinerary }]
+            : [{ date: "", details: "" }],
       fuelNotes: allocation.fuelNotes || "",
       status: allocation.status || "Scheduled",
       notes: allocation.notes || "",
@@ -260,13 +271,27 @@ export default function LeaseAllocations() {
       return;
     }
 
+    const cleanedItineraryItems = (form.itineraryItems || [])
+      .map((it) => ({
+        date: (it.date || "").trim(),
+        details: (it.details || "").trim(),
+      }))
+      .filter((it) => it.date || it.details);
+
+    const itineraryText =
+      form.itinerary?.trim() ||
+      cleanedItineraryItems
+        .map((it) => [it.date, it.details].filter(Boolean).join(": "))
+        .join("\n");
+
     const payload = {
       leaseContractId: Number(form.leaseContractId),
       vehicleId: Number(form.vehicleId),
       driverId: form.driverId ? Number(form.driverId) : null,
       startDate: form.startDate,
       endDate: form.endDate,
-      itinerary: form.itinerary || null,
+      itinerary: itineraryText || null,
+      itineraryItems: cleanedItineraryItems,
       fuelNotes: form.fuelNotes || null,
       status: form.status,
       notes: form.notes || null,
@@ -513,11 +538,32 @@ export default function LeaseAllocations() {
                       {formatDate(a.endDate)}
                     </td>
                     <td className="px-4 py-3 max-w-xs">
-                      <div className="text-slate-700 line-clamp-2 whitespace-pre-wrap">
-                        {a.itinerary || (
-                          <span className="text-slate-400 italic">—</span>
-                        )}
-                      </div>
+                      {Array.isArray(a.itineraryItems) &&
+                      a.itineraryItems.length > 0 ? (
+                        <div className="text-slate-700 space-y-1">
+                          {a.itineraryItems.slice(0, 3).map((it, idx) => (
+                            <div key={idx} className="text-xs">
+                              {it.date && (
+                                <span className="font-medium text-slate-900">
+                                  {it.date}:{" "}
+                                </span>
+                              )}
+                              <span className="line-clamp-1">{it.details}</span>
+                            </div>
+                          ))}
+                          {a.itineraryItems.length > 3 && (
+                            <div className="text-[10px] text-slate-400">
+                              +{a.itineraryItems.length - 3} more
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="text-slate-700 line-clamp-2 whitespace-pre-wrap">
+                          {a.itinerary || (
+                            <span className="text-slate-400 italic">—</span>
+                          )}
+                        </div>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <span
@@ -727,18 +773,97 @@ export default function LeaseAllocations() {
                 </div>
 
                 <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Itinerary (provided by client)
-                  </label>
-                  <textarea
-                    rows={3}
-                    value={form.itinerary}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, itinerary: e.target.value }))
-                    }
-                    placeholder="Day 1: Pickup at Nairobi → Maasai Mara&#10;Day 2: Game drives..."
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-                  />
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-sm font-medium text-slate-700">
+                      Itinerary (provided by client)
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setForm((f) => ({
+                          ...f,
+                          itineraryItems: [
+                            ...(f.itineraryItems || []),
+                            { date: "", details: "" },
+                          ],
+                        }))
+                      }
+                      className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700"
+                    >
+                      <Plus className="w-3.5 h-3.5" /> Add day
+                    </button>
+                  </div>
+                  <div className="space-y-2">
+                    {(form.itineraryItems || []).map((item, idx) => (
+                      <div
+                        key={idx}
+                        className="flex flex-col md:flex-row gap-2 items-start"
+                      >
+                        <input
+                          type="date"
+                          value={item.date}
+                          onChange={(e) =>
+                            setForm((f) => ({
+                              ...f,
+                              itineraryItems: f.itineraryItems.map((it, i) =>
+                                i === idx
+                                  ? { ...it, date: e.target.value }
+                                  : it,
+                              ),
+                            }))
+                          }
+                          min={
+                            form.startDate ||
+                            selectedContract?.startDate ||
+                            undefined
+                          }
+                          max={
+                            form.endDate ||
+                            selectedContract?.endDate ||
+                            undefined
+                          }
+                          className="md:w-40 px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                        />
+                        <input
+                          type="text"
+                          value={item.details}
+                          onChange={(e) =>
+                            setForm((f) => ({
+                              ...f,
+                              itineraryItems: f.itineraryItems.map((it, i) =>
+                                i === idx
+                                  ? { ...it, details: e.target.value }
+                                  : it,
+                              ),
+                            }))
+                          }
+                          placeholder="Pickup at Nairobi → Maasai Mara"
+                          className="flex-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                        />
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setForm((f) => {
+                              const next = (f.itineraryItems || []).filter(
+                                (_, i) => i !== idx,
+                              );
+                              return {
+                                ...f,
+                                itineraryItems:
+                                  next.length > 0
+                                    ? next
+                                    : [{ date: "", details: "" }],
+                              };
+                            })
+                          }
+                          className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
+                          title="Remove"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                 </div>
 
                 <div className="md:col-span-2">

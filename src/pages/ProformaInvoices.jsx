@@ -558,7 +558,7 @@ export default function ProformaInvoices() {
           fieldError || data?.message || "Unable to update currency.",
         );
       }
-      const updated = transformProformaInvoice(extractSingle(data));
+      const updated = normalizePI(extractSingle(data));
       setAllPIs((current) =>
         current.map((p) => (p.id === updated.id ? updated : p)),
       );
@@ -979,17 +979,13 @@ export default function ProformaInvoices() {
                             <Download className="w-4 h-4" />
                           )}
                         </button>
-                        {["Converted", "Sent", "Confirmed"].includes(
-                          pi.status,
-                        ) && (
-                          <button
-                            onClick={() => openCurrencyModal(pi)}
-                            className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
-                            title="Change Currency"
-                          >
-                            <RefreshCw className="w-4 h-4" />
-                          </button>
-                        )}
+                        <button
+                          onClick={() => openCurrencyModal(pi)}
+                          className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                          title="Change Currency"
+                        >
+                          <RefreshCw className="w-4 h-4" />
+                        </button>
                         {["Converted", "Sent"].includes(pi.status) && (
                           <button
                             onClick={() => handleConfirmPI(pi)}

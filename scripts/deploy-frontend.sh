@@ -29,7 +29,8 @@ cp -f "${DIST_DIR}/index.html" "${TARGET_DIR}/index.html"
 ROUTE_DIRS=(
   checklist clients forgot-password
   "fuel-requisitions" "fuel-requisitions/new"
-  inspections invoices job-cards leads login
+  inspections invoices job-cards leads
+  "lease-allocations" "lease-calendar" login
   long-term-leasing parks payments
   proforma-invoices quotations reset-password
   roles-permissions route-distances safari-allocations
