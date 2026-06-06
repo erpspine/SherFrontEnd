@@ -460,14 +460,9 @@ export default function LongTermLeasing() {
   };
 
   const handleSaveContract = async () => {
-    if (
-      form.vehicleIds.length === 0 ||
-      !form.clientName ||
-      !form.startDate ||
-      !form.endDate
-    ) {
+    if (!form.clientName || !form.startDate || !form.endDate) {
       setErrorMessage(
-        "Please complete all required fields and add at least one vehicle.",
+        "Please complete all required fields (client, start date, end date).",
       );
       return;
     }
@@ -542,7 +537,9 @@ export default function LongTermLeasing() {
         title: isEdit ? "Contract Updated" : "Contract Created",
         text: isEdit
           ? "Lease contract updated successfully."
-          : `${savedContract.vehicleIds.length} vehicle(s) assigned to lease and blocked from allocation.`,
+          : savedContract.vehicleIds.length === 0
+            ? "Lease contract created without a vehicle. You can assign vehicles later via Edit."
+            : `${savedContract.vehicleIds.length} vehicle(s) assigned to lease and blocked from allocation.`,
         icon: "success",
         timer: 1600,
         showConfirmButton: false,
@@ -851,7 +848,10 @@ export default function LongTermLeasing() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="md:col-span-2">
                   <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                    Vehicles <span className="text-red-400">*</span>
+                    Vehicles{" "}
+                    <span className="text-slate-500 font-normal">
+                      (optional — can be added later)
+                    </span>
                   </label>
                   <select
                     value=""
@@ -871,7 +871,8 @@ export default function LongTermLeasing() {
                   </select>
                   {form.vehicleIds.length === 0 ? (
                     <p className="text-xs text-slate-500 italic">
-                      No vehicles added yet.
+                      No vehicles added yet. You can save the lease without a
+                      vehicle and assign one later.
                     </p>
                   ) : (
                     <div className="flex flex-wrap gap-2">

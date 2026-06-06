@@ -26,19 +26,52 @@ cp -f "${DIST_DIR}/index.html" "${TARGET_DIR}/index.html"
 
 # Propagate the updated index.html into every SPA route directory so
 # direct-URL visitors always get the latest asset hashes.
-ROUTE_DIRS=(
-  checklist clients forgot-password
-  "fuel-requisitions" "fuel-requisitions/new"
-  inspections invoices job-cards leads
-  "lease-allocations" "lease-calendar" login
-  long-term-leasing parks payments
-  proforma-invoices quotations reset-password
-  roles-permissions route-distances safari-allocations
-  settings users vehicle-availability vehicle-services vehicles
-)
+#
+# Route directories are derived from src/App.jsx route declarations, so new
+# pages (e.g. /odometer-reports) are auto-synced on every deploy.
+APP_ROUTES_FILE="${ROOT_DIR}/src/App.jsx"
+ROUTE_DIRS=()
+
+if [[ -f "${APP_ROUTES_FILE}" ]]; then
+  while IFS= read -r route; do
+    route="${route#/}"
+    [[ -z "${route}" ]] && continue
+
+    IFS='/' read -r -a parts <<< "${route}"
+    normalized_parts=()
+    for part in "${parts[@]}"; do
+      [[ -z "${part}" || "${part}" == "*" || "${part}" == :* ]] && continue
+      normalized_parts+=("${part}")
+    done
+
+    [[ ${#normalized_parts[@]} -eq 0 ]] && continue
+    normalized="$(IFS='/'; echo "${normalized_parts[*]}")"
+    ROUTE_DIRS+=("${normalized}")
+  done < <(grep -oE 'path="/[^"]*"' "${APP_ROUTES_FILE}" | sed -E 's/^path="//;s/"$//')
+fi
+
+# Fallback to the currently known route list if App.jsx parsing yields nothing.
+if [[ ${#ROUTE_DIRS[@]} -eq 0 ]]; then
+  ROUTE_DIRS=(
+    checklist clients forgot-password
+    "fuel-requisitions" "fuel-requisitions/new"
+    inspections invoices job-cards leads
+    "lease-allocations" "lease-calendar" login
+    long-term-leasing parks payments
+    proforma-invoices quotations reset-password
+    roles-permissions route-distances safari-allocations
+    settings users vehicle-availability vehicle-services vehicles odometer-reports
+  )
+fi
+
+declare -A _seen=()
 for dir in "${ROUTE_DIRS[@]}"; do
-  mkdir -p "${TARGET_DIR}/${dir}"
-  cp -f "${TARGET_DIR}/index.html" "${TARGET_DIR}/${dir}/index.html"
+  [[ -z "${dir}" ]] && continue
+  if [[ -z "${_seen[${dir}]+x}" ]]; then
+    _seen["${dir}"]=1
+    mkdir -p "${TARGET_DIR}/${dir}"
+    cp -f "${TARGET_DIR}/index.html" "${TARGET_DIR}/${dir}/index.html"
+  fi
 done
 
 echo "Deploy complete."

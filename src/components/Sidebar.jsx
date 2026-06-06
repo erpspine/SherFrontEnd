@@ -77,6 +77,12 @@ export const menuGroups = [
         permission: null,
       },
       {
+        path: "/odometer-reports",
+        icon: Route,
+        label: "Odometer Reports",
+        permission: "odometer-logs.view",
+      },
+      {
         path: "/vehicle-services",
         icon: Wrench,
         label: "Vehicle Service",

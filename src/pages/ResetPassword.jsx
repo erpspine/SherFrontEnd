@@ -62,10 +62,10 @@ export default function ResetPassword() {
       setSuccessMessage(
         data?.message || "Password reset successful. Redirecting to login...",
       );
+      // Keep isLoading=true so the spinner stays visible through the redirect.
       setTimeout(() => navigate("/login", { replace: true }), 1500);
     } catch (error) {
       setErrorMessage(error.message || "Unable to reset password.");
-    } finally {
       setIsLoading(false);
     }
   };
@@ -213,7 +213,12 @@ export default function ResetPassword() {
               className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-sher-gold to-sher-gold-dark text-white py-3.5 rounded-xl font-semibold hover:opacity-90 transition-all shadow-lg shadow-sher-gold/25 disabled:opacity-70 disabled:cursor-not-allowed"
             >
               {isLoading ? (
-                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                <>
+                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <span>
+                    {successMessage ? "Redirecting..." : "Resetting..."}
+                  </span>
+                </>
               ) : (
                 <>
                   Reset Password

@@ -403,10 +403,11 @@ export default function SafariAllocations() {
   }, [quotations]);
 
   const safariOptions = useMemo(() => {
-    // Only PIs that are confirmed (or partially allocated) can receive new allocations.
-    // Sent = not yet confirmed; Allocated = already fully allocated.
+    // Include 'Allocated' so existing allocations can still resolve their
+    // safari (client/group name) when editing. createSafariOptions filters
+    // already-allocated leads out for the create flow.
     const allocatablePIs = proformas.filter((pi) =>
-      ["Confirmed", "Partially Allocated"].includes(pi.status),
+      ["Confirmed", "Partially Allocated", "Allocated"].includes(pi.status),
     );
 
     const latestProformaByLead = new Map();
@@ -1286,6 +1287,7 @@ export default function SafariAllocations() {
           <table className="min-w-full divide-y divide-slate-200 text-sm">
             <thead className="table-head-gradient text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>
+                <th className="px-4 py-3">Actions</th>
                 <th className="px-4 py-3">Safari</th>
                 <th className="px-4 py-3">Group Name</th>
                 <th className="px-4 py-3">PI</th>
@@ -1294,7 +1296,6 @@ export default function SafariAllocations() {
                 <th className="px-4 py-3">Vehicle</th>
                 <th className="px-4 py-3">Driver</th>
                 <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -1322,6 +1323,24 @@ export default function SafariAllocations() {
                     key={allocation.id}
                     className="hover:bg-slate-50 transition-colors"
                   >
+                    <td className="px-4 py-3">
+                      <div className="flex gap-1">
+                        <button
+                          onClick={() => openEdit(allocation)}
+                          className="p-2 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
+                          title="Edit"
+                        >
+                          <Edit className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(allocation.id)}
+                          className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                          title="Delete"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
                     <td className="px-4 py-3">
                       <div className="space-y-0.5">
                         <div className="inline-flex items-center gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-2 py-0.5 text-sm font-semibold text-amber-700">
@@ -1384,24 +1403,6 @@ export default function SafariAllocations() {
                         <Users className="w-3 h-3" />
                         {allocation.status}
                       </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex justify-end gap-1">
-                        <button
-                          onClick={() => openEdit(allocation)}
-                          className="p-2 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
-                          title="Edit"
-                        >
-                          <Edit className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(allocation.id)}
-                          className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                          title="Delete"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
                     </td>
                   </tr>
                 ))
@@ -1474,10 +1475,24 @@ export default function SafariAllocations() {
                     )}
                   </select>
                   {form.leadId && (
-                    <p className="text-xs text-amber-300 mt-1.5">
-                      Selected Group Name:{" "}
-                      {selectedSafariOption?.groupName || "-"}
-                    </p>
+                    <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs">
+                      <div>
+                        <span className="font-medium text-amber-300">
+                          Client:{" "}
+                        </span>
+                        <span className="font-semibold text-white">
+                          {selectedSafariOption?.clientCompany || "-"}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="font-medium text-amber-300">
+                          Group Name:{" "}
+                        </span>
+                        <span className="font-semibold text-white">
+                          {selectedSafariOption?.groupName || "-"}
+                        </span>
+                      </div>
+                    </div>
                   )}
                   {!editingId && (
                     <p className="text-xs text-slate-500 mt-1">
