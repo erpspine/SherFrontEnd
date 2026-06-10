@@ -1,4 +1,4 @@
-﻿import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
   Car,
@@ -16,13 +16,16 @@ import {
   Trees,
   ShieldCheck,
   ListChecks,
-  Fuel,
   Wrench,
-  Route,
   Calendar,
   ChevronLeft,
 } from "lucide-react";
-import { clearAuthSession, getAuthUser, hasPermission } from "../utils/auth";
+import {
+  clearAuthSession,
+  getAuthRoles,
+  getAuthUser,
+  hasPermission,
+} from "../utils/auth";
 import { apiFetch } from "../utils/api";
 
 export const menuGroups = [
@@ -166,8 +169,20 @@ export default function Sidebar({
   const location = useLocation();
   const navigate = useNavigate();
   const authUser = getAuthUser();
+  const roles = getAuthRoles();
+  const isOperator = roles.some(
+    (role) => String(role).toLowerCase() === "operator",
+  );
   const userName = authUser?.name || "Super Admin";
   const userEmail = authUser?.email || "sher@leasing.co.tz";
+  const operatorHiddenLabels = new Set([
+    "Fuel Requisitions",
+    "Proforma Invoices",
+    "Quotations",
+    "Long Term Leasing",
+    "Settings",
+    "Roles & Permissions",
+  ]);
   const userInitials = userName
     .split(" ")
     .map((part) => part[0])
@@ -188,7 +203,6 @@ export default function Sidebar({
 
   return (
     <>
-      {/* Mobile Overlay */}
       {isOpen && (
         <div
           className="fixed inset-0 bg-slate-900/25 z-40 lg:hidden"
@@ -196,7 +210,6 @@ export default function Sidebar({
         />
       )}
 
-      {/* Sidebar */}
       <aside
         className={`
         fixed top-0 left-0 z-50 h-full
@@ -209,7 +222,6 @@ export default function Sidebar({
         w-72
       `}
       >
-        {/* Logo */}
         <div
           className={`h-20 flex items-center border-b border-slate-200 flex-shrink-0 ${
             isCollapsed ? "justify-center px-3" : "justify-between px-6"
@@ -246,12 +258,14 @@ export default function Sidebar({
           </button>
         </div>
 
-        {/* Navigation */}
         <nav className="flex-1 overflow-y-auto p-4 space-y-1">
           {menuGroups.map((group) => {
-            const visibleItems = group.items.filter((item) =>
-              hasPermission(item.permission),
-            );
+            const visibleItems = group.items.filter((item) => {
+              if (isOperator && operatorHiddenLabels.has(item.label)) {
+                return false;
+              }
+              return hasPermission(item.permission);
+            });
             if (visibleItems.length === 0) return null;
             return (
               <div key={group.label} className="mb-2">
@@ -306,7 +320,6 @@ export default function Sidebar({
           })}
         </nav>
 
-        {/* User Profile */}
         <div className="p-4 border-t border-slate-200 flex-shrink-0">
           <div
             className={`rounded-xl border shadow-sm ${
