@@ -54,6 +54,7 @@ const createFormState = () => ({
   driving_started_at: "",
   status: "Active",
   receive_notifications: false,
+  send_sms: false,
 });
 
 const parseLanguagesInput = (value) =>
@@ -416,6 +417,10 @@ export default function Users() {
         receive_notifications: form.receive_notifications,
       };
 
+      if (!editingId) {
+        payload.send_sms = Boolean(form.send_sms);
+      }
+
       const response = editingId
         ? await apiFetch(`/users/${editingId}`, {
             method: "PUT",
@@ -527,7 +532,12 @@ export default function Users() {
 
     const confirmation = await Swal.fire({
       title: "Reset password?",
-      text: `A new temporary password will be emailed to ${user.email}.`,
+      html:
+        `A new temporary password will be emailed to <b>${user.email}</b>.<br/><br/>` +
+        `<label style="display:flex;align-items:center;justify-content:center;gap:8px;font-size:13px;">` +
+        `<input id="swal-send-sms" type="checkbox" ${user.phone ? "" : "disabled"} style="width:16px;height:16px;"/>` +
+        `Also send credentials by SMS${user.phone ? " to " + user.phone : " (no phone on file)"}` +
+        `</label>`,
       icon: "warning",
       showCancelButton: true,
       confirmButtonText: "Yes, reset",
@@ -535,13 +545,19 @@ export default function Users() {
       background: "#0f172a",
       color: "#e2e8f0",
       confirmButtonColor: "#d97706",
+      preConfirm: () => ({
+        send_sms: Boolean(document.getElementById("swal-send-sms")?.checked),
+      }),
     });
 
     if (!confirmation.isConfirmed) return;
 
+    const sendSms = Boolean(confirmation.value?.send_sms);
+
     try {
       const response = await apiFetch(`/users/${user.id}/reset-password`, {
         method: "POST",
+        body: { send_sms: sendSms },
       });
       const payload = await response.json();
 
@@ -1036,6 +1052,31 @@ export default function Users() {
                   </span>
                 </label>
               </div>
+
+              {!editingId && (
+                <div className="md:col-span-2">
+                  <label className="inline-flex items-center gap-3 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={form.send_sms}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          send_sms: e.target.checked,
+                        })
+                      }
+                      className="h-4 w-4 rounded border-slate-600 bg-slate-800 text-amber-500 focus:ring-amber-500 focus:ring-offset-slate-900"
+                    />
+                    <span className="text-sm text-slate-300">
+                      Send credentials by SMS
+                      <span className="text-slate-500">
+                        {" "}
+                        (in addition to email)
+                      </span>
+                    </span>
+                  </label>
+                </div>
+              )}
 
               <div className="md:col-span-2 flex items-center justify-end gap-3 pt-2">
                 <button

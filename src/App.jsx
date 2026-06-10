@@ -31,7 +31,11 @@ import VehicleView from "./pages/VehicleView";
 import VehicleAvailability from "./pages/VehicleAvailability";
 // import RouteDistances from "./pages/RouteDistances";
 import Inspections from "./pages/Inspections";
+import OdometerReports from "./pages/OdometerReports";
+import OdometerReportView from "./pages/OdometerReportView";
 import LongTermLeasing from "./pages/LongTermLeasing";
+import LeaseCalendar from "./pages/LeaseCalendar";
+import LeaseAllocations from "./pages/LeaseAllocations";
 import { isAuthenticated, hasPermission } from "./utils/auth";
 
 function AccessDenied() {
@@ -107,6 +111,24 @@ function ProtectedRoutes() {
             <PermissionRoute
               permission="vehicles.view"
               element={<LongTermLeasing />}
+            />
+          }
+        />
+        <Route
+          path="/lease-calendar"
+          element={
+            <PermissionRoute
+              permission="vehicles.view"
+              element={<LeaseCalendar />}
+            />
+          }
+        />
+        <Route
+          path="/lease-allocations"
+          element={
+            <PermissionRoute
+              permission="vehicles.view"
+              element={<LeaseAllocations />}
             />
           }
         />
@@ -216,6 +238,33 @@ function ProtectedRoutes() {
         />
         {/* <Route path="/route-distances" element={<RouteDistances />} /> */}
         <Route path="/inspections" element={<Inspections />} />
+        <Route
+          path="/odometer-reports"
+          element={
+            <PermissionRoute
+              permission="odometer-logs.view"
+              element={<OdometerReports />}
+            />
+          }
+        />
+        <Route
+          path="/odometer-reports/:tripId"
+          element={
+            <PermissionRoute
+              permission="odometer-logs.view"
+              element={<OdometerReportView />}
+            />
+          }
+        />
+        <Route
+          path="/odometer-reports/view"
+          element={
+            <PermissionRoute
+              permission="odometer-logs.view"
+              element={<OdometerReportView />}
+            />
+          }
+        />
         {/*
         <Route
           path="/fuel-requisitions/new"

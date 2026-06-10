@@ -120,7 +120,10 @@ export default function ForgotPassword() {
               className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-sher-gold to-sher-gold-dark text-white py-3.5 rounded-xl font-semibold hover:opacity-90 transition-all shadow-lg shadow-sher-gold/25 disabled:opacity-70 disabled:cursor-not-allowed"
             >
               {isLoading ? (
-                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                <>
+                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <span>Sending...</span>
+                </>
               ) : (
                 <>
                   Send Reset Token

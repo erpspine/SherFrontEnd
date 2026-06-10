@@ -4,8 +4,10 @@ import {
   Calendar,
   Car,
   Clock3,
+  Pencil,
   Plus,
   Search,
+  Trash2,
   X,
   Users,
 } from "lucide-react";
@@ -14,7 +16,35 @@ import { apiFetch } from "../utils/api";
 
 const ONE_MONTH_DAYS = 30;
 const ONE_YEAR_DAYS = 365;
-const LEASE_CONTRACTS_STORAGE_KEY = "lease_contracts_v1";
+
+const extractContracts = (payload) => {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.contracts)) return payload.contracts;
+  if (Array.isArray(payload?.data)) return payload.data;
+  return [];
+};
+
+const normalizeContract = (contract) => {
+  const vehicleIds = Array.isArray(contract.vehicleIds)
+    ? contract.vehicleIds.map(Number)
+    : Array.isArray(contract.vehicles)
+      ? contract.vehicles.map((v) => Number(v.id))
+      : contract.vehicleId
+        ? [Number(contract.vehicleId)]
+        : [];
+  return {
+    id: contract.id,
+    vehicleIds,
+    clientName: contract.clientName || contract.client_name || "",
+    startDate: contract.startDate || contract.start_date || "",
+    endDate: contract.endDate || contract.end_date || "",
+    leaseType: contract.leaseType || contract.lease_type || "",
+    monthlyRate: contract.monthlyRate ?? contract.monthly_rate ?? "",
+    notes: contract.notes || "",
+    status: contract.status || "Active",
+    createdAt: contract.createdAt || contract.created_at || "",
+  };
+};
 
 const parseDate = (value) => {
   if (!value) return null;
@@ -76,21 +106,6 @@ const readFileAsDataUrl = (file) =>
     reader.readAsDataURL(file);
   });
 
-const readStoredContracts = () => {
-  try {
-    const raw = localStorage.getItem(LEASE_CONTRACTS_STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-};
-
-const writeStoredContracts = (contracts) => {
-  localStorage.setItem(LEASE_CONTRACTS_STORAGE_KEY, JSON.stringify(contracts));
-};
-
 const normalizeVehicle = (vehicle) => {
   const item = vehicle?.attributes
     ? { ...vehicle.attributes, id: vehicle.id }
@@ -137,6 +152,12 @@ const normalizeVehicle = (vehicle) => {
     year: Number(item.year || 0),
     seats: Number(item.seats || 0),
     status: item.status || "Available",
+    driverName:
+      item.assigned_driver?.name ||
+      item.assignedDriver?.name ||
+      item.driver_name ||
+      item.driverName ||
+      "",
     currentMileage: Number(
       item.current_mileage ??
         item.currentMileage ??
@@ -175,6 +196,7 @@ export default function LongTermLeasing() {
   const [errorMessage, setErrorMessage] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(createContractForm());
 
   useEffect(() => {
@@ -182,15 +204,27 @@ export default function LongTermLeasing() {
       setIsLoading(true);
       setErrorMessage("");
       try {
-        const response = await apiFetch("/vehicles");
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok) {
-          throw new Error(payload?.message || "Failed to load vehicles.");
+        const [vehiclesRes, contractsRes] = await Promise.all([
+          apiFetch("/vehicles"),
+          apiFetch("/lease-contracts"),
+        ]);
+        const vehiclesPayload = await vehiclesRes.json().catch(() => ({}));
+        if (!vehiclesRes.ok) {
+          throw new Error(
+            vehiclesPayload?.message || "Failed to load vehicles.",
+          );
+        }
+        const contractsPayload = await contractsRes.json().catch(() => ({}));
+        if (!contractsRes.ok) {
+          throw new Error(
+            contractsPayload?.message || "Failed to load lease contracts.",
+          );
         }
 
-        const normalized = extractVehicles(payload).map(normalizeVehicle);
+        const normalized =
+          extractVehicles(vehiclesPayload).map(normalizeVehicle);
         setVehicles(normalized);
-        setContracts(readStoredContracts());
+        setContracts(extractContracts(contractsPayload).map(normalizeContract));
       } catch (error) {
         setErrorMessage(
           error.message || "Failed to load long term leasing data.",
@@ -206,7 +240,7 @@ export default function LongTermLeasing() {
   const activeVehicleLeaseSet = useMemo(() => {
     const ids = new Set();
     contracts
-      .filter((item) => item.status === "Active")
+      .filter((item) => item.status === "Active" && item.id !== editingId)
       .forEach((item) => {
         if (Array.isArray(item.vehicleIds)) {
           item.vehicleIds.forEach((id) => ids.add(String(id)));
@@ -215,7 +249,7 @@ export default function LongTermLeasing() {
         }
       });
     return ids;
-  }, [contracts]);
+  }, [contracts, editingId]);
 
   const leaseContracts = useMemo(() => {
     const byVehicle = new Map(vehicles.map((v) => [String(v.id), v]));
@@ -348,19 +382,87 @@ export default function LongTermLeasing() {
   };
 
   const openCreate = () => {
+    setEditingId(null);
     setForm(createContractForm());
     setIsModalOpen(true);
   };
 
-  const handleCreateContract = async () => {
-    if (
-      form.vehicleIds.length === 0 ||
-      !form.clientName ||
-      !form.startDate ||
-      !form.endDate
-    ) {
+  const openEdit = (contract) => {
+    setEditingId(contract.id);
+    setForm({
+      vehicleIds: Array.isArray(contract.vehicleIds)
+        ? contract.vehicleIds.map(Number)
+        : [],
+      clientName: contract.clientName || "",
+      startDate: toInputDate(contract.startDate) || "",
+      endDate: toInputDate(contract.endDate) || "",
+      monthlyRate:
+        contract.monthlyRate === null || contract.monthlyRate === undefined
+          ? ""
+          : String(contract.monthlyRate),
+      notes: contract.notes || "",
+      documents: Array.isArray(contract.documents) ? contract.documents : [],
+    });
+    setErrorMessage("");
+    setIsModalOpen(true);
+  };
+
+  const handleDeleteContract = async (contract) => {
+    const result = await Swal.fire({
+      title: "Delete Lease Contract?",
+      text: `This will remove the contract for ${contract.clientName || "this client"} and release its vehicles. This cannot be undone.`,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Delete",
+      cancelButtonText: "Cancel",
+      confirmButtonColor: "#dc2626",
+      cancelButtonColor: "#475569",
+      background: "#0f172a",
+      color: "#e2e8f0",
+    });
+    if (!result.isConfirmed) return;
+
+    try {
+      const response = await apiFetch(`/lease-contracts/${contract.id}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload?.message || "Failed to delete lease contract.");
+      }
+      const releasedIds = new Set(
+        (contract.vehicleIds || []).map((id) => String(id)),
+      );
+      setContracts((prev) => prev.filter((c) => c.id !== contract.id));
+      setVehicles((prev) =>
+        prev.map((v) =>
+          releasedIds.has(String(v.id)) ? { ...v, status: "Available" } : v,
+        ),
+      );
+      await Swal.fire({
+        title: "Deleted",
+        text: "Lease contract deleted and vehicles released.",
+        icon: "success",
+        timer: 1400,
+        showConfirmButton: false,
+        background: "#0f172a",
+        color: "#e2e8f0",
+      });
+    } catch (error) {
+      await Swal.fire({
+        title: "Error",
+        text: error.message || "Failed to delete lease contract.",
+        icon: "error",
+        background: "#0f172a",
+        color: "#e2e8f0",
+      });
+    }
+  };
+
+  const handleSaveContract = async () => {
+    if (!form.clientName || !form.startDate || !form.endDate) {
       setErrorMessage(
-        "Please complete all required fields and add at least one vehicle.",
+        "Please complete all required fields (client, start date, end date).",
       );
       return;
     }
@@ -374,52 +476,70 @@ export default function LongTermLeasing() {
     setIsSaving(true);
     setErrorMessage("");
     try {
-      // Block all selected vehicles via API
-      for (const vId of form.vehicleIds) {
-        const updateResponse = await apiFetch(`/vehicles/${vId}`, {
-          method: "PUT",
-          body: { status: "On Lease" },
-        });
-        const updatePayload = await updateResponse.json().catch(() => ({}));
-        if (!updateResponse.ok) {
-          throw new Error(
-            updatePayload?.message ||
-              `Failed to update vehicle ${vId} status to On Lease.`,
-          );
-        }
+      const isEdit = Boolean(editingId);
+      const response = await apiFetch(
+        isEdit ? `/lease-contracts/${editingId}` : "/lease-contracts",
+        {
+          method: isEdit ? "PUT" : "POST",
+          body: {
+            vehicleIds: form.vehicleIds.map(Number),
+            clientName: form.clientName.trim(),
+            startDate: form.startDate,
+            endDate: form.endDate,
+            monthlyRate: form.monthlyRate ? Number(form.monthlyRate) : null,
+            notes: form.notes || null,
+          },
+        },
+      );
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(
+          payload?.message ||
+            (isEdit
+              ? "Failed to update lease contract."
+              : "Failed to create lease contract."),
+        );
       }
 
-      const newContract = {
-        id: Date.now(),
-        vehicleIds: form.vehicleIds.map(Number),
-        clientName: form.clientName.trim(),
-        startDate: form.startDate,
-        endDate: form.endDate,
-        leaseType: getLeaseType(form.startDate, form.endDate),
-        monthlyRate: form.monthlyRate,
-        notes: form.notes,
-        documents: form.documents,
-        status: "Active",
-        createdAt: new Date().toISOString(),
-      };
+      const savedContract = normalizeContract(payload.contract || {});
 
-      const nextContracts = [newContract, ...contracts];
-      setContracts(nextContracts);
-      writeStoredContracts(nextContracts);
-
-      const blockedIds = new Set(form.vehicleIds.map(String));
-      setVehicles((prev) =>
-        prev.map((v) =>
-          blockedIds.has(String(v.id)) ? { ...v, status: "On Lease" } : v,
-        ),
-      );
+      if (isEdit) {
+        const previous = contracts.find((c) => c.id === editingId);
+        const previousIds = new Set((previous?.vehicleIds || []).map(String));
+        const newIds = new Set(savedContract.vehicleIds.map(String));
+        const removedIds = [...previousIds].filter((id) => !newIds.has(id));
+        setContracts((prev) =>
+          prev.map((c) => (c.id === editingId ? savedContract : c)),
+        );
+        setVehicles((prev) =>
+          prev.map((v) => {
+            if (newIds.has(String(v.id))) return { ...v, status: "On Lease" };
+            if (removedIds.includes(String(v.id)))
+              return { ...v, status: "Available" };
+            return v;
+          }),
+        );
+      } else {
+        setContracts((prev) => [savedContract, ...prev]);
+        const blockedIds = new Set(savedContract.vehicleIds.map(String));
+        setVehicles((prev) =>
+          prev.map((v) =>
+            blockedIds.has(String(v.id)) ? { ...v, status: "On Lease" } : v,
+          ),
+        );
+      }
 
       setIsModalOpen(false);
+      setEditingId(null);
       setForm(createContractForm());
 
       await Swal.fire({
-        title: "Contract Created",
-        text: `${form.vehicleIds.length} vehicle(s) assigned to lease and blocked from allocation.`,
+        title: isEdit ? "Contract Updated" : "Contract Created",
+        text: isEdit
+          ? "Lease contract updated successfully."
+          : savedContract.vehicleIds.length === 0
+            ? "Lease contract created without a vehicle. You can assign vehicles later via Edit."
+            : `${savedContract.vehicleIds.length} vehicle(s) assigned to lease and blocked from allocation.`,
         icon: "success",
         timer: 1600,
         showConfirmButton: false,
@@ -427,10 +547,10 @@ export default function LongTermLeasing() {
         color: "#e2e8f0",
       });
     } catch (error) {
-      setErrorMessage(error.message || "Failed to create lease contract.");
+      setErrorMessage(error.message || "Failed to save lease contract.");
       await Swal.fire({
         title: "Error",
-        text: error.message || "Failed to create lease contract.",
+        text: error.message || "Failed to save lease contract.",
         icon: "error",
         background: "#0f172a",
         color: "#e2e8f0",
@@ -480,7 +600,7 @@ export default function LongTermLeasing() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Lease</h1>
+          <h1 className="text-2xl font-bold text-slate-900">Lease Contracts</h1>
           <p className="text-slate-500 mt-1">
             Manage daily, short-term, and long-term lease contracts and block
             leased vehicles from operational use.
@@ -562,13 +682,14 @@ export default function LongTermLeasing() {
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Monthly Rate</th>
                 <th className="px-4 py-3">Documents</th>
+                <th className="px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {isLoading ? (
                 <tr>
                   <td
-                    colSpan={9}
+                    colSpan={10}
                     className="py-8 text-center text-slate-400 text-sm"
                   >
                     Loading lease contracts...
@@ -577,7 +698,7 @@ export default function LongTermLeasing() {
               ) : filteredContracts.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={9}
+                    colSpan={10}
                     className="py-8 text-center text-slate-400 text-sm"
                   >
                     No lease contracts found.
@@ -670,6 +791,26 @@ export default function LongTermLeasing() {
                         "-"
                       )}
                     </td>
+                    <td className="px-4 py-3 text-sm text-slate-700">
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => openEdit(contract)}
+                          className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-700 border border-blue-200 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
+                          title="Edit contract"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => handleDeleteContract(contract)}
+                          className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-rose-700 border border-rose-200 bg-rose-50 hover:bg-rose-100 rounded-lg transition-colors"
+                          title="Delete contract"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          Delete
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ))
               )}
@@ -690,7 +831,7 @@ export default function LongTermLeasing() {
           <div className="relative w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800">
               <h2 className="text-lg font-semibold text-white">
-                Create Lease Contract
+                {editingId ? "Edit Lease Contract" : "Create Lease Contract"}
               </h2>
               <button
                 onClick={() => {
@@ -707,7 +848,10 @@ export default function LongTermLeasing() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="md:col-span-2">
                   <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                    Vehicles <span className="text-red-400">*</span>
+                    Vehicles{" "}
+                    <span className="text-slate-500 font-normal">
+                      (optional — can be added later)
+                    </span>
                   </label>
                   <select
                     value=""
@@ -719,12 +863,16 @@ export default function LongTermLeasing() {
                       <option key={vehicle.id} value={vehicle.id}>
                         {vehicle.vehicleNo} ({vehicle.plateNo}) - {vehicle.make}{" "}
                         {vehicle.model}
+                        {vehicle.driverName
+                          ? ` — Driver: ${vehicle.driverName}`
+                          : " — No driver assigned"}
                       </option>
                     ))}
                   </select>
                   {form.vehicleIds.length === 0 ? (
                     <p className="text-xs text-slate-500 italic">
-                      No vehicles added yet.
+                      No vehicles added yet. You can save the lease without a
+                      vehicle and assign one later.
                     </p>
                   ) : (
                     <div className="flex flex-wrap gap-2">
@@ -739,6 +887,11 @@ export default function LongTermLeasing() {
                           >
                             <Car className="w-3 h-3 text-amber-400" />
                             {v ? `${v.vehicleNo} (${v.plateNo})` : `ID:${vId}`}
+                            {v?.driverName && (
+                              <span className="text-amber-300/90">
+                                · {v.driverName}
+                              </span>
+                            )}
                             <button
                               type="button"
                               onClick={() => removeVehicle(vId)}
@@ -882,11 +1035,15 @@ export default function LongTermLeasing() {
                 Cancel
               </button>
               <button
-                onClick={handleCreateContract}
+                onClick={handleSaveContract}
                 disabled={isSaving}
                 className="px-4 py-2.5 bg-gradient-to-r from-amber-400 to-amber-600 text-white rounded-lg text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-70"
               >
-                {isSaving ? "Saving..." : "Create Contract"}
+                {isSaving
+                  ? "Saving..."
+                  : editingId
+                    ? "Update Contract"
+                    : "Create Contract"}
               </button>
             </div>
           </div>

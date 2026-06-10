@@ -1,6 +1,18 @@
 import { useEffect, useState } from "react";
-import { Shield, Key, CheckCircle2, XCircle, RefreshCw } from "lucide-react";
+import {
+  Shield,
+  Key,
+  CheckCircle2,
+  XCircle,
+  RefreshCw,
+  Save,
+} from "lucide-react";
 import { apiFetch } from "../utils/api";
+import {
+  getAuthRoles,
+  hasPermission as userHasPermission,
+  updateAuthSession,
+} from "../utils/auth";
 
 const roleStyles = {
   Admin: "bg-blue-50 text-blue-600 border-blue-200",
@@ -44,15 +56,47 @@ function formatPermissionLabel(perm) {
   return `${formatModuleName(module)} - ${formatActionName(perm)}`;
 }
 
+function buildRolePermissionMap(roles) {
+  return roles.reduce((map, role) => {
+    map[role.name] = Array.isArray(role.permissions)
+      ? [...role.permissions]
+      : [];
+    return map;
+  }, {});
+}
+
+function normalizePermissions(permissions) {
+  return [...new Set(permissions ?? [])].sort();
+}
+
+function samePermissions(left, right) {
+  const normalizedLeft = normalizePermissions(left);
+  const normalizedRight = normalizePermissions(right);
+
+  if (normalizedLeft.length !== normalizedRight.length) {
+    return false;
+  }
+
+  return normalizedLeft.every((permission, index) => {
+    return permission === normalizedRight[index];
+  });
+}
+
 export default function RolesPermissions() {
   const [roles, setRoles] = useState([]);
   const [allPermissions, setAllPermissions] = useState([]);
+  const [draftPermissionsByRole, setDraftPermissionsByRole] = useState({});
   const [isLoading, setIsLoading] = useState(true);
+  const [savingRole, setSavingRole] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const [statusMessage, setStatusMessage] = useState("");
+
+  const canManagePermissions = userHasPermission("users.update");
 
   const load = async () => {
     setIsLoading(true);
     setErrorMessage("");
+    setStatusMessage("");
 
     try {
       const response = await apiFetch("/roles/permissions");
@@ -66,6 +110,7 @@ export default function RolesPermissions() {
 
       setRoles(payload.roles ?? []);
       setAllPermissions(payload.permissions ?? []);
+      setDraftPermissionsByRole(buildRolePermissionMap(payload.roles ?? []));
     } catch (error) {
       setErrorMessage(error.message || "Failed to load roles and permissions.");
     } finally {
@@ -81,12 +126,115 @@ export default function RolesPermissions() {
   const groupNames = Object.keys(permissionGroups).sort();
 
   const permSet = roles.reduce((map, role) => {
-    map[role.name] = new Set(role.permissions);
+    map[role.name] = new Set(
+      draftPermissionsByRole[role.name] ?? role.permissions,
+    );
     return map;
   }, {});
+  const originalPermissionMap = buildRolePermissionMap(roles);
 
   const totalPerms = allPermissions.length;
   const totalRoles = roles.length;
+
+  const isRoleDirty = (roleName) => {
+    return !samePermissions(
+      originalPermissionMap[roleName] ?? [],
+      draftPermissionsByRole[roleName] ?? [],
+    );
+  };
+
+  const togglePermission = (roleName, permission) => {
+    setDraftPermissionsByRole((current) => {
+      const nextPermissions = new Set(current[roleName] ?? []);
+
+      if (nextPermissions.has(permission)) {
+        nextPermissions.delete(permission);
+      } else {
+        nextPermissions.add(permission);
+      }
+
+      return {
+        ...current,
+        [roleName]: [...nextPermissions].sort(),
+      };
+    });
+    setStatusMessage("");
+    setErrorMessage("");
+  };
+
+  const refreshCurrentSession = async () => {
+    const response = await apiFetch("/me");
+    const payload = await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        payload?.message || "Unable to refresh the current session.",
+      );
+    }
+
+    updateAuthSession({
+      user: payload.user,
+      roles: payload.roles,
+      permissions: payload.permissions,
+    });
+  };
+
+  const saveRolePermissions = async (roleName) => {
+    setSavingRole(roleName);
+    setErrorMessage("");
+    setStatusMessage("");
+
+    try {
+      const response = await apiFetch(
+        `/roles/${encodeURIComponent(roleName)}/permissions`,
+        {
+          method: "PATCH",
+          body: {
+            permissions: normalizePermissions(
+              draftPermissionsByRole[roleName] ?? [],
+            ),
+          },
+        },
+      );
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          payload?.message || `Unable to update permissions for ${roleName}.`,
+        );
+      }
+
+      const updatedPermissions = normalizePermissions(
+        payload?.role?.permissions ?? draftPermissionsByRole[roleName] ?? [],
+      );
+
+      setRoles((current) =>
+        current.map((role) => {
+          if (role.name !== roleName) {
+            return role;
+          }
+
+          return {
+            ...role,
+            permissions: updatedPermissions,
+          };
+        }),
+      );
+      setDraftPermissionsByRole((current) => ({
+        ...current,
+        [roleName]: updatedPermissions,
+      }));
+      setStatusMessage(`${roleName} permissions updated successfully.`);
+
+      if (getAuthRoles().includes(roleName)) {
+        await refreshCurrentSession();
+      }
+    } catch (error) {
+      setErrorMessage(error.message || "Failed to update role permissions.");
+    } finally {
+      setSavingRole("");
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -97,7 +245,9 @@ export default function RolesPermissions() {
             Roles &amp; Permissions
           </h1>
           <p className="text-slate-500 mt-1">
-            View which permissions are assigned to each system role.
+            {canManagePermissions
+              ? "Review, edit, and save which permissions are assigned to each system role."
+              : "View which permissions are assigned to each system role."}
           </p>
         </div>
         <button
@@ -114,6 +264,19 @@ export default function RolesPermissions() {
       {errorMessage && (
         <div className="bg-red-50 border border-red-200 text-red-600 rounded-xl px-4 py-3 text-sm">
           {errorMessage}
+        </div>
+      )}
+
+      {statusMessage && (
+        <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-xl px-4 py-3 text-sm">
+          {statusMessage}
+        </div>
+      )}
+
+      {canManagePermissions && (
+        <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700">
+          Tick or untick permissions in the matrix, then save each role to apply
+          the changes.
         </div>
       )}
 
@@ -147,18 +310,41 @@ export default function RolesPermissions() {
           <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
             System Roles
           </p>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-3">
             {roles.map((role) => (
-              <span
-                key={role.name}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border ${roleStyles[role.name] ?? defaultRoleStyle}`}
-              >
-                <Shield className="w-3.5 h-3.5" />
-                {role.name}
-                <span className="opacity-60 text-xs">
-                  ({role.permissions.length})
+              <div key={role.name} className="flex items-center gap-2">
+                <span
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border ${roleStyles[role.name] ?? defaultRoleStyle}`}
+                >
+                  <Shield className="w-3.5 h-3.5" />
+                  {role.name}
+                  <span className="opacity-60 text-xs">
+                    (
+                    {
+                      (draftPermissionsByRole[role.name] ?? role.permissions)
+                        .length
+                    }
+                    )
+                  </span>
                 </span>
-              </span>
+                {canManagePermissions && (
+                  <button
+                    type="button"
+                    onClick={() => saveRolePermissions(role.name)}
+                    disabled={
+                      !isRoleDirty(role.name) || savingRole === role.name
+                    }
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Save className="h-3.5 w-3.5" />
+                    {savingRole === role.name
+                      ? "Saving..."
+                      : isRoleDirty(role.name)
+                        ? "Save"
+                        : "Saved"}
+                  </button>
+                )}
+              </div>
             ))}
           </div>
         </div>
@@ -234,7 +420,17 @@ export default function RolesPermissions() {
                               key={role.name}
                               className="py-3 px-4 text-center"
                             >
-                              {hasPermission ? (
+                              {canManagePermissions ? (
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(hasPermission)}
+                                  onChange={() =>
+                                    togglePermission(role.name, perm)
+                                  }
+                                  className="h-4 w-4 cursor-pointer rounded border-slate-300 text-amber-500 focus:ring-amber-500"
+                                  aria-label={`${role.name} ${perm}`}
+                                />
+                              ) : hasPermission ? (
                                 <CheckCircle2 className="w-5 h-5 text-emerald-500 mx-auto" />
                               ) : (
                                 <XCircle className="w-5 h-5 text-slate-300 mx-auto" />

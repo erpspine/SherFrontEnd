@@ -13,6 +13,9 @@ import {
   CheckCircle,
   AlertTriangle,
   Loader2,
+  RefreshCw,
+  CreditCard,
+  DollarSign,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import Swal from "sweetalert2";
@@ -30,6 +33,10 @@ const statusConfig = {
   Paid: {
     color: "bg-emerald-50 text-emerald-700 border-emerald-200",
     icon: CheckCircle,
+  },
+  Deposit: {
+    color: "bg-teal-50 text-teal-700 border-teal-200",
+    icon: DollarSign,
   },
   Overdue: {
     color: "bg-rose-50 text-rose-700 border-rose-200",
@@ -53,7 +60,10 @@ const statusConfig = {
   },
 };
 
-const formatCurrency = (n) => `USD ${Number(n || 0).toLocaleString()}`;
+const formatCurrency = (n, currency = "USD") =>
+  `${currency || "USD"} ${Number(n || 0).toLocaleString(undefined, {
+    maximumFractionDigits: 2,
+  })}`;
 
 const formatDate = (value) => {
   if (!value) return "-";
@@ -233,6 +243,11 @@ const normalizePI = (pi) => {
     subtotal: Number(pi.subtotal || 0),
     tax: Number(pi.tax || 0),
     total: Number(pi.total || 0),
+    paidAmount: Number(pi.paidAmount ?? pi.paid_amount ?? 0),
+    balance: Number(pi.balance ?? pi.total ?? 0),
+    payments: Array.isArray(pi.payments) ? pi.payments : [],
+    currency: (pi.currency || "USD").toUpperCase(),
+    exchangeRate: Number(pi.exchangeRate ?? pi.exchange_rate ?? 1) || 1,
     status: pi.status || "Converted",
     leadStartDate: pi.lead_start_date || pi.leadStartDate || "",
     leadEndDate: pi.lead_end_date || pi.leadEndDate || "",
@@ -268,7 +283,21 @@ export default function ProformaInvoices() {
   const [isLoadingAllocationVehicles, setIsLoadingAllocationVehicles] =
     useState(false);
   const [isSavingAllocation, setIsSavingAllocation] = useState(false);
-  const [confirmOnAllocate, setConfirmOnAllocate] = useState(false);
+  const [currencyPI, setCurrencyPI] = useState(null);
+  const [currencyChoice, setCurrencyChoice] = useState("USD");
+  const [currencyRate, setCurrencyRate] = useState("");
+  const [currencyError, setCurrencyError] = useState("");
+  const [isSavingCurrency, setIsSavingCurrency] = useState(false);
+  const [paymentPI, setPaymentPI] = useState(null);
+  const [paymentForm, setPaymentForm] = useState({
+    date: "",
+    amount: "",
+    method: "Bank Transfer",
+    reference: "",
+    notes: "",
+  });
+  const [paymentError, setPaymentError] = useState("");
+  const [isSavingPayment, setIsSavingPayment] = useState(false);
   const navigate = useNavigate();
 
   const loadPIs = async () => {
@@ -337,7 +366,7 @@ export default function ProformaInvoices() {
   );
 
   const statusOptions = useMemo(
-    () => ["All", "Sent", "Allocate", "Allocated"],
+    () => ["All", "Sent", "Allocate", "Allocated", "Deposit", "Paid"],
     [],
   );
 
@@ -360,11 +389,26 @@ export default function ProformaInvoices() {
             ? ["Confirmed", "Partially Allocated"].includes(pi.status)
             : pi.status === statusFilter);
 
-        const piDate = normalizeIsoDateOnly(pi.date);
+        const itineraryDates = (pi.daySections || [])
+          .map((section) =>
+            normalizeIsoDateOnly(
+              section?.dayDate ||
+                section?.day_date ||
+                section?.dayTitle ||
+                section?.day_title ||
+                "",
+            ),
+          )
+          .filter(Boolean)
+          .sort();
+        const itineraryStartDate =
+          itineraryDates[0] || normalizeIsoDateOnly(pi.leadStartDate);
         const matchDateStart =
-          !dateFilterStart || (piDate && piDate >= dateFilterStart);
+          !dateFilterStart ||
+          (itineraryStartDate && itineraryStartDate >= dateFilterStart);
         const matchDateEnd =
-          !dateFilterEnd || (piDate && piDate <= dateFilterEnd);
+          !dateFilterEnd ||
+          (itineraryStartDate && itineraryStartDate <= dateFilterEnd);
 
         return matchSearch && matchStatus && matchDateStart && matchDateEnd;
       }),
@@ -399,7 +443,6 @@ export default function ProformaInvoices() {
     setAllocationVehicles([]);
     setAllocationRanges([createPIAllocationRange()]);
     setAllocationError("");
-    setConfirmOnAllocate(false);
   };
 
   const getVehiclesAvailableForRange = (startDate, endDate) =>
@@ -409,11 +452,10 @@ export default function ProformaInvoices() {
       return true;
     });
 
-  const openAllocationModal = async (pi, options = {}) => {
+  const openAllocationModal = async (pi) => {
     const defaultStart = normalizeIsoDateOnly(pi?.leadStartDate || "");
     const defaultEnd = normalizeIsoDateOnly(pi?.leadEndDate || "");
 
-    setConfirmOnAllocate(Boolean(options.confirmOnAllocate));
     setAllocationPI(pi);
     setAllocationRanges([createPIAllocationRange(defaultStart, defaultEnd)]);
     setAllocationError("");
@@ -489,8 +531,163 @@ export default function ProformaInvoices() {
     );
   };
 
+  const openCurrencyModal = (pi) => {
+    setCurrencyPI(pi);
+    setCurrencyChoice(pi.currency || "USD");
+    setCurrencyRate(pi.currency === "TZS" ? String(pi.exchangeRate || "") : "");
+    setCurrencyError("");
+  };
+
+  const closeCurrencyModal = () => {
+    if (isSavingCurrency) return;
+    setCurrencyPI(null);
+    setCurrencyChoice("USD");
+    setCurrencyRate("");
+    setCurrencyError("");
+  };
+
+  const openPaymentModal = (pi) => {
+    setPaymentPI(pi);
+    setPaymentForm({
+      date: new Date().toISOString().split("T")[0],
+      amount: "",
+      method: "Bank Transfer",
+      reference: "",
+      notes: "",
+    });
+    setPaymentError("");
+  };
+
+  const closePaymentModal = () => {
+    if (isSavingPayment) return;
+    setPaymentPI(null);
+    setPaymentForm({
+      date: "",
+      amount: "",
+      method: "Bank Transfer",
+      reference: "",
+      notes: "",
+    });
+    setPaymentError("");
+  };
+
+  const submitPayment = async () => {
+    if (!paymentPI) return;
+    const amount = Number(paymentForm.amount);
+    if (!paymentForm.date) {
+      setPaymentError("Payment date is required.");
+      return;
+    }
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setPaymentError("Enter a valid payment amount.");
+      return;
+    }
+    if (!paymentForm.method.trim()) {
+      setPaymentError("Payment method is required.");
+      return;
+    }
+
+    setIsSavingPayment(true);
+    setPaymentError("");
+    try {
+      const response = await apiFetch(
+        `/proforma-invoices/${paymentPI.id}/payments`,
+        {
+          method: "POST",
+          body: {
+            date: paymentForm.date,
+            amount,
+            method: paymentForm.method.trim(),
+            reference: paymentForm.reference.trim() || null,
+            notes: paymentForm.notes.trim() || null,
+          },
+        },
+      );
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const fieldError = data?.errors
+          ? Object.values(data.errors).flat().find(Boolean)
+          : null;
+        throw new Error(
+          fieldError || data?.message || "Unable to record payment.",
+        );
+      }
+      const updated = normalizePI(extractSingle(data));
+      setAllPIs((current) =>
+        current.map((p) => (p.id === updated.id ? updated : p)),
+      );
+      setPaymentPI(null);
+      await Swal.fire({
+        title: "Payment recorded",
+        text: `PI status is now: ${updated.status}`,
+        icon: "success",
+        timer: 1800,
+        showConfirmButton: false,
+        background: "#ffffff",
+        color: "#111827",
+      });
+    } catch (error) {
+      setPaymentError(error.message || "Failed to record payment.");
+    } finally {
+      setIsSavingPayment(false);
+    }
+  };
+
+  const submitCurrencyChange = async () => {
+    if (!currencyPI) return;
+    if (currencyChoice === "TZS") {
+      const rate = Number(currencyRate);
+      if (!Number.isFinite(rate) || rate <= 0) {
+        setCurrencyError("Enter a valid TZS conversion rate (e.g. 2600).");
+        return;
+      }
+    }
+    setIsSavingCurrency(true);
+    setCurrencyError("");
+    try {
+      const response = await apiFetch(
+        `/proforma-invoices/${currencyPI.id}/currency`,
+        {
+          method: "POST",
+          body: {
+            currency: currencyChoice,
+            exchangeRate: currencyChoice === "TZS" ? Number(currencyRate) : 1,
+          },
+        },
+      );
+      const data = await response.json();
+      if (!response.ok) {
+        const fieldError = data?.errors
+          ? Object.values(data.errors).flat().find(Boolean)
+          : null;
+        throw new Error(
+          fieldError || data?.message || "Unable to update currency.",
+        );
+      }
+      const updated = normalizePI(extractSingle(data));
+      setAllPIs((current) =>
+        current.map((p) => (p.id === updated.id ? updated : p)),
+      );
+      setCurrencyPI(null);
+      setCurrencyChoice("USD");
+      setCurrencyRate("");
+      await Swal.fire({
+        title: "Currency updated",
+        text: `PI is now in ${updated.currency}.`,
+        icon: "success",
+        timer: 1800,
+        showConfirmButton: false,
+        background: "#0f172a",
+        color: "#e2e8f0",
+      });
+    } catch (error) {
+      setCurrencyError(error.message || "Failed to update currency.");
+    } finally {
+      setIsSavingCurrency(false);
+    }
+  };
+
   const handleConfirmPI = async (pi) => {
-    // Just open the decision dialog — nothing is changed on the PI at this point.
     const decision = await Swal.fire({
       title: `Confirm PI: ${pi.piNo}`,
       html: `<p class="text-slate-600 text-sm">Choose how you want to proceed with this proforma invoice.</p>`,
@@ -554,9 +751,37 @@ export default function ProformaInvoices() {
     }
 
     if (decision.isDenied) {
-      // "Confirm and Allocate" — open allocation screen.
-      // PI will be confirmed atomically when the user submits the allocation.
-      await openAllocationModal(pi, { confirmOnAllocate: true });
+      // "Confirm and Allocate" — confirm the PI first, then open the allocation modal.
+      let confirmedPi = pi;
+      try {
+        const response = await apiFetch(`/proforma-invoices/${pi.id}/confirm`, {
+          method: "POST",
+        });
+        const payload = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          throw new Error(payload?.message || "Unable to confirm PI.");
+        }
+
+        const normalized = normalizePI(extractSingle(payload));
+        confirmedPi = { ...pi, ...normalized };
+        setAllPIs((current) =>
+          current.map((item) =>
+            item.id === pi.id ? { ...item, ...normalized } : item,
+          ),
+        );
+      } catch (error) {
+        await Swal.fire({
+          title: "Confirm Failed",
+          text: error.message || "Failed to confirm PI.",
+          icon: "error",
+          background: "#ffffff",
+          color: "#111827",
+        });
+        return;
+      }
+
+      await openAllocationModal(confirmedPi);
     }
   };
 
@@ -624,7 +849,7 @@ export default function ProformaInvoices() {
       const summary = payload?.allocationSummary || {};
       await Swal.fire({
         title: "Allocation Saved",
-        text: `${summary.allocationsCreated || 0} safari allocation(s) and ${summary.jobCardsCreated || 0} job card(s) created.${confirmOnAllocate ? " PI is now confirmed and allocation status updated." : ""}`,
+        text: `${summary.allocationsCreated || 0} safari allocation(s) created. Allocation status updated.`,
         icon: "success",
         background: "#ffffff",
         color: "#111827",
@@ -807,7 +1032,8 @@ export default function ProformaInvoices() {
                   "Client",
                   "Group Name",
                   "Service Summary",
-                  "Total",
+                  "Currency",
+                  "Total / Paid",
                   "Status",
                 ].map((h) => (
                   <th
@@ -859,6 +1085,13 @@ export default function ProformaInvoices() {
                             <Download className="w-4 h-4" />
                           )}
                         </button>
+                        <button
+                          onClick={() => openCurrencyModal(pi)}
+                          className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                          title="Change Currency"
+                        >
+                          <RefreshCw className="w-4 h-4" />
+                        </button>
                         {["Converted", "Sent"].includes(pi.status) && (
                           <button
                             onClick={() => handleConfirmPI(pi)}
@@ -872,17 +1105,21 @@ export default function ProformaInvoices() {
                           pi.status,
                         ) && (
                           <button
-                            onClick={() =>
-                              openAllocationModal(pi, {
-                                confirmOnAllocate: false,
-                              })
-                            }
+                            onClick={() => openAllocationModal(pi)}
                             className="px-2 py-1 text-xs font-medium text-amber-700 border border-amber-200 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors"
                             title="Allocate Vehicles"
                           >
                             Allocate
                           </button>
                         )}
+                        <button
+                          onClick={() => openPaymentModal(pi)}
+                          className="px-2 py-1 text-xs font-medium text-emerald-700 border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors"
+                          title="Record Payment"
+                        >
+                          <CreditCard className="w-3 h-3 inline mr-0.5" />
+                          Pay
+                        </button>
                       </div>
                     </td>
                     <td className="py-4 px-4 min-w-[180px]">
@@ -928,9 +1165,37 @@ export default function ProformaInvoices() {
                       </div>
                     </td>
                     <td className="py-4 px-4">
-                      <span className="text-slate-900 font-semibold text-sm whitespace-nowrap">
-                        {formatCurrency(pi.total)}
+                      <span
+                        className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold border whitespace-nowrap ${
+                          pi.currency === "TZS"
+                            ? "bg-indigo-50 text-indigo-700 border-indigo-200"
+                            : "bg-slate-50 text-slate-700 border-slate-200"
+                        }`}
+                      >
+                        {pi.currency || "USD"}
                       </span>
+                      {pi.currency === "TZS" && pi.exchangeRate ? (
+                        <p className="text-[10px] text-slate-500 mt-1">
+                          @ {Number(pi.exchangeRate).toLocaleString()}
+                        </p>
+                      ) : null}
+                    </td>
+                    <td className="py-4 px-4">
+                      <span className="text-slate-900 font-semibold text-sm whitespace-nowrap">
+                        {formatCurrency(pi.total, pi.currency)}
+                      </span>
+                      {pi.paidAmount > 0 && (
+                        <div className="mt-0.5 space-y-0.5">
+                          <p className="text-[10px] text-emerald-600 whitespace-nowrap">
+                            Paid: {formatCurrency(pi.paidAmount, pi.currency)}
+                          </p>
+                          {pi.balance > 0 && (
+                            <p className="text-[10px] text-amber-600 whitespace-nowrap">
+                              Bal: {formatCurrency(pi.balance, pi.currency)}
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </td>
                     <td className="py-4 px-4">
                       <span
@@ -972,11 +1237,14 @@ export default function ProformaInvoices() {
 
       {viewPI && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-2xl shadow-xl">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-4xl shadow-xl max-h-[92vh] flex flex-col">
             <div className="flex items-center justify-between p-6 border-b border-slate-800">
               <div>
                 <h2 className="text-xl font-bold text-white">{viewPI.piNo}</h2>
-                <p className="text-sm text-slate-400">Ref: {viewPI.quoteRef}</p>
+                <p className="text-sm text-slate-400">
+                  Ref: {viewPI.quoteRef}
+                  {viewPI.groupName ? ` · ${viewPI.groupName}` : ""}
+                </p>
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -999,53 +1267,397 @@ export default function ProformaInvoices() {
                 </button>
               </div>
             </div>
-            <div className="p-6 space-y-4">
-              <div className="flex justify-between text-sm">
-                <span className="text-slate-400">Client</span>
-                <span className="text-white font-medium">{viewPI.client}</span>
+            <div className="p-6 space-y-6 overflow-y-auto">
+              {/* Summary grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                <div className="rounded-xl border border-slate-800 bg-slate-800/40 p-3">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">
+                    Client
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-white">
+                    {viewPI.client || "-"}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-800 bg-slate-800/40 p-3">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">
+                    Attention
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-white">
+                    {viewPI.attention || "-"}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-800 bg-slate-800/40 p-3">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">
+                    Group
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-white">
+                    {viewPI.groupName || "-"}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-800 bg-slate-800/40 p-3">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">
+                    Invoice Date
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-white">
+                    {viewPI.date ? formatDate(viewPI.date) : "-"}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-800 bg-slate-800/40 p-3">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">
+                    Due Date
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-white">
+                    {viewPI.dueDate ? formatDate(viewPI.dueDate) : "-"}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-800 bg-slate-800/40 p-3">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">
+                    Status
+                  </p>
+                  <p className="mt-1">
+                    <span
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-xs font-medium border ${statusConfig[viewPI.status]?.color || statusConfig.Converted.color}`}
+                    >
+                      {viewPI.status}
+                    </span>
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-800 bg-slate-800/40 p-3">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">
+                    Itinerary Start
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-white">
+                    {viewPI.leadStartDate
+                      ? formatDate(viewPI.leadStartDate)
+                      : "-"}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-800 bg-slate-800/40 p-3">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">
+                    Itinerary End
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-white">
+                    {viewPI.leadEndDate ? formatDate(viewPI.leadEndDate) : "-"}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-800 bg-slate-800/40 p-3">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">
+                    Route / Parks
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-white">
+                    {viewPI.leadRouteParks || "-"}
+                  </p>
+                </div>
               </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-slate-400">Invoice Date</span>
-                <span className="text-slate-300">
-                  {formatDate(viewPI.date)}
-                </span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-slate-400">Due Date</span>
-                <span className="text-slate-300">
-                  {formatDate(viewPI.dueDate)}
-                </span>
-              </div>
+
+              {/* Service summary */}
+              {viewPI.serviceSummary && (
+                <div>
+                  <h3 className="text-sm font-semibold text-white mb-2">
+                    Service Summary
+                  </h3>
+                  <p className="text-sm text-slate-300 whitespace-pre-line">
+                    {viewPI.serviceSummary}
+                  </p>
+                </div>
+              )}
+
+              {/* Itinerary / day sections */}
+              {Array.isArray(viewPI.daySections) &&
+                viewPI.daySections.length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-semibold text-white mb-2">
+                      Itinerary
+                    </h3>
+                    <div className="space-y-2">
+                      {viewPI.daySections.map((section, idx) => {
+                        const title =
+                          section?.dayTitle ||
+                          section?.day_title ||
+                          `Day ${idx + 1}`;
+                        const description =
+                          section?.dayDescription ||
+                          section?.day_description ||
+                          "";
+                        const dayDate =
+                          section?.dayDate || section?.day_date || "";
+                        return (
+                          <div
+                            key={idx}
+                            className="rounded-lg border border-slate-800 bg-slate-800/30 p-3"
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <p className="text-sm font-semibold text-white">
+                                {title}
+                              </p>
+                              {dayDate && (
+                                <p className="text-xs text-slate-400">
+                                  {formatDate(dayDate)}
+                                </p>
+                              )}
+                            </div>
+                            {description && (
+                              <p className="mt-1 text-sm text-slate-300 whitespace-pre-line">
+                                {description}
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+              {/* Line items - grouped by day to match PDF */}
+              {Array.isArray(viewPI.lineItems) &&
+                viewPI.lineItems.length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-semibold text-white mb-2">
+                      Service Details
+                    </h3>
+                    <div className="overflow-x-auto rounded-xl border border-slate-800">
+                      <table className="w-full text-sm">
+                        <thead className="bg-slate-800/60 text-slate-400">
+                          <tr>
+                            <th className="text-center px-2 py-2 font-medium w-10">
+                              #
+                            </th>
+                            <th className="text-left px-3 py-2 font-medium">
+                              Type
+                            </th>
+                            <th className="text-left px-3 py-2 font-medium">
+                              Description
+                            </th>
+                            <th className="text-center px-2 py-2 font-medium">
+                              Unit
+                            </th>
+                            <th className="text-right px-2 py-2 font-medium">
+                              Qty
+                            </th>
+                            <th className="text-right px-3 py-2 font-medium">
+                              Rate
+                            </th>
+                            <th className="text-right px-3 py-2 font-medium">
+                              Total
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-800">
+                          {(() => {
+                            const groups = viewPI.lineItems.reduce(
+                              (acc, item) => {
+                                const key =
+                                  item.dayTitle || item.day_title || "";
+                                if (!acc.has(key)) acc.set(key, []);
+                                acc.get(key).push(item);
+                                return acc;
+                              },
+                              new Map(),
+                            );
+                            let rowNum = 1;
+                            const rows = [];
+                            groups.forEach((items, dayTitle) => {
+                              const firstItem = items[0] || {};
+                              const dayDescription =
+                                firstItem.dayDescription ||
+                                firstItem.day_description ||
+                                "";
+                              const formattedTitle = dayTitle
+                                ? /^\d{4}-\d{2}-\d{2}$/.test(dayTitle)
+                                  ? formatDate(dayTitle)
+                                  : dayTitle
+                                : "";
+                              if (formattedTitle || dayDescription) {
+                                rows.push(
+                                  <tr
+                                    key={`day-${dayTitle || rowNum}`}
+                                    className="bg-amber-400 text-slate-900"
+                                  >
+                                    <td
+                                      colSpan={7}
+                                      className="px-3 py-2 font-bold"
+                                    >
+                                      {formattedTitle}
+                                      {dayDescription
+                                        ? ` — ${dayDescription}`
+                                        : ""}
+                                    </td>
+                                  </tr>,
+                                );
+                              }
+                              items.forEach((item, idx) => {
+                                rows.push(
+                                  <tr
+                                    key={item.id || `${dayTitle}-${idx}`}
+                                    className="text-slate-300"
+                                  >
+                                    <td className="px-2 py-2 text-center">
+                                      {rowNum++}
+                                    </td>
+                                    <td className="px-3 py-2">
+                                      {item.item || "-"}
+                                    </td>
+                                    <td className="px-3 py-2">
+                                      {item.description || "-"}
+                                    </td>
+                                    <td className="px-2 py-2 text-center">
+                                      {item.unit || "-"}
+                                    </td>
+                                    <td className="px-2 py-2 text-right">
+                                      {Number(item.qty || 0)}
+                                    </td>
+                                    <td className="px-3 py-2 text-right">
+                                      {formatCurrency(
+                                        item.rate,
+                                        viewPI.currency,
+                                      )}
+                                    </td>
+                                    <td className="px-3 py-2 text-right text-white font-medium">
+                                      {formatCurrency(
+                                        item.total,
+                                        viewPI.currency,
+                                      )}
+                                    </td>
+                                  </tr>,
+                                );
+                              });
+                            });
+                            return rows;
+                          })()}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+              {/* Notes */}
+              {viewPI.notes && (
+                <div>
+                  <h3 className="text-sm font-semibold text-white mb-2">
+                    Notes
+                  </h3>
+                  <p className="text-sm text-slate-300 whitespace-pre-line">
+                    {viewPI.notes}
+                  </p>
+                </div>
+              )}
+
+              {/* Totals */}
               <div className="border-t border-slate-800 pt-4 space-y-2">
                 <div className="flex justify-between text-sm">
                   <span className="text-slate-400">Subtotal</span>
                   <span className="text-slate-300">
-                    {formatCurrency(viewPI.subtotal)}
+                    {formatCurrency(viewPI.subtotal, viewPI.currency)}
                   </span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-slate-400">VAT (18%)</span>
                   <span className="text-slate-300">
-                    {formatCurrency(viewPI.tax)}
+                    {formatCurrency(viewPI.tax, viewPI.currency)}
                   </span>
                 </div>
                 <div className="flex justify-between text-base font-bold border-t border-slate-800 pt-2">
                   <span className="text-white">Total</span>
                   <span className="text-white">
-                    {formatCurrency(viewPI.total)}
+                    {formatCurrency(viewPI.total, viewPI.currency)}
                   </span>
                 </div>
               </div>
-              <div className="flex justify-between items-center">
-                <span className="text-slate-400 text-sm">Status</span>
-                <span
-                  className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-sm font-medium border ${statusConfig[viewPI.status]?.color || statusConfig.Converted.color}`}
-                >
-                  {viewPI.status}
-                </span>
+
+              {/* Payment Terms (matches PDF) */}
+              <div>
+                <h3 className="text-sm font-semibold text-white mb-2">
+                  Payment Terms
+                </h3>
+                <div className="rounded-xl border border-slate-800 bg-slate-800/30 p-4 space-y-3 text-sm text-slate-300">
+                  <div>
+                    <p className="font-semibold text-amber-300">
+                      PEAK SEASON RATES (JUNE - OCTOBER)
+                    </p>
+                    <ul className="list-disc pl-5 space-y-1 mt-1">
+                      <li>
+                        A non-refundable deposit of 30% shall be payable upon
+                        issuance and confirmation of the Proforma Invoice.
+                      </li>
+                      <li>
+                        Full and final payment shall be made no later than
+                        thirty (30) days prior to the commencement of the
+                        safari.
+                      </li>
+                      <li>
+                        No refunds shall be issued for cancellations made within
+                        thirty (30) days prior to the safari.
+                      </li>
+                    </ul>
+                  </div>
+                  <div>
+                    <p className="font-semibold text-amber-300">
+                      HIGH &amp; LOW SEASON RATES (JANUARY - MAY, NOVEMBER)
+                    </p>
+                    <ul className="list-disc pl-5 space-y-1 mt-1">
+                      <li>
+                        A non-refundable deposit of 30% shall be payable sixty
+                        (60) days prior to booking date.
+                      </li>
+                      <li>
+                        Full and final payment shall be made no later than
+                        fourteen (14) days prior to the commencement of the
+                        safari.
+                      </li>
+                      <li>
+                        No refunds shall be issued for cancellations made within
+                        thirty (30) days prior to the safari.
+                      </li>
+                    </ul>
+                  </div>
+                  <ul className="list-disc pl-5 space-y-1">
+                    <li>
+                      An administrative fee of five percent (5%) shall apply to
+                      all park fees, concession fees or related expenses paid by
+                      Sher East Africa Ltd on behalf of the Client.
+                    </li>
+                    <li>
+                      Deployment of any vehicle is strictly conditional upon
+                      receipt of cleared funds.
+                    </li>
+                  </ul>
+                </div>
+              </div>
+
+              {/* Bank Details (matches PDF) */}
+              <div>
+                <h3 className="text-sm font-semibold text-white mb-2">
+                  Bank Details
+                </h3>
+                <div className="rounded-xl border border-slate-700 bg-slate-800/60 p-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 text-sm">
+                    {[
+                      ["Bank Name", "Azania Bank Plc"],
+                      ["Account Name", "Sher East Africa Limited"],
+                      ["Account No.", "010010003888"],
+                      [
+                        "Currency",
+                        viewPI.currency === "TZS" && viewPI.exchangeRate
+                          ? `${viewPI.currency} (1 USD = ${Number(viewPI.exchangeRate).toLocaleString()})`
+                          : viewPI.currency || "USD",
+                      ],
+                      ["Swift Code", "AZANTZTZ"],
+                    ].map(([label, value]) => (
+                      <div
+                        key={label}
+                        className="flex items-center justify-between gap-3 border-b border-slate-700/60 pb-2 last:border-b-0"
+                      >
+                        <span className="text-slate-400">{label}</span>
+                        <span className="text-white font-medium text-right">
+                          {value}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
-            <div className="p-6 pt-0 flex justify-end gap-3">
+            <div className="p-6 pt-4 border-t border-slate-800 flex justify-end gap-3">
               <button
                 onClick={() => navigate("/quotations")}
                 className="px-6 py-2.5 bg-slate-800 text-slate-300 rounded-xl hover:bg-slate-700"
@@ -1063,6 +1675,298 @@ export default function ProformaInvoices() {
         </div>
       )}
 
+      {currencyPI && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-lg shadow-xl">
+            <div className="flex items-center justify-between p-6 border-b border-slate-200">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900">
+                  Change PI Currency
+                </h2>
+                <p className="text-sm text-slate-500">
+                  {currencyPI.piNo} — current: {currencyPI.currency}
+                  {currencyPI.currency === "TZS" && currencyPI.exchangeRate
+                    ? ` @ ${Number(currencyPI.exchangeRate).toLocaleString()}`
+                    : ""}
+                </p>
+              </div>
+              <button
+                onClick={closeCurrencyModal}
+                disabled={isSavingCurrency}
+                className="p-2 hover:bg-slate-100 rounded-lg disabled:opacity-50"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <p className="text-xs text-slate-500">
+                Updates this PI's currency. Existing amounts will be re-scaled
+                using the new exchange rate. The PDF will reflect the chosen
+                currency.
+              </p>
+              <label className="block">
+                <span className="block text-xs font-medium text-slate-600 mb-1">
+                  PI Currency
+                </span>
+                <select
+                  value={currencyChoice}
+                  onChange={(e) => setCurrencyChoice(e.target.value)}
+                  disabled={isSavingCurrency}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                >
+                  <option value="USD">USD</option>
+                  <option value="TZS">TZS</option>
+                </select>
+              </label>
+              {currencyChoice === "TZS" && (
+                <label className="block">
+                  <span className="block text-xs font-medium text-slate-600 mb-1">
+                    Conversion rate (1 USD = ? TZS)
+                  </span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.0001"
+                    inputMode="decimal"
+                    value={currencyRate}
+                    onChange={(e) => setCurrencyRate(e.target.value)}
+                    disabled={isSavingCurrency}
+                    placeholder="e.g. 2600"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  />
+                </label>
+              )}
+              {(() => {
+                const newRate =
+                  currencyChoice === "TZS" ? Number(currencyRate) : 1;
+                const oldRate = Number(currencyPI.exchangeRate || 1) || 1;
+                if (
+                  Number.isFinite(newRate) &&
+                  newRate > 0 &&
+                  currencyPI.total != null
+                ) {
+                  const projected =
+                    (Number(currencyPI.total) * newRate) / oldRate;
+                  return (
+                    <p className="text-xs text-slate-600">
+                      New total:{" "}
+                      <span className="font-semibold text-slate-900">
+                        {formatCurrency(projected, currencyChoice)}
+                      </span>{" "}
+                      (was{" "}
+                      {formatCurrency(currencyPI.total, currencyPI.currency)})
+                    </p>
+                  );
+                }
+                return null;
+              })()}
+              {currencyError && (
+                <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                  {currencyError}
+                </div>
+              )}
+            </div>
+            <div className="px-6 py-4 border-t border-slate-200 flex items-center justify-end gap-3">
+              <button
+                onClick={closeCurrencyModal}
+                disabled={isSavingCurrency}
+                className="px-4 py-2.5 rounded-xl text-sm font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={submitCurrencyChange}
+                disabled={isSavingCurrency}
+                className="px-4 py-2.5 rounded-xl text-sm font-medium text-white bg-gradient-to-r from-amber-400 to-amber-600 hover:opacity-90 disabled:opacity-50"
+              >
+                {isSavingCurrency ? "Saving..." : "Update Currency"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Payment modal ─── */}
+      {paymentPI && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md border border-slate-200">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+              <div>
+                <h2 className="text-lg font-bold text-slate-900">
+                  Record Payment
+                </h2>
+                <p className="text-sm text-slate-500 mt-0.5">
+                  {paymentPI.piNo} · {paymentPI.client}
+                </p>
+              </div>
+              <button
+                onClick={closePaymentModal}
+                disabled={isSavingPayment}
+                className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="px-6 py-4 space-y-4">
+              {/* PI totals summary */}
+              <div className="grid grid-cols-3 gap-3 rounded-xl bg-slate-50 border border-slate-200 p-3">
+                <div className="text-center">
+                  <p className="text-xs text-slate-500">Total</p>
+                  <p className="text-sm font-bold text-slate-900">
+                    {formatCurrency(paymentPI.total, paymentPI.currency)}
+                  </p>
+                </div>
+                <div className="text-center">
+                  <p className="text-xs text-slate-500">Paid</p>
+                  <p className="text-sm font-bold text-emerald-600">
+                    {formatCurrency(paymentPI.paidAmount, paymentPI.currency)}
+                  </p>
+                </div>
+                <div className="text-center">
+                  <p className="text-xs text-slate-500">Balance</p>
+                  <p className="text-sm font-bold text-amber-600">
+                    {formatCurrency(paymentPI.balance, paymentPI.currency)}
+                  </p>
+                </div>
+              </div>
+
+              {/* Existing payments */}
+              {paymentPI.payments.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
+                    Payment History
+                  </p>
+                  <div className="space-y-1 max-h-32 overflow-y-auto">
+                    {paymentPI.payments.map((p) => (
+                      <div
+                        key={p.id}
+                        className="flex items-center justify-between text-xs rounded-lg bg-slate-50 border border-slate-100 px-3 py-1.5"
+                      >
+                        <span className="text-slate-600">
+                          {p.date} · {p.method}
+                        </span>
+                        <span className="font-semibold text-emerald-700">
+                          {formatCurrency(p.amount, paymentPI.currency)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">
+                    Date *
+                  </label>
+                  <input
+                    type="date"
+                    value={paymentForm.date}
+                    onChange={(e) =>
+                      setPaymentForm((f) => ({ ...f, date: e.target.value }))
+                    }
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-400 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">
+                    Amount *
+                  </label>
+                  <input
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    value={paymentForm.amount}
+                    onChange={(e) =>
+                      setPaymentForm((f) => ({ ...f, amount: e.target.value }))
+                    }
+                    placeholder={`Max ${Number(paymentPI.balance).toFixed(2)}`}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-400 outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">
+                  Method *
+                </label>
+                <select
+                  value={paymentForm.method}
+                  onChange={(e) =>
+                    setPaymentForm((f) => ({ ...f, method: e.target.value }))
+                  }
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-400 outline-none"
+                >
+                  {[
+                    "Bank Transfer",
+                    "Cash",
+                    "Cheque",
+                    "Mobile Money",
+                    "Card",
+                    "Other",
+                  ].map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">
+                  Reference
+                </label>
+                <input
+                  type="text"
+                  value={paymentForm.reference}
+                  onChange={(e) =>
+                    setPaymentForm((f) => ({ ...f, reference: e.target.value }))
+                  }
+                  placeholder="Transaction reference / cheque no."
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-400 outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">
+                  Notes
+                </label>
+                <textarea
+                  rows={2}
+                  value={paymentForm.notes}
+                  onChange={(e) =>
+                    setPaymentForm((f) => ({ ...f, notes: e.target.value }))
+                  }
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-400 outline-none resize-none"
+                />
+              </div>
+
+              {paymentError && (
+                <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                  {paymentError}
+                </div>
+              )}
+            </div>
+            <div className="px-6 py-4 border-t border-slate-200 flex justify-end gap-3">
+              <button
+                onClick={closePaymentModal}
+                disabled={isSavingPayment}
+                className="px-4 py-2.5 rounded-xl text-sm font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={submitPayment}
+                disabled={isSavingPayment}
+                className="px-4 py-2.5 rounded-xl text-sm font-medium text-white bg-gradient-to-r from-emerald-500 to-emerald-600 hover:opacity-90 disabled:opacity-50"
+              >
+                {isSavingPayment ? "Saving..." : "Record Payment"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {isAllocationModalOpen && allocationPI && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-5xl shadow-xl max-h-[92vh] overflow-y-auto">
@@ -1072,9 +1976,7 @@ export default function ProformaInvoices() {
                   Allocate Vehicles for {allocationPI.piNo}
                 </h2>
                 <p className="text-sm text-slate-500 mt-1">
-                  {confirmOnAllocate
-                    ? "Complete allocation to confirm this PI and allocate vehicles in one step."
-                    : "Save allocations now, or close and return later from this PI."}
+                  Save allocations now, or close and return later from this PI.
                 </p>
               </div>
               <button
@@ -1277,9 +2179,7 @@ export default function ProformaInvoices() {
 
             <div className="px-6 py-4 border-t border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white">
               <p className="text-sm text-slate-500">
-                {confirmOnAllocate
-                  ? 'Complete the allocation below and click "Confirm & Allocate" to confirm this PI and create the allocation. Closing without saving will not change anything.'
-                  : "Save allocations now, or close and return later."}
+                Save allocations now, or close and return later.
               </p>
               <div className="flex items-center gap-3">
                 <button
@@ -1298,11 +2198,7 @@ export default function ProformaInvoices() {
                   }
                   className="px-5 py-2.5 rounded-xl text-sm font-medium bg-gradient-to-r from-amber-400 to-amber-600 text-white hover:opacity-90 transition-opacity disabled:opacity-50"
                 >
-                  {isSavingAllocation
-                    ? "Saving..."
-                    : confirmOnAllocate
-                      ? "Confirm & Allocate"
-                      : "Save Allocation"}
+                  {isSavingAllocation ? "Saving..." : "Save Allocation"}
                 </button>
               </div>
             </div>
