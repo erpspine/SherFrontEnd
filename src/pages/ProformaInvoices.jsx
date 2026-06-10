@@ -14,6 +14,8 @@ import {
   AlertTriangle,
   Loader2,
   RefreshCw,
+  CreditCard,
+  DollarSign,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import Swal from "sweetalert2";
@@ -31,6 +33,10 @@ const statusConfig = {
   Paid: {
     color: "bg-emerald-50 text-emerald-700 border-emerald-200",
     icon: CheckCircle,
+  },
+  Deposit: {
+    color: "bg-teal-50 text-teal-700 border-teal-200",
+    icon: DollarSign,
   },
   Overdue: {
     color: "bg-rose-50 text-rose-700 border-rose-200",
@@ -237,6 +243,9 @@ const normalizePI = (pi) => {
     subtotal: Number(pi.subtotal || 0),
     tax: Number(pi.tax || 0),
     total: Number(pi.total || 0),
+    paidAmount: Number(pi.paidAmount ?? pi.paid_amount ?? 0),
+    balance: Number(pi.balance ?? pi.total ?? 0),
+    payments: Array.isArray(pi.payments) ? pi.payments : [],
     currency: (pi.currency || "USD").toUpperCase(),
     exchangeRate: Number(pi.exchangeRate ?? pi.exchange_rate ?? 1) || 1,
     status: pi.status || "Converted",
@@ -279,6 +288,16 @@ export default function ProformaInvoices() {
   const [currencyRate, setCurrencyRate] = useState("");
   const [currencyError, setCurrencyError] = useState("");
   const [isSavingCurrency, setIsSavingCurrency] = useState(false);
+  const [paymentPI, setPaymentPI] = useState(null);
+  const [paymentForm, setPaymentForm] = useState({
+    date: "",
+    amount: "",
+    method: "Bank Transfer",
+    reference: "",
+    notes: "",
+  });
+  const [paymentError, setPaymentError] = useState("");
+  const [isSavingPayment, setIsSavingPayment] = useState(false);
   const navigate = useNavigate();
 
   const loadPIs = async () => {
@@ -347,7 +366,7 @@ export default function ProformaInvoices() {
   );
 
   const statusOptions = useMemo(
-    () => ["All", "Sent", "Allocate", "Allocated"],
+    () => ["All", "Sent", "Allocate", "Allocated", "Deposit", "Paid"],
     [],
   );
 
@@ -525,6 +544,93 @@ export default function ProformaInvoices() {
     setCurrencyChoice("USD");
     setCurrencyRate("");
     setCurrencyError("");
+  };
+
+  const openPaymentModal = (pi) => {
+    setPaymentPI(pi);
+    setPaymentForm({
+      date: new Date().toISOString().split("T")[0],
+      amount: "",
+      method: "Bank Transfer",
+      reference: "",
+      notes: "",
+    });
+    setPaymentError("");
+  };
+
+  const closePaymentModal = () => {
+    if (isSavingPayment) return;
+    setPaymentPI(null);
+    setPaymentForm({
+      date: "",
+      amount: "",
+      method: "Bank Transfer",
+      reference: "",
+      notes: "",
+    });
+    setPaymentError("");
+  };
+
+  const submitPayment = async () => {
+    if (!paymentPI) return;
+    const amount = Number(paymentForm.amount);
+    if (!paymentForm.date) {
+      setPaymentError("Payment date is required.");
+      return;
+    }
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setPaymentError("Enter a valid payment amount.");
+      return;
+    }
+    if (!paymentForm.method.trim()) {
+      setPaymentError("Payment method is required.");
+      return;
+    }
+
+    setIsSavingPayment(true);
+    setPaymentError("");
+    try {
+      const response = await apiFetch(
+        `/proforma-invoices/${paymentPI.id}/payments`,
+        {
+          method: "POST",
+          body: {
+            date: paymentForm.date,
+            amount,
+            method: paymentForm.method.trim(),
+            reference: paymentForm.reference.trim() || null,
+            notes: paymentForm.notes.trim() || null,
+          },
+        },
+      );
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const fieldError = data?.errors
+          ? Object.values(data.errors).flat().find(Boolean)
+          : null;
+        throw new Error(
+          fieldError || data?.message || "Unable to record payment.",
+        );
+      }
+      const updated = normalizePI(extractSingle(data));
+      setAllPIs((current) =>
+        current.map((p) => (p.id === updated.id ? updated : p)),
+      );
+      setPaymentPI(null);
+      await Swal.fire({
+        title: "Payment recorded",
+        text: `PI status is now: ${updated.status}`,
+        icon: "success",
+        timer: 1800,
+        showConfirmButton: false,
+        background: "#ffffff",
+        color: "#111827",
+      });
+    } catch (error) {
+      setPaymentError(error.message || "Failed to record payment.");
+    } finally {
+      setIsSavingPayment(false);
+    }
   };
 
   const submitCurrencyChange = async () => {
@@ -927,7 +1033,7 @@ export default function ProformaInvoices() {
                   "Group Name",
                   "Service Summary",
                   "Currency",
-                  "Total",
+                  "Total / Paid",
                   "Status",
                 ].map((h) => (
                   <th
@@ -1006,6 +1112,14 @@ export default function ProformaInvoices() {
                             Allocate
                           </button>
                         )}
+                        <button
+                          onClick={() => openPaymentModal(pi)}
+                          className="px-2 py-1 text-xs font-medium text-emerald-700 border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors"
+                          title="Record Payment"
+                        >
+                          <CreditCard className="w-3 h-3 inline mr-0.5" />
+                          Pay
+                        </button>
                       </div>
                     </td>
                     <td className="py-4 px-4 min-w-[180px]">
@@ -1070,6 +1184,18 @@ export default function ProformaInvoices() {
                       <span className="text-slate-900 font-semibold text-sm whitespace-nowrap">
                         {formatCurrency(pi.total, pi.currency)}
                       </span>
+                      {pi.paidAmount > 0 && (
+                        <div className="mt-0.5 space-y-0.5">
+                          <p className="text-[10px] text-emerald-600 whitespace-nowrap">
+                            Paid: {formatCurrency(pi.paidAmount, pi.currency)}
+                          </p>
+                          {pi.balance > 0 && (
+                            <p className="text-[10px] text-amber-600 whitespace-nowrap">
+                              Bal: {formatCurrency(pi.balance, pi.currency)}
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </td>
                     <td className="py-4 px-4">
                       <span
@@ -1654,6 +1780,187 @@ export default function ProformaInvoices() {
                 className="px-4 py-2.5 rounded-xl text-sm font-medium text-white bg-gradient-to-r from-amber-400 to-amber-600 hover:opacity-90 disabled:opacity-50"
               >
                 {isSavingCurrency ? "Saving..." : "Update Currency"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Payment modal ─── */}
+      {paymentPI && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md border border-slate-200">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+              <div>
+                <h2 className="text-lg font-bold text-slate-900">
+                  Record Payment
+                </h2>
+                <p className="text-sm text-slate-500 mt-0.5">
+                  {paymentPI.piNo} · {paymentPI.client}
+                </p>
+              </div>
+              <button
+                onClick={closePaymentModal}
+                disabled={isSavingPayment}
+                className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="px-6 py-4 space-y-4">
+              {/* PI totals summary */}
+              <div className="grid grid-cols-3 gap-3 rounded-xl bg-slate-50 border border-slate-200 p-3">
+                <div className="text-center">
+                  <p className="text-xs text-slate-500">Total</p>
+                  <p className="text-sm font-bold text-slate-900">
+                    {formatCurrency(paymentPI.total, paymentPI.currency)}
+                  </p>
+                </div>
+                <div className="text-center">
+                  <p className="text-xs text-slate-500">Paid</p>
+                  <p className="text-sm font-bold text-emerald-600">
+                    {formatCurrency(paymentPI.paidAmount, paymentPI.currency)}
+                  </p>
+                </div>
+                <div className="text-center">
+                  <p className="text-xs text-slate-500">Balance</p>
+                  <p className="text-sm font-bold text-amber-600">
+                    {formatCurrency(paymentPI.balance, paymentPI.currency)}
+                  </p>
+                </div>
+              </div>
+
+              {/* Existing payments */}
+              {paymentPI.payments.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
+                    Payment History
+                  </p>
+                  <div className="space-y-1 max-h-32 overflow-y-auto">
+                    {paymentPI.payments.map((p) => (
+                      <div
+                        key={p.id}
+                        className="flex items-center justify-between text-xs rounded-lg bg-slate-50 border border-slate-100 px-3 py-1.5"
+                      >
+                        <span className="text-slate-600">
+                          {p.date} · {p.method}
+                        </span>
+                        <span className="font-semibold text-emerald-700">
+                          {formatCurrency(p.amount, paymentPI.currency)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">
+                    Date *
+                  </label>
+                  <input
+                    type="date"
+                    value={paymentForm.date}
+                    onChange={(e) =>
+                      setPaymentForm((f) => ({ ...f, date: e.target.value }))
+                    }
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-400 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">
+                    Amount *
+                  </label>
+                  <input
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    value={paymentForm.amount}
+                    onChange={(e) =>
+                      setPaymentForm((f) => ({ ...f, amount: e.target.value }))
+                    }
+                    placeholder={`Max ${Number(paymentPI.balance).toFixed(2)}`}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-400 outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">
+                  Method *
+                </label>
+                <select
+                  value={paymentForm.method}
+                  onChange={(e) =>
+                    setPaymentForm((f) => ({ ...f, method: e.target.value }))
+                  }
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-400 outline-none"
+                >
+                  {[
+                    "Bank Transfer",
+                    "Cash",
+                    "Cheque",
+                    "Mobile Money",
+                    "Card",
+                    "Other",
+                  ].map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">
+                  Reference
+                </label>
+                <input
+                  type="text"
+                  value={paymentForm.reference}
+                  onChange={(e) =>
+                    setPaymentForm((f) => ({ ...f, reference: e.target.value }))
+                  }
+                  placeholder="Transaction reference / cheque no."
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-400 outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">
+                  Notes
+                </label>
+                <textarea
+                  rows={2}
+                  value={paymentForm.notes}
+                  onChange={(e) =>
+                    setPaymentForm((f) => ({ ...f, notes: e.target.value }))
+                  }
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-400 outline-none resize-none"
+                />
+              </div>
+
+              {paymentError && (
+                <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                  {paymentError}
+                </div>
+              )}
+            </div>
+            <div className="px-6 py-4 border-t border-slate-200 flex justify-end gap-3">
+              <button
+                onClick={closePaymentModal}
+                disabled={isSavingPayment}
+                className="px-4 py-2.5 rounded-xl text-sm font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={submitPayment}
+                disabled={isSavingPayment}
+                className="px-4 py-2.5 rounded-xl text-sm font-medium text-white bg-gradient-to-r from-emerald-500 to-emerald-600 hover:opacity-90 disabled:opacity-50"
+              >
+                {isSavingPayment ? "Saving..." : "Record Payment"}
               </button>
             </div>
           </div>

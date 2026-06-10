@@ -1,5 +1,12 @@
 ﻿import { useEffect, useMemo, useState } from "react";
-import { Search, Wallet, Calendar, Building2, FileText } from "lucide-react";
+import {
+  Search,
+  Wallet,
+  Calendar,
+  Building2,
+  FileText,
+  Receipt,
+} from "lucide-react";
 import { apiFetch } from "../utils/api";
 
 const formatCurrency = (value) =>
@@ -49,8 +56,31 @@ const normalizePayment = (payment) => ({
   notes: payment.notes || "",
 });
 
+const normalizePIPayment = (p) => ({
+  id: Number(p.id || 0),
+  piId: Number(p.proforma_invoice_id || p.proformaInvoiceId || 0),
+  piNo:
+    p.proformaInvoice?.piNo ||
+    p.proformaInvoice?.pi_no ||
+    p.proformaInvoice?.proforma_no ||
+    p.piNo ||
+    "-",
+  client:
+    p.proformaInvoice?.client ||
+    p.proformaInvoice?.client_name ||
+    p.client ||
+    "-",
+  date: p.date || p.paid_at || p.created_at || "",
+  amount: Number(p.amount || 0),
+  method: p.method || "-",
+  reference: p.reference || "-",
+  notes: p.notes || "",
+});
+
 export default function Payments() {
   const [payments, setPayments] = useState([]);
+  const [piPayments, setPiPayments] = useState([]);
+  const [activeTab, setActiveTab] = useState("invoices"); // "invoices" | "proforma" | "all"
   const [searchTerm, setSearchTerm] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
@@ -61,22 +91,34 @@ export default function Payments() {
       setErrorMessage("");
 
       try {
-        const response = await apiFetch("/invoice-payments");
-        const payload = await response.json().catch(() => ({}));
+        const [invRes, piRes] = await Promise.all([
+          apiFetch("/invoice-payments"),
+          apiFetch("/proforma-invoice-payments"),
+        ]);
 
-        if (!response.ok) {
+        const invPayload = await invRes.json().catch(() => ({}));
+        if (!invRes.ok)
           throw new Error(
-            payload?.message || "Unable to fetch invoice payments.",
+            invPayload?.message || "Unable to fetch invoice payments.",
           );
-        }
-
         setPayments(
-          extractList(payload, [
+          extractList(invPayload, [
             "payments",
             "invoicePayments",
             "invoice_payments",
           ]).map(normalizePayment),
         );
+
+        const piPayload = await piRes.json().catch(() => ({}));
+        if (piRes.ok) {
+          setPiPayments(
+            extractList(piPayload, [
+              "payments",
+              "piPayments",
+              "proforma_invoice_payments",
+            ]).map(normalizePIPayment),
+          );
+        }
       } catch (error) {
         setErrorMessage(error.message || "Failed to load payments.");
       } finally {
@@ -89,38 +131,34 @@ export default function Payments() {
 
   const filteredPayments = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
-    if (!query) return payments;
-
-    return payments.filter((payment) => {
-      return (
-        String(payment.id).toLowerCase().includes(query) ||
-        String(payment.invoiceNo).toLowerCase().includes(query) ||
-        String(payment.client).toLowerCase().includes(query) ||
-        String(payment.method).toLowerCase().includes(query) ||
-        String(payment.reference).toLowerCase().includes(query)
+    const filter = (list) => {
+      if (!query) return list;
+      return list.filter((p) =>
+        [p.id, p.invoiceNo ?? p.piNo, p.client, p.method, p.reference]
+          .map(String)
+          .some((v) => v.toLowerCase().includes(query)),
       );
-    });
-  }, [payments, searchTerm]);
+    };
+    if (activeTab === "invoices") return { inv: filter(payments), pi: [] };
+    if (activeTab === "proforma") return { inv: [], pi: filter(piPayments) };
+    return { inv: filter(payments), pi: filter(piPayments) };
+  }, [payments, piPayments, searchTerm, activeTab]);
 
   const stats = useMemo(() => {
-    const totalAmount = payments.reduce(
-      (sum, payment) => sum + Number(payment.amount || 0),
-      0,
-    );
+    const all = [...payments, ...piPayments];
+    const totalAmount = all.reduce((sum, p) => sum + p.amount, 0);
     const todayKey = new Date().toISOString().split("T")[0];
-    const todayAmount = payments
-      .filter((payment) => String(payment.date).startsWith(todayKey))
-      .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
-    const uniqueInvoices = new Set(payments.map((payment) => payment.invoiceId))
-      .size;
-
+    const todayAmount = all
+      .filter((p) => String(p.date).startsWith(todayKey))
+      .reduce((sum, p) => sum + p.amount, 0);
     return {
-      count: payments.length,
+      count: all.length,
+      invCount: payments.length,
+      piCount: piPayments.length,
       totalAmount,
       todayAmount,
-      uniqueInvoices,
     };
-  }, [payments]);
+  }, [payments, piPayments]);
 
   return (
     <div className="space-y-6">
@@ -128,7 +166,7 @@ export default function Payments() {
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Payments</h1>
           <p className="text-slate-500 mt-1">
-            All invoice payments from <code>/api/invoice-payments</code>.
+            Invoice and proforma invoice payments.
           </p>
         </div>
       </div>
@@ -153,123 +191,261 @@ export default function Payments() {
           </p>
         </div>
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-slate-500 text-sm">Today</p>
-          <p className="text-xl font-bold text-blue-600 mt-1">
-            {formatCurrency(stats.todayAmount)}
+          <p className="text-slate-500 text-sm">Invoice Payments</p>
+          <p className="text-2xl font-bold text-indigo-600 mt-1">
+            {stats.invCount}
           </p>
         </div>
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-slate-500 text-sm">Invoices Paid</p>
+          <p className="text-slate-500 text-sm">Proforma Payments</p>
           <p className="text-2xl font-bold text-amber-600 mt-1">
-            {stats.uniqueInvoices}
+            {stats.piCount}
           </p>
         </div>
       </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4">
-        <div className="flex items-center gap-3 bg-slate-50 rounded-xl px-4 py-2.5 border border-slate-200 focus-within:border-amber-500 transition-colors">
-          <Search className="w-4 h-4 text-slate-400" />
+      {/* Tabs + Search */}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+        <div className="flex rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm">
+          {[
+            { key: "invoices", label: "Invoices" },
+            { key: "proforma", label: "Proforma" },
+            { key: "all", label: "All" },
+          ].map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`px-4 py-2.5 text-sm font-medium transition-colors ${
+                activeTab === tab.key
+                  ? "bg-amber-500 text-white"
+                  : "text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex-1 flex items-center gap-3 bg-slate-50 rounded-xl px-4 py-2.5 border border-slate-200 focus-within:border-amber-500 transition-colors">
+          <Search className="w-4 h-4 text-slate-400 flex-shrink-0" />
           <input
             type="text"
-            placeholder="Search by payment ID, invoice #, client, method, or reference"
+            placeholder="Search by invoice #, client, method, reference..."
             value={searchTerm}
-            onChange={(event) => setSearchTerm(event.target.value)}
+            onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full bg-transparent outline-none text-sm text-slate-900 placeholder-slate-400"
           />
         </div>
       </div>
 
-      <section className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="table-head-gradient">
-              <tr className="border-b border-slate-200">
-                {[
-                  "Payment ID",
-                  "Invoice",
-                  "Client",
-                  "Date",
-                  "Amount",
-                  "Method",
-                  "Reference",
-                ].map((header) => (
-                  <th
-                    key={header}
-                    className="text-left py-4 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wide"
-                  >
-                    {header}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {isLoading && (
-                <tr>
-                  <td
-                    colSpan={7}
-                    className="py-10 text-center text-sm text-slate-500"
-                  >
-                    Loading payments...
-                  </td>
+      {/* Invoice Payments table */}
+      {(activeTab === "invoices" || activeTab === "all") && (
+        <section className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+          {activeTab === "all" && (
+            <div className="px-5 py-3 border-b border-slate-100 flex items-center gap-2">
+              <FileText className="w-4 h-4 text-indigo-500" />
+              <span className="text-sm font-semibold text-slate-700">
+                Invoice Payments
+              </span>
+              <span className="ml-auto text-xs text-slate-400">
+                {filteredPayments.inv.length} record
+                {filteredPayments.inv.length !== 1 ? "s" : ""}
+              </span>
+            </div>
+          )}
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="table-head-gradient">
+                <tr className="border-b border-slate-200">
+                  {[
+                    "Payment ID",
+                    "Invoice",
+                    "Client",
+                    "Date",
+                    "Amount",
+                    "Method",
+                    "Reference",
+                  ].map((h) => (
+                    <th
+                      key={h}
+                      className="text-left py-4 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wide"
+                    >
+                      {h}
+                    </th>
+                  ))}
                 </tr>
-              )}
-
-              {!isLoading &&
-                filteredPayments.map((payment) => (
-                  <tr
-                    key={payment.id}
-                    className="border-b border-slate-100 hover:bg-slate-50 transition-colors"
-                  >
-                    <td className="py-3 px-4 text-sm text-slate-700 font-mono">
-                      #{payment.id}
-                    </td>
-                    <td className="py-3 px-4">
-                      <div className="flex items-center gap-2 text-sm text-slate-900 font-medium">
-                        <FileText className="w-4 h-4 text-indigo-500" />
-                        {payment.invoiceNo}
-                      </div>
-                    </td>
-                    <td className="py-3 px-4">
-                      <div className="flex items-center gap-2 text-sm text-slate-700">
-                        <Building2 className="w-4 h-4 text-slate-400" />
-                        {payment.client}
-                      </div>
-                    </td>
-                    <td className="py-3 px-4 text-sm text-slate-700">
-                      <div className="flex items-center gap-2">
-                        <Calendar className="w-4 h-4 text-slate-400" />
-                        {formatDate(payment.date)}
-                      </div>
-                    </td>
-                    <td className="py-3 px-4 text-sm font-semibold text-emerald-600">
-                      {formatCurrency(payment.amount)}
-                    </td>
-                    <td className="py-3 px-4 text-sm text-slate-700">
-                      <div className="flex items-center gap-2">
-                        <Wallet className="w-4 h-4 text-slate-400" />
-                        {payment.method}
-                      </div>
-                    </td>
-                    <td className="py-3 px-4 text-sm text-slate-700">
-                      {payment.reference || "-"}
+              </thead>
+              <tbody>
+                {isLoading && (
+                  <tr>
+                    <td
+                      colSpan={7}
+                      className="py-10 text-center text-sm text-slate-500"
+                    >
+                      Loading payments...
                     </td>
                   </tr>
-                ))}
+                )}
+                {!isLoading &&
+                  filteredPayments.inv.map((payment) => (
+                    <tr
+                      key={payment.id}
+                      className="border-b border-slate-100 hover:bg-slate-50 transition-colors"
+                    >
+                      <td className="py-3 px-4 text-sm text-slate-700 font-mono">
+                        #{payment.id}
+                      </td>
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-2 text-sm text-slate-900 font-medium">
+                          <FileText className="w-4 h-4 text-indigo-500" />
+                          {payment.invoiceNo}
+                        </div>
+                      </td>
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-2 text-sm text-slate-700">
+                          <Building2 className="w-4 h-4 text-slate-400" />
+                          {payment.client}
+                        </div>
+                      </td>
+                      <td className="py-3 px-4 text-sm text-slate-700">
+                        <div className="flex items-center gap-2">
+                          <Calendar className="w-4 h-4 text-slate-400" />
+                          {formatDate(payment.date)}
+                        </div>
+                      </td>
+                      <td className="py-3 px-4 text-sm font-semibold text-emerald-600">
+                        {formatCurrency(payment.amount)}
+                      </td>
+                      <td className="py-3 px-4 text-sm text-slate-700">
+                        <div className="flex items-center gap-2">
+                          <Wallet className="w-4 h-4 text-slate-400" />
+                          {payment.method}
+                        </div>
+                      </td>
+                      <td className="py-3 px-4 text-sm text-slate-700">
+                        {payment.reference || "-"}
+                      </td>
+                    </tr>
+                  ))}
+                {!isLoading && filteredPayments.inv.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={7}
+                      className="py-10 text-center text-sm text-slate-500"
+                    >
+                      No invoice payments found.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
 
-              {!isLoading && filteredPayments.length === 0 && (
-                <tr>
-                  <td
-                    colSpan={7}
-                    className="py-10 text-center text-sm text-slate-500"
-                  >
-                    No payments found.
-                  </td>
+      {/* PI Payments table */}
+      {(activeTab === "proforma" || activeTab === "all") && (
+        <section className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+          {activeTab === "all" && (
+            <div className="px-5 py-3 border-b border-slate-100 flex items-center gap-2">
+              <Receipt className="w-4 h-4 text-amber-500" />
+              <span className="text-sm font-semibold text-slate-700">
+                Proforma Invoice Payments
+              </span>
+              <span className="ml-auto text-xs text-slate-400">
+                {filteredPayments.pi.length} record
+                {filteredPayments.pi.length !== 1 ? "s" : ""}
+              </span>
+            </div>
+          )}
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="table-head-gradient">
+                <tr className="border-b border-slate-200">
+                  {[
+                    "Payment ID",
+                    "Proforma #",
+                    "Client",
+                    "Date",
+                    "Amount",
+                    "Method",
+                    "Reference",
+                  ].map((h) => (
+                    <th
+                      key={h}
+                      className="text-left py-4 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wide"
+                    >
+                      {h}
+                    </th>
+                  ))}
                 </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
+              </thead>
+              <tbody>
+                {isLoading && (
+                  <tr>
+                    <td
+                      colSpan={7}
+                      className="py-10 text-center text-sm text-slate-500"
+                    >
+                      Loading payments...
+                    </td>
+                  </tr>
+                )}
+                {!isLoading &&
+                  filteredPayments.pi.map((payment) => (
+                    <tr
+                      key={payment.id}
+                      className="border-b border-slate-100 hover:bg-slate-50 transition-colors"
+                    >
+                      <td className="py-3 px-4 text-sm text-slate-700 font-mono">
+                        #{payment.id}
+                      </td>
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-2 text-sm text-slate-900 font-medium">
+                          <Receipt className="w-4 h-4 text-amber-500" />
+                          {payment.piNo}
+                        </div>
+                      </td>
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-2 text-sm text-slate-700">
+                          <Building2 className="w-4 h-4 text-slate-400" />
+                          {payment.client}
+                        </div>
+                      </td>
+                      <td className="py-3 px-4 text-sm text-slate-700">
+                        <div className="flex items-center gap-2">
+                          <Calendar className="w-4 h-4 text-slate-400" />
+                          {formatDate(payment.date)}
+                        </div>
+                      </td>
+                      <td className="py-3 px-4 text-sm font-semibold text-emerald-600">
+                        {formatCurrency(payment.amount)}
+                      </td>
+                      <td className="py-3 px-4 text-sm text-slate-700">
+                        <div className="flex items-center gap-2">
+                          <Wallet className="w-4 h-4 text-slate-400" />
+                          {payment.method}
+                        </div>
+                      </td>
+                      <td className="py-3 px-4 text-sm text-slate-700">
+                        {payment.reference || "-"}
+                      </td>
+                    </tr>
+                  ))}
+                {!isLoading && filteredPayments.pi.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={7}
+                      className="py-10 text-center text-sm text-slate-500"
+                    >
+                      No proforma invoice payments found.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
     </div>
   );
 }

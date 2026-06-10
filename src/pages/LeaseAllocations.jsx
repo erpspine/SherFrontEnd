@@ -132,6 +132,8 @@ export default function LeaseAllocations() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [contractFilter, setContractFilter] = useState("All");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState(emptyForm());
@@ -192,6 +194,24 @@ export default function LeaseAllocations() {
 
   const filteredAllocations = useMemo(() => {
     const term = search.trim().toLowerCase();
+
+    const overlapsRange = (allocation) => {
+      if (!dateFrom && !dateTo) return true;
+
+      const allocationStart = allocation?.startDate || "";
+      const allocationEnd = allocation?.endDate || allocationStart;
+
+      if (!allocationStart && !allocationEnd) return false;
+
+      const effectiveStart = allocationStart || allocationEnd;
+      const effectiveEnd = allocationEnd || allocationStart;
+
+      if (dateFrom && effectiveEnd < dateFrom) return false;
+      if (dateTo && effectiveStart > dateTo) return false;
+
+      return true;
+    };
+
     return allocations.filter((a) => {
       if (statusFilter !== "All" && a.status !== statusFilter) return false;
       if (
@@ -199,6 +219,7 @@ export default function LeaseAllocations() {
         Number(a.leaseContractId) !== Number(contractFilter)
       )
         return false;
+      if (!overlapsRange(a)) return false;
       if (!term) return true;
       const haystack = [
         a.contract?.clientName,
@@ -213,7 +234,49 @@ export default function LeaseAllocations() {
         .toLowerCase();
       return haystack.includes(term);
     });
-  }, [allocations, search, statusFilter, contractFilter]);
+  }, [allocations, search, statusFilter, contractFilter, dateFrom, dateTo]);
+
+  const clientInsights = useMemo(() => {
+    const searchTerm = search.trim().toLowerCase();
+    if (!searchTerm) {
+      return {
+        clientName: "",
+        scheduledCount: 0,
+        totalTrips: 0,
+      };
+    }
+
+    const matchingClients = Array.from(
+      new Set(
+        filteredAllocations
+          .map((allocation) => allocation.contract?.clientName?.trim() || "")
+          .filter((name) => name.toLowerCase().includes(searchTerm)),
+      ),
+    );
+
+    if (matchingClients.length !== 1) {
+      return {
+        clientName: "",
+        scheduledCount: 0,
+        totalTrips: 0,
+      };
+    }
+
+    const [matchedClient] = matchingClients;
+    const clientRows = filteredAllocations.filter(
+      (allocation) =>
+        (allocation.contract?.clientName || "").toLowerCase() ===
+        matchedClient.toLowerCase(),
+    );
+
+    return {
+      clientName: matchedClient,
+      scheduledCount: clientRows.filter(
+        (allocation) => allocation.status === "Scheduled",
+      ).length,
+      totalTrips: clientRows.length,
+    };
+  }, [filteredAllocations, search]);
 
   const openCreate = () => {
     setForm(emptyForm());
@@ -353,18 +416,18 @@ export default function LeaseAllocations() {
   };
 
   const stats = useMemo(() => {
-    const total = allocations.length;
-    const scheduled = allocations.filter(
+    const total = filteredAllocations.length;
+    const scheduled = filteredAllocations.filter(
       (a) => a.status === "Scheduled",
     ).length;
-    const inProgress = allocations.filter(
+    const inProgress = filteredAllocations.filter(
       (a) => a.status === "In Progress",
     ).length;
-    const completed = allocations.filter(
+    const completed = filteredAllocations.filter(
       (a) => a.status === "Completed",
     ).length;
     return { total, scheduled, inProgress, completed };
-  }, [allocations]);
+  }, [filteredAllocations]);
 
   return (
     <div className="p-6 space-y-6">
@@ -391,7 +454,7 @@ export default function LeaseAllocations() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="bg-white border border-slate-200 rounded-lg p-4">
           <p className="text-xs uppercase tracking-wide text-slate-500">
-            Total
+            Total (Filtered)
           </p>
           <p className="text-2xl font-bold text-slate-900 mt-1">
             {stats.total}
@@ -422,6 +485,26 @@ export default function LeaseAllocations() {
           </p>
         </div>
       </div>
+
+      {clientInsights.clientName && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <p className="text-sm text-blue-800">
+            Client{" "}
+            <span className="font-semibold">{clientInsights.clientName}</span>{" "}
+            has{" "}
+            <span className="font-semibold">
+              {clientInsights.scheduledCount}
+            </span>{" "}
+            scheduled safari
+            {clientInsights.scheduledCount === 1 ? "" : "s"} in the selected
+            duration.
+          </p>
+          <p className="text-xs text-blue-700 mt-1">
+            Total trips for this client in current filters:{" "}
+            {clientInsights.totalTrips}
+          </p>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="bg-white border border-slate-200 rounded-lg p-4 flex flex-wrap gap-3 items-center">
@@ -459,6 +542,37 @@ export default function LeaseAllocations() {
             </option>
           ))}
         </select>
+        <input
+          type="date"
+          value={dateFrom}
+          onChange={(e) => setDateFrom(e.target.value)}
+          max={dateTo || undefined}
+          className="px-3 py-2 border border-slate-300 rounded-lg text-sm"
+          aria-label="Date from"
+          title="Date from"
+        />
+        <input
+          type="date"
+          value={dateTo}
+          onChange={(e) => setDateTo(e.target.value)}
+          min={dateFrom || undefined}
+          className="px-3 py-2 border border-slate-300 rounded-lg text-sm"
+          aria-label="Date to"
+          title="Date to"
+        />
+        <button
+          type="button"
+          onClick={() => {
+            setSearch("");
+            setStatusFilter("All");
+            setContractFilter("All");
+            setDateFrom("");
+            setDateTo("");
+          }}
+          className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-700 hover:bg-slate-50"
+        >
+          Clear Filters
+        </button>
       </div>
 
       {error && (

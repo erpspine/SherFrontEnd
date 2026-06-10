@@ -438,12 +438,16 @@ const normalizeJobCard = (jobCard) => {
       jobCard.vehicleNo ||
       jobCard?.vehicle?.vehicle_no ||
       jobCard?.vehicle?.vehicleNo ||
+      jobCard?.leaseAllocation?.vehicle?.vehicleNo ||
+      jobCard?.leaseAllocation?.vehicle?.vehicle_no ||
       "",
     vehiclePlateNo:
       jobCard.plate_no ||
       jobCard.plateNo ||
       jobCard?.vehicle?.plate_no ||
       jobCard?.vehicle?.plateNo ||
+      jobCard?.leaseAllocation?.vehicle?.plateNo ||
+      jobCard?.leaseAllocation?.vehicle?.plate_no ||
       "",
     updatedAt: jobCard.updated_at || jobCard.updatedAt || "",
     createdAt: jobCard.created_at || jobCard.createdAt || "",
@@ -578,6 +582,9 @@ export default function JobCards() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState("create");
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
+  const [expandedRouteSummaryByCard, setExpandedRouteSummaryByCard] = useState(
+    {},
+  );
   const [editingId, setEditingId] = useState(null);
   const [selectedJobCard, setSelectedJobCard] = useState(null);
   const [form, setForm] = useState(createEmptyForm());
@@ -761,6 +768,30 @@ export default function JobCards() {
     [eligibleLeads, allocatedSafariLeadIds],
   );
 
+  const allocatedLeaseAllocationIds = useMemo(
+    () =>
+      new Set(
+        jobCards
+          .filter(
+            (card) =>
+              isLeaseJobType(card.type) &&
+              Number(card.leaseAllocationId || 0) > 0,
+          )
+          .map((card) => String(card.leaseAllocationId)),
+      ),
+    [jobCards],
+  );
+
+  const availableLeaseAllocations = useMemo(
+    () =>
+      leaseAllocations.filter(
+        (allocation) =>
+          !allocatedLeaseAllocationIds.has(String(allocation.id)) ||
+          String(allocation.id) === String(form.leaseAllocationId),
+      ),
+    [leaseAllocations, allocatedLeaseAllocationIds, form.leaseAllocationId],
+  );
+
   const leadById = useMemo(
     () => new Map(leads.map((lead) => [String(lead.id), lead])),
     [leads],
@@ -866,6 +897,12 @@ export default function JobCards() {
         String(card.type || "")
           .toLowerCase()
           .includes(query) ||
+        String(card.vehiclePlateNo || "")
+          .toLowerCase()
+          .includes(query) ||
+        String(card.vehicleNo || "")
+          .toLowerCase()
+          .includes(query) ||
         String(leadById.get(String(card.leadId || ""))?.groupName || "")
           .toLowerCase()
           .includes(query) ||
@@ -908,11 +945,16 @@ export default function JobCards() {
       isSafariJobType(card.type),
     );
     const operationsCards = filteredCards.length - safariCards.length;
+    const allowanceTotal = filteredCards.reduce((total, card) => {
+      const value = Number(card.driverAllowance);
+      return Number.isFinite(value) ? total + value : total;
+    }, 0);
 
     return {
       totalCards: filteredCards.length,
       safariCards: safariCards.length,
       operationsCards,
+      allowanceTotal,
     };
   }, [filteredCards]);
 
@@ -1228,6 +1270,11 @@ export default function JobCards() {
     return String(value);
   };
 
+  const closeViewModal = () => {
+    setIsViewModalOpen(false);
+    setSelectedJobCard(null);
+  };
+
   const routeItineraryLines = useMemo(() => {
     const itinerary = selectedJobCard?.routeItinerary;
     if (Array.isArray(itinerary) && itinerary.length > 0) {
@@ -1251,16 +1298,63 @@ export default function JobCards() {
                 item.location ||
                 "",
             ).trim();
-            if (!date && !dayDescription) return null;
-            return { date: date ? formatDate(date) : "", dayDescription };
+            const allowanceRaw =
+              item.allowancePerDay ?? item.allowance_per_day ?? "";
+            const allowancePerDay =
+              allowanceRaw === null || allowanceRaw === undefined
+                ? ""
+                : String(allowanceRaw).trim();
+            if (!date && !dayDescription && !allowancePerDay) return null;
+            return {
+              date: date ? formatDate(date) : "",
+              dayDescription,
+              allowancePerDay,
+            };
           }
-          return { date: "", dayDescription: String(item) };
+          return {
+            date: "",
+            dayDescription: String(item),
+            allowancePerDay: "",
+          };
         })
         .filter(Boolean);
     }
 
     return [];
   }, [selectedJobCard]);
+
+  const selectedJobCardGroupName = useMemo(() => {
+    const leadId = Number(selectedJobCard?.leadId || 0);
+    if (!leadId) return "-";
+
+    const leadGroupName = leadById.get(String(leadId))?.groupName;
+    if (leadGroupName && String(leadGroupName).trim() !== "") {
+      return leadGroupName;
+    }
+
+    const quotationGroupName = latestQuotationByLead.get(
+      String(leadId),
+    )?.groupName;
+    return quotationGroupName && String(quotationGroupName).trim() !== ""
+      ? quotationGroupName
+      : "-";
+  }, [selectedJobCard, leadById, latestQuotationByLead]);
+
+  const itineraryAllowanceTotal = useMemo(
+    () =>
+      routeItineraryLines.reduce((total, line) => {
+        const value = Number(line?.allowancePerDay);
+        return Number.isFinite(value) ? total + value : total;
+      }, 0),
+    [routeItineraryLines],
+  );
+
+  const getRouteSummaryPreview = (value, limit = 90) => {
+    const normalized = String(value || "").trim();
+    if (!normalized) return "-";
+    if (normalized.length <= limit) return normalized;
+    return `${normalized.slice(0, limit).trimEnd()}...`;
+  };
 
   const handleDelete = async (id) => {
     const confirmation = await Swal.fire({
@@ -1362,28 +1456,26 @@ export default function JobCards() {
       return;
     }
 
-    if (!isSafariType && !form.vehicleId) {
-      setErrorMessage("Please select a vehicle.");
-      await Swal.fire({
-        title: "Missing Vehicle",
-        text: "Please select a vehicle for this job card type.",
-        icon: "warning",
-        background: "#0f172a",
-        color: "#e2e8f0",
-      });
-      return;
-    }
+    if (isLeaseType && form.leaseAllocationId) {
+      const duplicateLeaseCard = jobCards.find(
+        (card) =>
+          isLeaseJobType(card.type) &&
+          String(card.leaseAllocationId || "") ===
+            String(form.leaseAllocationId) &&
+          String(card.id) !== String(editingId || ""),
+      );
 
-    if (!isSafariType && String(form.driverDetails || "").trim() === "") {
-      setErrorMessage("Please select a driver.");
-      await Swal.fire({
-        title: "Missing Driver",
-        text: "Please select a driver for this non-safari movement.",
-        icon: "warning",
-        background: "#0f172a",
-        color: "#e2e8f0",
-      });
-      return;
+      if (duplicateLeaseCard) {
+        setErrorMessage("A job card already exists for this lease allocation.");
+        await Swal.fire({
+          title: "Duplicate Lease Allocation",
+          text: `Lease allocation already has job card ${duplicateLeaseCard.jobCardNo || `#${duplicateLeaseCard.id}`}.`,
+          icon: "warning",
+          background: "#0f172a",
+          color: "#e2e8f0",
+        });
+        return;
+      }
     }
 
     const shouldAutoCloseOnUpdate =
@@ -1636,7 +1728,7 @@ export default function JobCards() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
             Total Job Cards
@@ -1656,6 +1748,19 @@ export default function JobCards() {
           </p>
           <p className="text-xs text-amber-700/80 mt-1">
             Safari cards / Operations cards
+          </p>
+        </div>
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+            Filtered Allowance Total
+          </p>
+          <p className="text-2xl font-bold text-emerald-700 mt-1">
+            {stats.allowanceTotal.toLocaleString(undefined, {
+              maximumFractionDigits: 2,
+            })}
+          </p>
+          <p className="text-xs text-emerald-700/80 mt-1">
+            Updates automatically with search and filters
           </p>
         </div>
       </div>
@@ -1689,7 +1794,7 @@ export default function JobCards() {
               type="text"
               value={searchTerm}
               onChange={(event) => setSearchTerm(event.target.value)}
-              placeholder="Search by booking ref, group name, company, type, route"
+              placeholder="Search by booking ref, group name, company, type, route, reg no"
               className="w-full bg-transparent text-sm text-slate-900 placeholder-slate-400 outline-none"
             />
           </div>
@@ -1891,9 +1996,17 @@ export default function JobCards() {
                         "-"}
                     </td>
                     <td className="py-3 px-3 min-w-[220px]">
-                      <div className="flex items-center gap-2 text-slate-900 text-sm font-semibold">
-                        <User className="w-4 h-4 text-amber-500" />
-                        {card.tourOperatorClientName}
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 text-slate-900 text-sm font-semibold">
+                          <User className="w-4 h-4 text-amber-500" />
+                          {card.tourOperatorClientName}
+                        </div>
+                        {(String(card.vehiclePlateNo || "").trim() !== "" ||
+                          String(card.vehicleNo || "").trim() !== "") && (
+                          <div className="text-xs text-slate-600">
+                            Reg No: {card.vehiclePlateNo || card.vehicleNo}
+                          </div>
+                        )}
                       </div>
                     </td>
                     <td className="py-3 px-3 text-sm text-slate-800 min-w-[170px]">
@@ -1912,7 +2025,30 @@ export default function JobCards() {
                     <td className="py-3 px-3 text-sm text-slate-700">
                       <div className="flex items-start gap-2">
                         <MapPin className="w-4 h-4 text-slate-500 mt-0.5" />
-                        <span>{card.routeSummary || "-"}</span>
+                        <div className="space-y-1">
+                          <p className="text-slate-700 leading-relaxed break-words">
+                            {expandedRouteSummaryByCard[card.id]
+                              ? card.routeSummary || "-"
+                              : getRouteSummaryPreview(card.routeSummary)}
+                          </p>
+                          {String(card.routeSummary || "").trim().length >
+                            90 && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setExpandedRouteSummaryByCard((prev) => ({
+                                  ...prev,
+                                  [card.id]: !prev[card.id],
+                                }))
+                              }
+                              className="text-xs font-medium text-amber-700 hover:text-amber-800"
+                            >
+                              {expandedRouteSummaryByCard[card.id]
+                                ? "Show less"
+                                : "Show more"}
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </td>
                     <td className="py-3 px-3 text-sm text-right text-slate-800 whitespace-nowrap">
@@ -1933,6 +2069,22 @@ export default function JobCards() {
                 ))
               )}
             </tbody>
+            <tfoot>
+              <tr className="border-t-2 border-slate-300 bg-slate-50">
+                <td
+                  colSpan={9}
+                  className="py-3 px-3 text-sm font-semibold text-slate-700 text-right"
+                >
+                  Filtered Allowance Total
+                </td>
+                <td className="py-3 px-3 text-sm font-bold text-right text-emerald-700 whitespace-nowrap">
+                  {stats.allowanceTotal.toLocaleString(undefined, {
+                    maximumFractionDigits: 2,
+                  })}
+                </td>
+                <td className="py-3 px-3" />
+              </tr>
+            </tfoot>
           </table>
         </div>
       </section>
@@ -2109,7 +2261,7 @@ export default function JobCards() {
                       className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
                     >
                       <option value="">Select lease allocation</option>
-                      {leaseAllocations.map((allocation) => {
+                      {availableLeaseAllocations.map((allocation) => {
                         const vehicleLabel = [
                           allocation.vehicleNo,
                           allocation.plateNo,
@@ -2117,8 +2269,12 @@ export default function JobCards() {
                           .filter(Boolean)
                           .join(" / ");
                         const dateLabel = [
-                          allocation.startDate,
-                          allocation.endDate,
+                          allocation.startDate
+                            ? formatDate(allocation.startDate)
+                            : "",
+                          allocation.endDate
+                            ? formatDate(allocation.endDate)
+                            : "",
                         ]
                           .filter(Boolean)
                           .join(" → ");
@@ -2132,10 +2288,9 @@ export default function JobCards() {
                         );
                       })}
                     </select>
-                    {leaseAllocations.length === 0 && (
+                    {availableLeaseAllocations.length === 0 && (
                       <p className="text-xs text-slate-500 mt-1">
-                        No lease allocations available. Create one from the
-                        Lease Allocations page first.
+                        No lease allocations available without job cards.
                       </p>
                     )}
                     {editingId && (
@@ -2201,8 +2356,8 @@ export default function JobCards() {
                                 Period
                               </span>
                               <span className="font-semibold text-white">
-                                {allocation.startDate || "-"} &rarr;{" "}
-                                {allocation.endDate || "-"}
+                                {formatDate(allocation.startDate)} &rarr;{" "}
+                                {formatDate(allocation.endDate)}
                               </span>
                             </div>
                           </div>
@@ -2307,7 +2462,7 @@ export default function JobCards() {
                 {!isSafariType && !isLeaseType && !isCloseMode && (
                   <div>
                     <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                      Vehicle <span className="text-red-400">*</span>
+                      Vehicle <span className="text-slate-500">(optional)</span>
                     </label>
                     <select
                       value={form.vehicleId}
@@ -2329,7 +2484,7 @@ export default function JobCards() {
                 {!isSafariType && !isLeaseType && !isCloseMode && (
                   <div>
                     <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                      Driver <span className="text-red-400">*</span>
+                      Driver <span className="text-slate-500">(optional)</span>
                     </label>
                     <select
                       value={form.driverDetails}
@@ -2779,22 +2934,17 @@ export default function JobCards() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div
             className="absolute inset-0 bg-black/60"
-            onClick={() => {
-              setIsViewModalOpen(false);
-              setSelectedJobCard(null);
-            }}
+            onClick={closeViewModal}
           />
 
           <div className="relative w-full max-w-5xl max-h-[90vh] overflow-y-auto bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl">
+            <div className="h-1 bg-gradient-to-r from-amber-400 via-cyan-400 to-emerald-400" />
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 sticky top-0 bg-slate-900">
               <h2 className="text-lg font-semibold text-white">
                 Job Card Details - {detailValue(selectedJobCard.jobCardNo)}
               </h2>
               <button
-                onClick={() => {
-                  setIsViewModalOpen(false);
-                  setSelectedJobCard(null);
-                }}
+                onClick={closeViewModal}
                 className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg"
               >
                 <X className="w-4 h-4" />
@@ -2802,7 +2952,7 @@ export default function JobCards() {
             </div>
 
             <div className="p-6 space-y-6 text-sm">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div className="bg-slate-800/40 border border-slate-700/50 rounded-xl p-4">
                   <p className="text-slate-400 text-xs uppercase">Type</p>
                   <p className="text-white mt-1">
@@ -2822,6 +2972,10 @@ export default function JobCards() {
                   <p className="text-white mt-1">
                     {detailValue(selectedJobCard.bookingReferenceNo)}
                   </p>
+                </div>
+                <div className="bg-slate-800/40 border border-slate-700/50 rounded-xl p-4">
+                  <p className="text-slate-400 text-xs uppercase">Group Name</p>
+                  <p className="text-white mt-1">{selectedJobCardGroupName}</p>
                 </div>
               </div>
 
@@ -2889,7 +3043,7 @@ export default function JobCards() {
                   {!isSafariJobType(selectedJobCard.type) && (
                     <p className="text-slate-300">
                       Destination:{" "}
-                      <span className="text-white">
+                      <span className="text-white break-words whitespace-pre-wrap">
                         {detailValue(
                           selectedJobCard.location ||
                             selectedJobCard.routeSummary,
@@ -2899,33 +3053,88 @@ export default function JobCards() {
                   )}
                   <p className="text-slate-300">
                     Route Summary:{" "}
-                    <span className="text-white">
+                    <span className="text-white break-words whitespace-pre-wrap">
                       {detailValue(selectedJobCard.routeSummary)}
                     </span>
                   </p>
-                  <p className="text-slate-300">
-                    Route Itinerary:{" "}
+                  <div className="space-y-2">
+                    <p className="text-slate-300">Route Itinerary:</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div className="rounded-lg border border-slate-700/60 bg-slate-800/60 px-3 py-2">
+                        <p className="text-[11px] uppercase tracking-wide text-slate-300">
+                          Total Allowance (Itinerary)
+                        </p>
+                        <p className="text-sm font-semibold text-white mt-1">
+                          {itineraryAllowanceTotal > 0
+                            ? itineraryAllowanceTotal.toLocaleString(
+                                undefined,
+                                {
+                                  maximumFractionDigits: 2,
+                                },
+                              )
+                            : "-"}
+                        </p>
+                      </div>
+                      <div className="rounded-lg border border-slate-700/60 bg-slate-800/60 px-3 py-2">
+                        <p className="text-[11px] uppercase tracking-wide text-slate-300">
+                          Driver Allowance (Job Card)
+                        </p>
+                        <p className="text-sm font-semibold text-white mt-1">
+                          {selectedJobCard.driverAllowance != null &&
+                          selectedJobCard.driverAllowance !== ""
+                            ? Number(
+                                selectedJobCard.driverAllowance,
+                              ).toLocaleString(undefined, {
+                                maximumFractionDigits: 2,
+                              })
+                            : "-"}
+                        </p>
+                      </div>
+                    </div>
                     {routeItineraryLines.length === 0 ? (
                       <span className="text-white">-</span>
                     ) : (
-                      <span className="text-white">
-                        {routeItineraryLines
-                          .map((line) => {
-                            const base = line.date
-                              ? `${line.date} - ${line.dayDescription}`
-                              : line.dayDescription;
-                            const allowance =
-                              line.allowancePerDay !== "" &&
-                              line.allowancePerDay !== null &&
-                              line.allowancePerDay !== undefined
-                                ? ` (Allowance/day: ${line.allowancePerDay})`
-                                : "";
-                            return base + allowance;
-                          })
-                          .join(", ")}
-                      </span>
+                      <div className="overflow-x-auto rounded-lg border border-slate-700/60">
+                        <table className="min-w-full text-xs md:text-sm">
+                          <thead className="bg-slate-800/80 text-slate-300">
+                            <tr>
+                              <th className="px-3 py-2 text-left font-semibold">
+                                Date
+                              </th>
+                              <th className="px-3 py-2 text-left font-semibold">
+                                Description
+                              </th>
+                              <th className="px-3 py-2 text-left font-semibold whitespace-nowrap">
+                                Allowance / day
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {routeItineraryLines.map((line, index) => (
+                              <tr
+                                key={`view-itinerary-row-${index}`}
+                                className="border-t border-slate-700/60"
+                              >
+                                <td className="px-3 py-2 text-white whitespace-nowrap">
+                                  {line.date || "-"}
+                                </td>
+                                <td className="px-3 py-2 text-white break-words">
+                                  {line.dayDescription || "-"}
+                                </td>
+                                <td className="px-3 py-2 text-white whitespace-nowrap">
+                                  {line.allowancePerDay !== "" &&
+                                  line.allowancePerDay !== null &&
+                                  line.allowancePerDay !== undefined
+                                    ? line.allowancePerDay
+                                    : "-"}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     )}
-                  </p>
+                  </div>
                   <p className="text-slate-300">
                     Guide Language:{" "}
                     <span className="text-white">
@@ -2998,7 +3207,43 @@ export default function JobCards() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="bg-slate-800/30 border border-slate-700/50 rounded-xl p-4 space-y-2">
                   <p className="text-slate-300 font-semibold">
-                    Counts and Other Details
+                    Job Card Details
+                  </p>
+                  <p className="text-slate-300">
+                    Type:{" "}
+                    <span className="text-white">
+                      {detailValue(selectedJobCard.type)}
+                    </span>
+                  </p>
+                  <p className="text-slate-300">
+                    Status:{" "}
+                    <span className="text-white">
+                      {detailValue(selectedJobCard.status)}
+                    </span>
+                  </p>
+                  <p className="text-slate-300">
+                    Booking Number:{" "}
+                    <span className="text-white">
+                      {detailValue(selectedJobCard.bookingReferenceNo)}
+                    </span>
+                  </p>
+                  <p className="text-slate-300">
+                    Group Name:{" "}
+                    <span className="text-white">
+                      {selectedJobCardGroupName}
+                    </span>
+                  </p>
+                  <p className="text-slate-300">
+                    Start Date:{" "}
+                    <span className="text-white">
+                      {formatDate(selectedJobCard.safariStartDate)}
+                    </span>
+                  </p>
+                  <p className="text-slate-300">
+                    End Date:{" "}
+                    <span className="text-white">
+                      {formatDate(selectedJobCard.safariEndDate)}
+                    </span>
                   </p>
                   <p className="text-slate-300">
                     Adults:{" "}
@@ -3038,7 +3283,7 @@ export default function JobCards() {
                   </p>
                   <p className="text-slate-300">
                     Additional Details:{" "}
-                    <span className="text-white">
+                    <span className="text-white break-words whitespace-pre-wrap">
                       {detailValue(selectedJobCard.additionalDetails)}
                     </span>
                   </p>
@@ -3076,10 +3321,7 @@ export default function JobCards() {
 
             <div className="px-6 py-4 border-t border-slate-800 flex justify-end">
               <button
-                onClick={() => {
-                  setIsViewModalOpen(false);
-                  setSelectedJobCard(null);
-                }}
+                onClick={closeViewModal}
                 className="px-4 py-2.5 bg-slate-800 text-slate-300 rounded-lg text-sm hover:bg-slate-700 transition-colors"
               >
                 Close
