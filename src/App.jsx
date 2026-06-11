@@ -36,6 +36,7 @@ import OdometerReportView from "./pages/OdometerReportView";
 import LongTermLeasing from "./pages/LongTermLeasing";
 import LeaseCalendar from "./pages/LeaseCalendar";
 import LeaseAllocations from "./pages/LeaseAllocations";
+import LeaseProformaInvoices from "./pages/LeaseProformaInvoices";
 import { isAuthenticated, hasPermission } from "./utils/auth";
 
 function AccessDenied() {
@@ -129,6 +130,15 @@ function ProtectedRoutes() {
             <PermissionRoute
               permission="vehicles.view"
               element={<LeaseAllocations />}
+            />
+          }
+        />
+        <Route
+          path="/lease-proforma-invoices"
+          element={
+            <PermissionRoute
+              permission="proforma-invoices.view"
+              element={<LeaseProformaInvoices />}
             />
           }
         />

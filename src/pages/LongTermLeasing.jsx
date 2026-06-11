@@ -36,6 +36,7 @@ const normalizeContract = (contract) => {
     id: contract.id,
     vehicleIds,
     clientName: contract.clientName || contract.client_name || "",
+    groupName: contract.groupName || contract.group_name || "",
     startDate: contract.startDate || contract.start_date || "",
     endDate: contract.endDate || contract.end_date || "",
     leaseType: contract.leaseType || contract.lease_type || "",
@@ -91,6 +92,7 @@ const toInputDate = (value) => {
 const createContractForm = () => ({
   vehicleIds: [],
   clientName: "",
+  groupName: "",
   startDate: "",
   endDate: "",
   monthlyRate: "",
@@ -295,7 +297,12 @@ export default function LongTermLeasing() {
       const vehicleText = (contract.contractVehicles || [])
         .map((v) => `${v.vehicleNo} ${v.plateNo} ${v.make} ${v.model}`)
         .join(" ");
-      return [contract.clientName, contract.leaseType, vehicleText]
+      return [
+        contract.clientName,
+        contract.groupName,
+        contract.leaseType,
+        vehicleText,
+      ]
         .join(" ")
         .toLowerCase()
         .includes(query);
@@ -675,6 +682,7 @@ export default function LongTermLeasing() {
               <tr>
                 <th className="px-4 py-3">Vehicle</th>
                 <th className="px-4 py-3">Client</th>
+                <th className="px-4 py-3">Group</th>
                 <th className="px-4 py-3">Lease Start</th>
                 <th className="px-4 py-3">Lease End</th>
                 <th className="px-4 py-3">Duration</th>
@@ -733,6 +741,11 @@ export default function LongTermLeasing() {
                         <Users className="w-4 h-4 text-slate-400" />
                         {contract.clientName || "-"}
                       </div>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-slate-700">
+                      {contract.groupName || (
+                        <span className="text-slate-400">-</span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-sm text-slate-700">
                       <div className="flex items-center gap-2">
@@ -916,6 +929,20 @@ export default function LongTermLeasing() {
                       setField("clientName", event.target.value)
                     }
                     placeholder="Company or individual"
+                    className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                    Group Name
+                  </label>
+                  <input
+                    value={form.groupName}
+                    onChange={(event) =>
+                      setField("groupName", event.target.value)
+                    }
+                    placeholder="Optional - e.g., Tour Group, Family etc."
                     className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
                   />
                 </div>

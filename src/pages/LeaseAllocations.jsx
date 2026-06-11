@@ -49,6 +49,7 @@ const emptyForm = () => ({
   fuelNotes: "",
   status: "Scheduled",
   notes: "",
+  groupName: "",
 });
 
 const formatDate = (value) => {
@@ -60,6 +61,40 @@ const formatDate = (value) => {
     month: "short",
     year: "numeric",
   });
+};
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+const parseIsoDate = (value) => {
+  if (!value || typeof value !== "string") return null;
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) return null;
+  return Date.UTC(year, month - 1, day);
+};
+
+const toIsoDate = (utcMs) => {
+  if (!Number.isFinite(utcMs)) return "";
+  return new Date(utcMs).toISOString().slice(0, 10);
+};
+
+const countInclusiveDaysInWindow = (allocation, fromDate, toDate) => {
+  const allocationStart = parseIsoDate(allocation?.startDate || "");
+  const allocationEnd = parseIsoDate(
+    allocation?.endDate || allocation?.startDate || "",
+  );
+
+  if (!Number.isFinite(allocationStart) || !Number.isFinite(allocationEnd)) {
+    return 0;
+  }
+
+  const rangeStart = parseIsoDate(fromDate || "") ?? allocationStart;
+  const rangeEnd = parseIsoDate(toDate || "") ?? allocationEnd;
+
+  const start = Math.max(allocationStart, rangeStart);
+  const end = Math.min(allocationEnd, rangeEnd);
+
+  if (end < start) return 0;
+  return Math.floor((end - start) / DAY_MS) + 1;
 };
 
 const extractContracts = (payload) => {
@@ -222,6 +257,7 @@ export default function LeaseAllocations() {
       if (!overlapsRange(a)) return false;
       if (!term) return true;
       const haystack = [
+        a.groupName,
         a.contract?.clientName,
         a.vehicle?.vehicleNo,
         a.vehicle?.plateNo,
@@ -238,45 +274,56 @@ export default function LeaseAllocations() {
 
   const clientInsights = useMemo(() => {
     const searchTerm = search.trim().toLowerCase();
-    if (!searchTerm) {
-      return {
-        clientName: "",
-        scheduledCount: 0,
-        totalTrips: 0,
-      };
-    }
-
-    const matchingClients = Array.from(
+    const allClients = Array.from(
       new Set(
         filteredAllocations
           .map((allocation) => allocation.contract?.clientName?.trim() || "")
-          .filter((name) => name.toLowerCase().includes(searchTerm)),
+          .filter(Boolean),
       ),
     );
 
-    if (matchingClients.length !== 1) {
-      return {
-        clientName: "",
-        scheduledCount: 0,
-        totalTrips: 0,
-      };
-    }
+    const matchingClients = searchTerm
+      ? allClients.filter((name) => name.toLowerCase().includes(searchTerm))
+      : allClients;
 
-    const [matchedClient] = matchingClients;
-    const clientRows = filteredAllocations.filter(
-      (allocation) =>
-        (allocation.contract?.clientName || "").toLowerCase() ===
-        matchedClient.toLowerCase(),
+    const hasSingleClient = matchingClients.length === 1;
+    const selectedClientName = hasSingleClient ? matchingClients[0] : "";
+
+    const scopedRows = hasSingleClient
+      ? filteredAllocations.filter(
+          (allocation) =>
+            (allocation.contract?.clientName || "").toLowerCase() ===
+            selectedClientName.toLowerCase(),
+        )
+      : filteredAllocations;
+
+    const scheduledSafariDays = scopedRows.reduce(
+      (sum, allocation) =>
+        allocation.status === "Scheduled"
+          ? sum + countInclusiveDaysInWindow(allocation, dateFrom, dateTo)
+          : sum,
+      0,
+    );
+
+    const totalSafariDays = scopedRows.reduce(
+      (sum, allocation) =>
+        sum + countInclusiveDaysInWindow(allocation, dateFrom, dateTo),
+      0,
     );
 
     return {
-      clientName: matchedClient,
-      scheduledCount: clientRows.filter(
-        (allocation) => allocation.status === "Scheduled",
-      ).length,
-      totalTrips: clientRows.length,
+      clientName: selectedClientName,
+      scheduledSafariDays,
+      totalSafariDays,
+      allocationCount: scopedRows.length,
+      hasData: scopedRows.length > 0,
+      appliesToAllClients: !hasSingleClient,
+      rangeLabel:
+        dateFrom || dateTo
+          ? `${toIsoDate(parseIsoDate(dateFrom || "") ?? Number.NaN) || "Any"} to ${toIsoDate(parseIsoDate(dateTo || "") ?? Number.NaN) || "Any"}`
+          : "all dates",
     };
-  }, [filteredAllocations, search]);
+  }, [filteredAllocations, search, dateFrom, dateTo]);
 
   const openCreate = () => {
     setForm(emptyForm());
@@ -305,6 +352,7 @@ export default function LeaseAllocations() {
       fuelNotes: allocation.fuelNotes || "",
       status: allocation.status || "Scheduled",
       notes: allocation.notes || "",
+      groupName: allocation.groupName || "",
     });
     setShowModal(true);
   };
@@ -358,6 +406,7 @@ export default function LeaseAllocations() {
       fuelNotes: form.fuelNotes || null,
       status: form.status,
       notes: form.notes || null,
+      groupName: form.groupName || null,
     };
 
     setSaving(true);
@@ -486,22 +535,46 @@ export default function LeaseAllocations() {
         </div>
       </div>
 
-      {clientInsights.clientName && (
+      {clientInsights.hasData && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
           <p className="text-sm text-blue-800">
-            Client{" "}
-            <span className="font-semibold">{clientInsights.clientName}</span>{" "}
-            has{" "}
-            <span className="font-semibold">
-              {clientInsights.scheduledCount}
-            </span>{" "}
-            scheduled safari
-            {clientInsights.scheduledCount === 1 ? "" : "s"} in the selected
-            duration.
+            {clientInsights.appliesToAllClients ? (
+              <>
+                Vehicles are on safari for{" "}
+                <span className="font-semibold">
+                  {clientInsights.scheduledSafariDays}
+                </span>{" "}
+                scheduled day
+                {clientInsights.scheduledSafariDays === 1 ? "" : "s"} in the
+                selected duration.
+              </>
+            ) : (
+              <>
+                Client{" "}
+                <span className="font-semibold">
+                  {clientInsights.clientName}
+                </span>{" "}
+                has vehicles on safari for{" "}
+                <span className="font-semibold">
+                  {clientInsights.scheduledSafariDays}
+                </span>{" "}
+                scheduled day
+                {clientInsights.scheduledSafariDays === 1 ? "" : "s"} in the
+                selected duration.
+              </>
+            )}
           </p>
           <p className="text-xs text-blue-700 mt-1">
-            Total trips for this client in current filters:{" "}
-            {clientInsights.totalTrips}
+            Total safari vehicle-days in current filters:{" "}
+            <span className="font-semibold">
+              {clientInsights.totalSafariDays}
+            </span>{" "}
+            across{" "}
+            <span className="font-semibold">
+              {clientInsights.allocationCount}
+            </span>{" "}
+            allocation{clientInsights.allocationCount === 1 ? "" : "s"} (
+            {clientInsights.rangeLabel}).
           </p>
         </div>
       )}
@@ -587,7 +660,8 @@ export default function LeaseAllocations() {
           <table className="w-full text-sm">
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr className="text-left text-slate-600">
-                <th className="px-4 py-3">Contract / Client</th>
+                <th className="px-4 py-3">Client / Group</th>
+                <th className="px-4 py-3">Group Name</th>
                 <th className="px-4 py-3">Vehicle</th>
                 <th className="px-4 py-3">Driver</th>
                 <th className="px-4 py-3">Period</th>
@@ -600,7 +674,7 @@ export default function LeaseAllocations() {
               {loading ? (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={8}
                     className="px-4 py-8 text-center text-slate-500"
                   >
                     <Loader className="w-5 h-5 animate-spin inline mr-2" />
@@ -610,7 +684,7 @@ export default function LeaseAllocations() {
               ) : filteredAllocations.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={8}
                     className="px-4 py-8 text-center text-slate-500"
                   >
                     <ClipboardList className="w-6 h-6 mx-auto mb-2 text-slate-400" />
@@ -630,6 +704,11 @@ export default function LeaseAllocations() {
                       <div className="text-xs text-slate-500">
                         {a.contract?.leaseType || ""}
                       </div>
+                    </td>
+                    <td className="px-4 py-3 text-slate-700">
+                      {a.groupName || (
+                        <span className="text-slate-400 italic">—</span>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <div className="font-medium text-slate-900">
@@ -753,13 +832,31 @@ export default function LeaseAllocations() {
                     ))}
                   </select>
                   {selectedContract && (
-                    <p className="text-xs text-slate-500 mt-1">
-                      Contract period: {formatDate(selectedContract.startDate)}{" "}
-                      → {formatDate(selectedContract.endDate)} ·{" "}
-                      {selectedContract.vehicles.length} vehicle(s) under
-                      contract
-                    </p>
+                    <div className="mt-2 space-y-1">
+                      <p className="text-xs text-slate-500">
+                        Contract period:{" "}
+                        {formatDate(selectedContract.startDate)} →{" "}
+                        {formatDate(selectedContract.endDate)} ·{" "}
+                        {selectedContract.vehicles.length} vehicle(s) under
+                        contract
+                      </p>
+                    </div>
                   )}
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Group Name
+                  </label>
+                  <input
+                    type="text"
+                    value={form.groupName}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, groupName: e.target.value }))
+                    }
+                    placeholder="e.g., Smith Family, ABC Tour Group"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                  />
                 </div>
 
                 <div>

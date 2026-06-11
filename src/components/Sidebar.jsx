@@ -111,6 +111,12 @@ export const menuGroups = [
         label: "Lease Calendar",
         permission: "vehicles.view",
       },
+      {
+        path: "/lease-proforma-invoices",
+        icon: FileText,
+        label: "Lease Proformas",
+        permission: "proforma-invoices.view",
+      },
     ],
   },
   {

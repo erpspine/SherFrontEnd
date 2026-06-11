@@ -6,6 +6,7 @@ import {
   Building2,
   FileText,
   Receipt,
+  Trash2,
 } from "lucide-react";
 import { apiFetch } from "../utils/api";
 
@@ -84,6 +85,9 @@ export default function Payments() {
   const [searchTerm, setSearchTerm] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
+  const [deletingInvoicePaymentId, setDeletingInvoicePaymentId] =
+    useState(null);
+  const [deletingPiPaymentId, setDeletingPiPaymentId] = useState(null);
 
   useEffect(() => {
     const loadPayments = async () => {
@@ -128,6 +132,62 @@ export default function Payments() {
 
     loadPayments();
   }, []);
+
+  const handleDeleteInvoicePayment = async (payment) => {
+    if (!payment?.id || !payment?.invoiceId) return;
+    const confirmed = window.confirm(
+      `Delete invoice payment #${payment.id}? This action cannot be undone.`,
+    );
+    if (!confirmed) return;
+
+    setDeletingInvoicePaymentId(payment.id);
+    try {
+      const response = await apiFetch(
+        `/invoices/${payment.invoiceId}/payments/${payment.id}`,
+        { method: "DELETE" },
+      );
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(
+          payload?.message || "Unable to delete invoice payment.",
+        );
+      }
+
+      setPayments((prev) => prev.filter((item) => item.id !== payment.id));
+    } catch (error) {
+      setErrorMessage(error.message || "Failed to delete invoice payment.");
+    } finally {
+      setDeletingInvoicePaymentId(null);
+    }
+  };
+
+  const handleDeletePiPayment = async (payment) => {
+    if (!payment?.id || !payment?.piId) return;
+    const confirmed = window.confirm(
+      `Delete proforma payment #${payment.id}? This action cannot be undone.`,
+    );
+    if (!confirmed) return;
+
+    setDeletingPiPaymentId(payment.id);
+    try {
+      const response = await apiFetch(
+        `/proforma-invoices/${payment.piId}/payments/${payment.id}`,
+        { method: "DELETE" },
+      );
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(
+          payload?.message || "Unable to delete proforma payment.",
+        );
+      }
+
+      setPiPayments((prev) => prev.filter((item) => item.id !== payment.id));
+    } catch (error) {
+      setErrorMessage(error.message || "Failed to delete proforma payment.");
+    } finally {
+      setDeletingPiPaymentId(null);
+    }
+  };
 
   const filteredPayments = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
@@ -264,6 +324,7 @@ export default function Payments() {
                     "Amount",
                     "Method",
                     "Reference",
+                    "Actions",
                   ].map((h) => (
                     <th
                       key={h}
@@ -278,7 +339,7 @@ export default function Payments() {
                 {isLoading && (
                   <tr>
                     <td
-                      colSpan={7}
+                      colSpan={8}
                       className="py-10 text-center text-sm text-slate-500"
                     >
                       Loading payments...
@@ -324,12 +385,24 @@ export default function Payments() {
                       <td className="py-3 px-4 text-sm text-slate-700">
                         {payment.reference || "-"}
                       </td>
+                      <td className="py-3 px-4 text-sm text-slate-700">
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteInvoicePayment(payment)}
+                          disabled={deletingInvoicePaymentId === payment.id}
+                          className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2 py-1 text-rose-700 hover:bg-rose-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                          title="Delete payment"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          Delete
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 {!isLoading && filteredPayments.inv.length === 0 && (
                   <tr>
                     <td
-                      colSpan={7}
+                      colSpan={8}
                       className="py-10 text-center text-sm text-slate-500"
                     >
                       No invoice payments found.
@@ -369,6 +442,7 @@ export default function Payments() {
                     "Amount",
                     "Method",
                     "Reference",
+                    "Actions",
                   ].map((h) => (
                     <th
                       key={h}
@@ -383,7 +457,7 @@ export default function Payments() {
                 {isLoading && (
                   <tr>
                     <td
-                      colSpan={7}
+                      colSpan={8}
                       className="py-10 text-center text-sm text-slate-500"
                     >
                       Loading payments...
@@ -429,12 +503,24 @@ export default function Payments() {
                       <td className="py-3 px-4 text-sm text-slate-700">
                         {payment.reference || "-"}
                       </td>
+                      <td className="py-3 px-4 text-sm text-slate-700">
+                        <button
+                          type="button"
+                          onClick={() => handleDeletePiPayment(payment)}
+                          disabled={deletingPiPaymentId === payment.id}
+                          className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2 py-1 text-rose-700 hover:bg-rose-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                          title="Delete payment"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          Delete
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 {!isLoading && filteredPayments.pi.length === 0 && (
                   <tr>
                     <td
-                      colSpan={7}
+                      colSpan={8}
                       className="py-10 text-center text-sm text-slate-500"
                     >
                       No proforma invoice payments found.
