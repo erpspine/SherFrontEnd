@@ -14,6 +14,9 @@ import {
   Globe,
   Clock,
   KeyRound,
+  Copy,
+  Download,
+  Send,
 } from "lucide-react";
 import { apiFetch } from "../utils/api";
 import { getAuthUser, updateAuthSession } from "../utils/auth";
@@ -21,7 +24,7 @@ import Swal from "sweetalert2";
 import Select from "react-select";
 
 const roleOptions = ["Admin", "Operations", "Finance", "Driver", "Viewer"];
-const statusOptions = ["Active", "Inactive"];
+const statusOptions = ["Active", "Inactive", "Blacklisted"];
 const languageOptions = [
   { value: "English", label: "English" },
   { value: "French", label: "French" },
@@ -35,6 +38,7 @@ const languageOptions = [
 const statusStyles = {
   Active: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
   Inactive: "bg-slate-500/20 text-slate-400 border-slate-500/30",
+  Blacklisted: "bg-rose-500/20 text-rose-400 border-rose-500/30",
 };
 
 const roleStyles = {
@@ -52,6 +56,9 @@ const createFormState = () => ({
   role: "Viewer",
   languages_spoken: [],
   driving_started_at: "",
+  driver_license: "",
+  tour_guide_license: "",
+  blacklist_reason: "",
   status: "Active",
   receive_notifications: false,
   send_sms: false,
@@ -110,6 +117,7 @@ const normalizeStatus = (value) => {
   if (typeof value === "string") {
     const normalized = value.toLowerCase();
     if (normalized === "active" || normalized === "1") return "Active";
+    if (normalized === "blacklisted") return "Blacklisted";
   }
   return "Inactive";
 };
@@ -133,6 +141,9 @@ const normalizeUser = (user) => ({
     ? user.languages_spoken_list || user.languagesSpokenList
     : parseLanguagesInput(user.languages_spoken || user.languagesSpoken || ""),
   driving_started_at: user.driving_started_at || user.drivingStartedAt || "",
+  driver_license: user.driver_license || user.driverLicense || "",
+  tour_guide_license: user.tour_guide_license || user.tourGuideLicense || "",
+  blacklist_reason: user.blacklist_reason || user.blacklistReason || "",
   work_experience: user.work_experience || user.workExperience || "",
   role: roleOptions.includes(toTitleCase(user.role))
     ? toTitleCase(user.role)
@@ -240,7 +251,25 @@ const hasDriverProfileData = (user) =>
   (Array.isArray(user.languages_spoken_list) &&
     user.languages_spoken_list.length > 0) ||
   Boolean(user.driving_started_at) ||
-  Boolean(user.work_experience);
+  Boolean(user.work_experience) ||
+  Boolean(user.driver_license) ||
+  Boolean(user.tour_guide_license);
+
+const getDriverProfileText = (user) =>
+  [
+    `Driver name: ${user.name || "-"}`,
+    `Phone: ${user.phone || "-"}`,
+    `Language: ${Array.isArray(user.languages_spoken_list) && user.languages_spoken_list.length > 0 ? user.languages_spoken_list.join(", ") : "-"}`,
+    `Driver licence: ${user.driver_license || "-"}`,
+    `Guide License: ${user.tour_guide_license || "-"}`,
+  ].join("\n");
+
+const filenameFromHeader = (header, fallback) => {
+  const match = String(header || "").match(
+    /filename\*?=(?:UTF-8'')?["']?([^"';]+)["']?/i,
+  );
+  return match ? decodeURIComponent(match[1]) : fallback;
+};
 
 export default function Users() {
   const [users, setUsers] = useState([]);
@@ -285,7 +314,7 @@ export default function Users() {
     total: users.length,
     active: users.filter((u) => u.status === "Active").length,
     inactive: users.filter((u) => u.status === "Inactive").length,
-    admins: users.filter((u) => u.role === "Admin").length,
+    blacklisted: users.filter((u) => u.status === "Blacklisted").length,
   };
 
   const filteredUsers = users.filter((user) => {
@@ -354,6 +383,9 @@ export default function Users() {
           selectedUser.languages_spoken_list,
         ),
         driving_started_at: selectedUser.driving_started_at || "",
+        driver_license: selectedUser.driver_license || "",
+        tour_guide_license: selectedUser.tour_guide_license || "",
+        blacklist_reason: selectedUser.blacklist_reason || "",
         status: selectedUser.status,
         receive_notifications: selectedUser.receive_notifications,
       });
@@ -394,6 +426,33 @@ export default function Users() {
         });
         return;
       }
+
+      if (
+        form.status === "Blacklisted" &&
+        String(form.blacklist_reason || "").trim() === ""
+      ) {
+        setErrorMessage(
+          "Please provide a reason for blacklisting this driver.",
+        );
+        await Swal.fire({
+          title: "Blacklist Reason Required",
+          text: "Please enter the reason this driver is blacklisted.",
+          icon: "warning",
+          background: "#0f172a",
+          color: "#e2e8f0",
+        });
+        return;
+      }
+    } else if (form.status === "Blacklisted") {
+      setErrorMessage("Only Driver users can be blacklisted.");
+      await Swal.fire({
+        title: "Driver Role Required",
+        text: "Change the role to Driver before setting a user as Blacklisted.",
+        icon: "warning",
+        background: "#0f172a",
+        color: "#e2e8f0",
+      });
+      return;
     }
 
     setIsSaving(true);
@@ -412,6 +471,18 @@ export default function Users() {
         driving_started_at:
           form.role === "Driver"
             ? String(form.driving_started_at || "").trim() || null
+            : null,
+        driver_license:
+          form.role === "Driver"
+            ? String(form.driver_license || "").trim() || null
+            : null,
+        tour_guide_license:
+          form.role === "Driver"
+            ? String(form.tour_guide_license || "").trim() || null
+            : null,
+        blacklist_reason:
+          form.role === "Driver" && form.status === "Blacklisted"
+            ? String(form.blacklist_reason || "").trim()
             : null,
         status: form.status,
         receive_notifications: form.receive_notifications,
@@ -590,6 +661,116 @@ export default function Users() {
     }
   };
 
+  const handleCopyDriverProfile = async (user) => {
+    try {
+      await navigator.clipboard.writeText(getDriverProfileText(user));
+      await Swal.fire({
+        title: "Copied",
+        text: "Driver details copied to clipboard.",
+        icon: "success",
+        timer: 1400,
+        showConfirmButton: false,
+        background: "#0f172a",
+        color: "#e2e8f0",
+      });
+    } catch (error) {
+      await Swal.fire({
+        title: "Copy Failed",
+        text: "Unable to copy driver details. Please try again.",
+        icon: "error",
+        background: "#0f172a",
+        color: "#e2e8f0",
+      });
+    }
+  };
+
+  const handleDownloadDriverProfile = async (user) => {
+    try {
+      const response = await apiFetch(`/users/${user.id}/driver-profile/pdf`);
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload?.message || "Unable to generate driver PDF.");
+      }
+
+      const blob = await response.blob();
+      const filename = filenameFromHeader(
+        response.headers.get("content-disposition"),
+        `driver-profile-${user.id}.pdf`,
+      );
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch (error) {
+      await Swal.fire({
+        title: "Download Failed",
+        text: error.message || "Unable to download driver profile PDF.",
+        icon: "error",
+        background: "#0f172a",
+        color: "#e2e8f0",
+      });
+    }
+  };
+
+  const handleEmailDriverProfile = async (user) => {
+    const result = await Swal.fire({
+      title: "Send Driver Details",
+      input: "email",
+      inputLabel: "Client email address",
+      inputPlaceholder: "client@example.com",
+      showCancelButton: true,
+      confirmButtonText: "Send",
+      cancelButtonText: "Cancel",
+      background: "#0f172a",
+      color: "#e2e8f0",
+      confirmButtonColor: "#d97706",
+      inputValidator: (value) => {
+        if (!value) return "Please enter the client email address.";
+        return undefined;
+      },
+    });
+
+    if (!result.isConfirmed) return;
+
+    try {
+      const response = await apiFetch(
+        `/users/${user.id}/driver-profile/email`,
+        {
+          method: "POST",
+          body: { email: result.value },
+        },
+      );
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(payload?.message || "Unable to email driver details.");
+      }
+
+      await Swal.fire({
+        title: "Sent",
+        text: payload?.message || "Driver profile sent successfully.",
+        icon: "success",
+        timer: 1800,
+        showConfirmButton: false,
+        background: "#0f172a",
+        color: "#e2e8f0",
+      });
+    } catch (error) {
+      await Swal.fire({
+        title: "Send Failed",
+        text: error.message || "Unable to email driver details.",
+        icon: "error",
+        background: "#0f172a",
+        color: "#e2e8f0",
+      });
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -634,9 +815,9 @@ export default function Users() {
           </p>
         </div>
         <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-4 text-center">
-          <p className="text-slate-500 text-sm">Admins</p>
-          <p className="text-2xl font-bold mt-1 text-blue-600">
-            {stats.admins}
+          <p className="text-slate-500 text-sm">Blacklisted</p>
+          <p className="text-2xl font-bold mt-1 text-rose-600">
+            {stats.blacklisted}
           </p>
         </div>
       </div>
@@ -707,7 +888,7 @@ export default function Users() {
 
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1400px]">
+          <table className="w-full min-w-[1680px]">
             <thead className="table-head-gradient">
               <tr className="border-b border-slate-200">
                 {[
@@ -718,6 +899,8 @@ export default function Users() {
                   "Role",
                   "Languages",
                   "Experience",
+                  "Driver Licence",
+                  "Guide Licence",
                   "Status",
                   "Notifications",
                   "Last Login",
@@ -726,7 +909,7 @@ export default function Users() {
                     key={header}
                     className={`text-left py-4 px-6 text-xs font-semibold text-slate-500 uppercase tracking-wide ${
                       header === "Actions"
-                        ? "w-[124px]"
+                        ? "w-[188px]"
                         : header === "Phone"
                           ? "min-w-[220px]"
                           : ""
@@ -747,7 +930,7 @@ export default function Users() {
                       : "hover:bg-sky-50/60"
                   }`}
                 >
-                  <td className="py-4 px-6 w-[124px]">
+                  <td className="py-4 px-6 w-[188px]">
                     <div className="flex items-center gap-1">
                       <button
                         onClick={() => handleResetPassword(user)}
@@ -770,6 +953,31 @@ export default function Users() {
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
+                      {user.role === "Driver" && (
+                        <>
+                          <button
+                            onClick={() => handleCopyDriverProfile(user)}
+                            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                            title="Copy driver details"
+                          >
+                            <Copy className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDownloadDriverProfile(user)}
+                            className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                            title="Download driver profile PDF"
+                          >
+                            <Download className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleEmailDriverProfile(user)}
+                            className="p-1.5 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
+                            title="Email driver profile to client"
+                          >
+                            <Send className="w-4 h-4" />
+                          </button>
+                        </>
+                      )}
                     </div>
                   </td>
                   <td className="py-4 px-6">
@@ -781,6 +989,12 @@ export default function Users() {
                         <div className="text-slate-900 font-medium text-sm">
                           {user.name}
                         </div>
+                        {user.status === "Blacklisted" &&
+                          user.blacklist_reason && (
+                            <div className="mt-1 max-w-[320px] text-xs text-rose-600">
+                              {user.blacklist_reason}
+                            </div>
+                          )}
                         {hasDriverProfileData(user) && (
                           <div className="mt-1 space-y-1 text-xs text-slate-500">
                             {Array.isArray(user.languages_spoken_list) &&
@@ -840,6 +1054,16 @@ export default function Users() {
                       </span>
                     ) : (
                       <span className="text-slate-400 text-sm">—</span>
+                    )}
+                  </td>
+                  <td className="py-4 px-6 text-sm text-slate-600">
+                    {user.driver_license || (
+                      <span className="text-slate-400">—</span>
+                    )}
+                  </td>
+                  <td className="py-4 px-6 text-sm text-slate-600">
+                    {user.tour_guide_license || (
+                      <span className="text-slate-400">—</span>
                     )}
                   </td>
                   <td className="py-4 px-6">
@@ -958,7 +1182,29 @@ export default function Users() {
                 </label>
                 <select
                   value={form.role}
-                  onChange={(e) => setForm({ ...form, role: e.target.value })}
+                  onChange={(e) => {
+                    const nextRole = e.target.value;
+                    const shouldClearBlacklist = nextRole !== "Driver";
+                    setForm({
+                      ...form,
+                      role: nextRole,
+                      languages_spoken:
+                        nextRole === "Driver" ? form.languages_spoken : [],
+                      driving_started_at:
+                        nextRole === "Driver" ? form.driving_started_at : "",
+                      driver_license:
+                        nextRole === "Driver" ? form.driver_license : "",
+                      tour_guide_license:
+                        nextRole === "Driver" ? form.tour_guide_license : "",
+                      status:
+                        shouldClearBlacklist && form.status === "Blacklisted"
+                          ? "Active"
+                          : form.status,
+                      blacklist_reason: shouldClearBlacklist
+                        ? ""
+                        : form.blacklist_reason,
+                    });
+                  }}
                   className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-amber-500"
                 >
                   {roleOptions.map((role) => (
@@ -1014,6 +1260,39 @@ export default function Users() {
                       className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-amber-500"
                     />
                   </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-300 mb-2">
+                      Driver Licence
+                    </label>
+                    <input
+                      type="text"
+                      value={form.driver_license}
+                      onChange={(e) =>
+                        setForm({ ...form, driver_license: e.target.value })
+                      }
+                      placeholder="Driver licence number"
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-amber-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-300 mb-2">
+                      Tour Guide Licence
+                    </label>
+                    <input
+                      type="text"
+                      value={form.tour_guide_license}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          tour_guide_license: e.target.value,
+                        })
+                      }
+                      placeholder="Tour guide licence number"
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-amber-500"
+                    />
+                  </div>
                 </>
               )}
 
@@ -1023,16 +1302,48 @@ export default function Users() {
                 </label>
                 <select
                   value={form.status}
-                  onChange={(e) => setForm({ ...form, status: e.target.value })}
+                  onChange={(e) => {
+                    const nextStatus = e.target.value;
+                    setForm({
+                      ...form,
+                      status: nextStatus,
+                      blacklist_reason:
+                        nextStatus === "Blacklisted"
+                          ? form.blacklist_reason
+                          : "",
+                    });
+                  }}
                   className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-amber-500"
                 >
-                  {statusOptions.map((status) => (
-                    <option key={status} value={status}>
-                      {status}
-                    </option>
-                  ))}
+                  {statusOptions
+                    .filter(
+                      (status) =>
+                        status !== "Blacklisted" || form.role === "Driver",
+                    )
+                    .map((status) => (
+                      <option key={status} value={status}>
+                        {status}
+                      </option>
+                    ))}
                 </select>
               </div>
+
+              {form.role === "Driver" && form.status === "Blacklisted" && (
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-slate-300 mb-2">
+                    Blacklist Reason
+                  </label>
+                  <textarea
+                    value={form.blacklist_reason}
+                    onChange={(e) =>
+                      setForm({ ...form, blacklist_reason: e.target.value })
+                    }
+                    rows={3}
+                    placeholder="Reason this driver should not be used again"
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-amber-500 resize-none"
+                  />
+                </div>
+              )}
 
               <div className="md:col-span-2">
                 <label className="inline-flex items-center gap-3 cursor-pointer select-none">

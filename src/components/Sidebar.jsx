@@ -18,7 +18,9 @@ import {
   ListChecks,
   Wrench,
   Calendar,
+  Route,
   ChevronLeft,
+  AlertTriangle,
 } from "lucide-react";
 import {
   clearAuthSession,
@@ -78,6 +80,12 @@ export const menuGroups = [
         icon: ClipboardList,
         label: "Inspections",
         permission: null,
+      },
+      {
+        path: "/incident-reports",
+        icon: AlertTriangle,
+        label: "Incident Reports",
+        permission: "vehicles.view",
       },
       {
         path: "/odometer-reports",

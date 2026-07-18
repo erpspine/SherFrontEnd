@@ -3,6 +3,7 @@ import {
   AlertCircle,
   CheckCircle2,
   ClipboardList,
+  Download,
   Loader,
   Pencil,
   Plus,
@@ -75,6 +76,50 @@ const parseIsoDate = (value) => {
 const toIsoDate = (utcMs) => {
   if (!Number.isFinite(utcMs)) return "";
   return new Date(utcMs).toISOString().slice(0, 10);
+};
+
+const populateItineraryDates = (items, startDate, endDate) => {
+  const start = parseIsoDate(startDate || "");
+  const end = parseIsoDate(endDate || "");
+
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) {
+    return items?.length ? items : [{ date: "", details: "" }];
+  }
+
+  const existingItems = Array.isArray(items) ? items : [];
+  const detailsByDate = new Map(
+    existingItems
+      .filter((item) => item?.date)
+      .map((item) => [item.date, item.details || ""]),
+  );
+
+  const nextItems = [];
+  for (let date = start; date <= end; date += DAY_MS) {
+    const isoDate = toIsoDate(date);
+    const existingByIndex = existingItems[nextItems.length];
+    nextItems.push({
+      date: isoDate,
+      details: detailsByDate.get(isoDate) ?? existingByIndex?.details ?? "",
+    });
+  }
+
+  return nextItems;
+};
+
+const filenameFromHeader = (disposition, fallback) => {
+  if (!disposition) return fallback;
+
+  const utfMatch = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utfMatch?.[1]) {
+    return decodeURIComponent(utfMatch[1]);
+  }
+
+  const basicMatch = disposition.match(/filename="?([^";]+)"?/i);
+  if (basicMatch?.[1]) {
+    return basicMatch[1];
+  }
+
+  return fallback;
 };
 
 const countInclusiveDaysInWindow = (allocation, fromDate, toDate) => {
@@ -167,8 +212,10 @@ export default function LeaseAllocations() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [contractFilter, setContractFilter] = useState("All");
+  const [vehicleFilter, setVehicleFilter] = useState("All");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [exportType, setExportType] = useState("");
 
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState(emptyForm());
@@ -254,6 +301,11 @@ export default function LeaseAllocations() {
         Number(a.leaseContractId) !== Number(contractFilter)
       )
         return false;
+      if (
+        vehicleFilter !== "All" &&
+        Number(a.vehicleId) !== Number(vehicleFilter)
+      )
+        return false;
       if (!overlapsRange(a)) return false;
       if (!term) return true;
       const haystack = [
@@ -270,7 +322,34 @@ export default function LeaseAllocations() {
         .toLowerCase();
       return haystack.includes(term);
     });
-  }, [allocations, search, statusFilter, contractFilter, dateFrom, dateTo]);
+  }, [
+    allocations,
+    search,
+    statusFilter,
+    contractFilter,
+    vehicleFilter,
+    dateFrom,
+    dateTo,
+  ]);
+
+  const vehicleFilterOptions = useMemo(() => {
+    const byId = new Map();
+    allocations.forEach((allocation) => {
+      const id = Number(allocation?.vehicle?.id || allocation?.vehicleId || 0);
+      if (!id || byId.has(id)) return;
+
+      const vehicleNo = allocation?.vehicle?.vehicleNo || "-";
+      const plateNo = allocation?.vehicle?.plateNo || "";
+      byId.set(id, {
+        id,
+        label: plateNo ? `${vehicleNo} (${plateNo})` : vehicleNo,
+      });
+    });
+
+    return Array.from(byId.values()).sort((a, b) =>
+      a.label.localeCompare(b.label),
+    );
+  }, [allocations]);
 
   const clientInsights = useMemo(() => {
     const searchTerm = search.trim().toLowerCase();
@@ -464,6 +543,51 @@ export default function LeaseAllocations() {
     }
   };
 
+  const handleExportExcel = async () => {
+    setExportType("excel");
+    try {
+      const params = new URLSearchParams();
+      if (search.trim()) params.set("search", search.trim());
+      if (statusFilter !== "All") params.set("status", statusFilter);
+      if (contractFilter !== "All")
+        params.set("leaseContractId", contractFilter);
+      if (vehicleFilter !== "All") params.set("vehicleId", vehicleFilter);
+      if (dateFrom) params.set("dateFrom", dateFrom);
+      if (dateTo) params.set("dateTo", dateTo);
+
+      const query = params.toString();
+      const response = await apiFetch(
+        `/lease-allocations/export/excel${query ? `?${query}` : ""}`,
+      );
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload?.message || "Failed to export Excel.");
+      }
+
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = filenameFromHeader(
+        response.headers.get("content-disposition"),
+        "lease-allocations-report.csv",
+      );
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch (err) {
+      Swal.fire(
+        "Export Failed",
+        err.message || "Failed to export Excel.",
+        "error",
+      );
+    } finally {
+      setExportType("");
+    }
+  };
+
   const stats = useMemo(() => {
     const total = filteredAllocations.length;
     const scheduled = filteredAllocations.filter(
@@ -491,6 +615,22 @@ export default function LeaseAllocations() {
             requests.
           </p>
         </div>
+        <button
+          type="button"
+          onClick={handleExportExcel}
+          disabled={loading || exportType === "excel"}
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60"
+        >
+          {exportType === "excel" ? (
+            <>
+              <Loader className="w-4 h-4 animate-spin" /> Exporting Excel...
+            </>
+          ) : (
+            <>
+              <Download className="w-4 h-4" /> Export Excel
+            </>
+          )}
+        </button>
         <button
           onClick={openCreate}
           className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 shadow-sm"
@@ -604,6 +744,18 @@ export default function LeaseAllocations() {
           ))}
         </select>
         <select
+          value={vehicleFilter}
+          onChange={(e) => setVehicleFilter(e.target.value)}
+          className="px-3 py-2 border border-slate-300 rounded-lg text-sm"
+        >
+          <option value="All">All Vehicles</option>
+          {vehicleFilterOptions.map((vehicle) => (
+            <option key={vehicle.id} value={vehicle.id}>
+              {vehicle.label}
+            </option>
+          ))}
+        </select>
+        <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
           className="px-3 py-2 border border-slate-300 rounded-lg text-sm"
@@ -639,6 +791,7 @@ export default function LeaseAllocations() {
             setSearch("");
             setStatusFilter("All");
             setContractFilter("All");
+            setVehicleFilter("All");
             setDateFrom("");
             setDateTo("");
           }}
@@ -871,10 +1024,17 @@ export default function LeaseAllocations() {
                       const did = vId
                         ? vehicleDriverMap.get(Number(vId))
                         : null;
+                      const activeDriverId = drivers.some(
+                        (driver) => Number(driver.id) === Number(did),
+                      )
+                        ? did
+                        : null;
                       setForm((f) => ({
                         ...f,
                         vehicleId: vId,
-                        driverId: did ? String(did) : f.driverId,
+                        driverId: activeDriverId
+                          ? String(activeDriverId)
+                          : f.driverId,
                       }));
                     }}
                     disabled={!selectedContract}
@@ -957,9 +1117,23 @@ export default function LeaseAllocations() {
                     value={form.startDate}
                     min={selectedContract?.startDate || undefined}
                     max={selectedContract?.endDate || undefined}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, startDate: e.target.value }))
-                    }
+                    onChange={(e) => {
+                      const startDate = e.target.value;
+                      setForm((f) => {
+                        const endDate =
+                          f.endDate && f.endDate < startDate ? "" : f.endDate;
+                        return {
+                          ...f,
+                          startDate,
+                          endDate,
+                          itineraryItems: populateItineraryDates(
+                            f.itineraryItems,
+                            startDate,
+                            endDate,
+                          ),
+                        };
+                      });
+                    }}
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
                   />
                 </div>
@@ -976,9 +1150,18 @@ export default function LeaseAllocations() {
                       form.startDate || selectedContract?.startDate || undefined
                     }
                     max={selectedContract?.endDate || undefined}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, endDate: e.target.value }))
-                    }
+                    onChange={(e) => {
+                      const endDate = e.target.value;
+                      setForm((f) => ({
+                        ...f,
+                        endDate,
+                        itineraryItems: populateItineraryDates(
+                          f.itineraryItems,
+                          f.startDate,
+                          endDate,
+                        ),
+                      }));
+                    }}
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
                   />
                 </div>

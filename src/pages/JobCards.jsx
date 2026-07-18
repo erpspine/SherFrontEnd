@@ -357,6 +357,14 @@ const normalizeJobCard = (jobCard) => {
   return {
     id: jobCard.id,
     leadId: Number(jobCard.lead_id ?? jobCard.leadId ?? 0),
+    groupName:
+      jobCard.group_name ||
+      jobCard.groupName ||
+      jobCard?.leaseAllocation?.groupName ||
+      jobCard?.leaseAllocation?.group_name ||
+      jobCard?.leaseAllocation?.contract?.groupName ||
+      jobCard?.leaseAllocation?.contract?.group_name ||
+      "-",
     vehicleId: Number(jobCard.vehicle_id ?? jobCard.vehicleId ?? 0),
     leaseContractId: Number(
       jobCard.lease_contract_id ?? jobCard.leaseContractId ?? 0,
@@ -710,6 +718,7 @@ export default function JobCards() {
           leaseContractId: Number(
             a.leaseContractId ?? a.lease_contract_id ?? 0,
           ),
+          groupName: a.groupName || a.group_name || a.contract?.groupName || "",
           vehicleId: Number(a.vehicleId ?? a.vehicle_id ?? 0),
           vehicleNo: a.vehicle?.vehicleNo || a.vehicle?.vehicle_no || "",
           plateNo: a.vehicle?.plateNo || a.vehicle?.plate_no || "",
@@ -867,6 +876,20 @@ export default function JobCards() {
       });
   }, [form.leadId, safariAllocations, vehicles, users]);
 
+  const getJobCardVehicleCount = (card) => {
+    if (!card) return 0;
+
+    if (!isSafariJobType(card.type)) {
+      return 1;
+    }
+
+    const count = safariAllocations.filter(
+      (allocation) => String(allocation.leadId) === String(card.leadId),
+    ).length;
+
+    return count > 0 ? count : 1;
+  };
+
   const filteredCards = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
     const fromDate = filterFromDate ? parseDateValue(filterFromDate) : null;
@@ -901,6 +924,9 @@ export default function JobCards() {
           .toLowerCase()
           .includes(query) ||
         String(card.vehicleNo || "")
+          .toLowerCase()
+          .includes(query) ||
+        String(card.groupName || "")
           .toLowerCase()
           .includes(query) ||
         String(leadById.get(String(card.leadId || ""))?.groupName || "")
@@ -947,7 +973,9 @@ export default function JobCards() {
     const operationsCards = filteredCards.length - safariCards.length;
     const allowanceTotal = filteredCards.reduce((total, card) => {
       const value = Number(card.driverAllowance);
-      return Number.isFinite(value) ? total + value : total;
+      return Number.isFinite(value)
+        ? total + value * getJobCardVehicleCount(card)
+        : total;
     }, 0);
 
     return {
@@ -956,7 +984,7 @@ export default function JobCards() {
       operationsCards,
       allowanceTotal,
     };
-  }, [filteredCards]);
+  }, [filteredCards, safariAllocations]);
 
   const setField = (field, value) =>
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -1324,6 +1352,18 @@ export default function JobCards() {
   }, [selectedJobCard]);
 
   const selectedJobCardGroupName = useMemo(() => {
+    const directGroupName = String(selectedJobCard?.groupName || "").trim();
+    if (directGroupName) return directGroupName;
+
+    const leaseAllocationGroupName = String(
+      selectedJobCard?.leaseAllocation?.groupName ||
+        selectedJobCard?.leaseAllocation?.group_name ||
+        selectedJobCard?.leaseAllocation?.contract?.groupName ||
+        selectedJobCard?.leaseAllocation?.contract?.group_name ||
+        "",
+    ).trim();
+    if (leaseAllocationGroupName) return leaseAllocationGroupName;
+
     const leadId = Number(selectedJobCard?.leadId || 0);
     if (!leadId) return "-";
 
@@ -1348,6 +1388,31 @@ export default function JobCards() {
       }, 0),
     [routeItineraryLines],
   );
+
+  const selectedJobCardVehicleCount = useMemo(() => {
+    if (!selectedJobCard) return 0;
+    if (
+      Array.isArray(selectedJobCard.allocatedVehicles) &&
+      selectedJobCard.allocatedVehicles.length > 0
+    ) {
+      return selectedJobCard.allocatedVehicles.length;
+    }
+    return getJobCardVehicleCount(selectedJobCard);
+  }, [selectedJobCard, safariAllocations]);
+
+  const selectedJobCardAllowanceTotal = useMemo(() => {
+    const allowance = Number(selectedJobCard?.driverAllowance);
+    if (
+      !Number.isFinite(allowance) ||
+      selectedJobCard?.driverAllowance == null ||
+      selectedJobCard?.driverAllowance === "" ||
+      selectedJobCardVehicleCount <= 0
+    ) {
+      return null;
+    }
+
+    return allowance * selectedJobCardVehicleCount;
+  }, [selectedJobCard, selectedJobCardVehicleCount]);
 
   const getRouteSummaryPreview = (value, limit = 90) => {
     const normalized = String(value || "").trim();
@@ -1872,7 +1937,7 @@ export default function JobCards() {
                   Itinerary / Destination
                 </th>
                 <th className="text-right py-3 px-3 text-xs font-semibold text-slate-600 uppercase whitespace-nowrap">
-                  Driver Allowance
+                  Total Allowance
                 </th>
                 <th className="text-left py-3 px-3 text-xs font-semibold text-slate-600 uppercase">
                   Created At
@@ -1992,7 +2057,8 @@ export default function JobCards() {
                       {card.bookingReferenceNo}
                     </td>
                     <td className="py-3 px-3 text-sm text-slate-700 font-medium">
-                      {leadById.get(String(card.leadId || ""))?.groupName ||
+                      {card.groupName ||
+                        leadById.get(String(card.leadId || ""))?.groupName ||
                         "-"}
                     </td>
                     <td className="py-3 px-3 min-w-[220px]">
@@ -2056,10 +2122,12 @@ export default function JobCards() {
                         isLeaseJobType(card.type)) &&
                       card.driverAllowance != null &&
                       card.driverAllowance !== ""
-                        ? Number(card.driverAllowance).toLocaleString(
-                            undefined,
-                            { maximumFractionDigits: 2 },
-                          )
+                        ? (
+                            Number(card.driverAllowance) *
+                            getJobCardVehicleCount(card)
+                          ).toLocaleString(undefined, {
+                            maximumFractionDigits: 2,
+                          })
                         : "-"}
                     </td>
                     <td className="py-3 px-3 text-sm text-slate-700">
@@ -2419,6 +2487,72 @@ export default function JobCards() {
                     <p className="text-xs text-slate-500 mt-1">
                       Auto-calculated as the sum of Allowance/day across all
                       itinerary line items. You may override this value.
+                    </p>
+                  </div>
+                )}
+
+                {isSafariType &&
+                  !isCloseMode &&
+                  selectedLeadAllocations.length > 1 && (
+                    <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-amber-400 mb-1">
+                        Total Allowance (All Cars)
+                      </p>
+                      <p className="text-lg font-bold text-amber-300">
+                        {(() => {
+                          const perCar = Number(form.driverAllowance);
+                          const nCars = selectedLeadAllocations.length;
+                          if (!Number.isFinite(perCar) || perCar <= 0)
+                            return "-";
+                          return (perCar * nCars).toLocaleString(undefined, {
+                            maximumFractionDigits: 2,
+                          });
+                        })()}
+                      </p>
+                      <p className="text-xs text-amber-400/70 mt-1">
+                        {selectedLeadAllocations.length} car(s) ×{" "}
+                        {Number(form.driverAllowance) > 0
+                          ? Number(form.driverAllowance).toLocaleString(
+                              undefined,
+                              { maximumFractionDigits: 2 },
+                            )
+                          : "0"}{" "}
+                        per car
+                      </p>
+                    </div>
+                  )}
+
+                {isSafariType && !isCloseMode && form.leadId && (
+                  <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-amber-400 mb-1">
+                      Total Allowance (All Cars)
+                    </p>
+                    <p className="text-lg font-bold text-amber-300">
+                      {(() => {
+                        const perCar = Number(form.driverAllowance);
+                        const vehicleCount =
+                          selectedLeadAllocations.length > 0
+                            ? selectedLeadAllocations.length
+                            : 1;
+
+                        if (
+                          String(form.driverAllowance || "").trim() === "" ||
+                          !Number.isFinite(perCar) ||
+                          vehicleCount <= 0
+                        ) {
+                          return "-";
+                        }
+
+                        return (perCar * vehicleCount).toLocaleString(
+                          undefined,
+                          { maximumFractionDigits: 2 },
+                        );
+                      })()}
+                    </p>
+                    <p className="text-xs text-amber-400/70 mt-1">
+                      {(selectedLeadAllocations.length > 0
+                        ? selectedLeadAllocations.length
+                        : 1) + " car(s) × per-car allowance"}
                     </p>
                   </div>
                 )}
@@ -3167,17 +3301,38 @@ export default function JobCards() {
                   </p>
                   {(isSafariJobType(selectedJobCard.type) ||
                     isLeaseJobType(selectedJobCard.type)) && (
-                    <p className="text-slate-300">
-                      Driver Allowance:{" "}
-                      <span className="text-white">
-                        {selectedJobCard.driverAllowance != null &&
-                        selectedJobCard.driverAllowance !== ""
-                          ? Number(
-                              selectedJobCard.driverAllowance,
-                            ).toLocaleString()
-                          : "-"}
-                      </span>
-                    </p>
+                    <>
+                      <p className="text-slate-300">
+                        Driver Allowance (Per Car):{" "}
+                        <span className="text-white">
+                          {selectedJobCard.driverAllowance != null &&
+                          selectedJobCard.driverAllowance !== ""
+                            ? Number(
+                                selectedJobCard.driverAllowance,
+                              ).toLocaleString(undefined, {
+                                maximumFractionDigits: 2,
+                              })
+                            : "-"}
+                        </span>
+                      </p>
+                      <p className="text-slate-300">
+                        Total Allowance (All Cars):{" "}
+                        <span className="text-white">
+                          {selectedJobCardAllowanceTotal != null
+                            ? Number(
+                                selectedJobCardAllowanceTotal,
+                              ).toLocaleString(undefined, {
+                                maximumFractionDigits: 2,
+                              })
+                            : "-"}
+                        </span>
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        {selectedJobCardVehicleCount > 0
+                          ? `${selectedJobCardVehicleCount} car(s) × per-car allowance`
+                          : "No allocated vehicles found"}
+                      </p>
+                    </>
                   )}
                   {!isSafariJobType(selectedJobCard.type) && (
                     <>

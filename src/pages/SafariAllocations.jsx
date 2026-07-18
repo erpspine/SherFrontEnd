@@ -17,10 +17,23 @@ import {
 import Swal from "sweetalert2";
 import { apiFetch } from "../utils/api";
 
+const DEFAULT_VEHICLE_LEASE_TYPE = "Short-Term Lease";
+const VEHICLE_LEASE_TYPES = ["Short-Term Lease", "Long-Term Lease"];
+
 const createFormState = () => ({
   leadId: "",
   ranges: [
-    { startDate: "", endDate: "", pairs: [{ vehicleId: "", driverId: "" }] },
+    {
+      startDate: "",
+      endDate: "",
+      pairs: [
+        {
+          vehicleLeaseType: DEFAULT_VEHICLE_LEASE_TYPE,
+          vehicleId: "",
+          driverId: "",
+        },
+      ],
+    },
   ],
   notes: "",
   status: "Assigned",
@@ -124,6 +137,10 @@ const normalizeVehicle = (vehicle) => ({
   make: vehicle.make || "",
   model: vehicle.model || "",
   status: vehicle.status || "Available",
+  leaseType: vehicle.lease_type || vehicle.leaseType || "",
+  leaseStartDate: vehicle.lease_start_date || vehicle.leaseStartDate || "",
+  leaseEndDate: vehicle.lease_end_date || vehicle.leaseEndDate || "",
+  leaseClientName: vehicle.lease_client_name || vehicle.leaseClientName || "",
   assignedDriverId:
     vehicle.assigned_driver_id ||
     vehicle.assignedDriverId ||
@@ -133,6 +150,25 @@ const normalizeVehicle = (vehicle) => ({
   assignedDriverName:
     vehicle.assigned_driver?.name || vehicle.assignedDriver?.name || "",
 });
+
+const normalizeLeaseContract = (contract) => {
+  const vehicleIds = Array.isArray(contract.vehicleIds)
+    ? contract.vehicleIds.map(Number)
+    : Array.isArray(contract.vehicles)
+      ? contract.vehicles.map((vehicle) => Number(vehicle.id))
+      : contract.vehicleId
+        ? [Number(contract.vehicleId)]
+        : [];
+
+  return {
+    id: Number(contract.id || 0),
+    vehicleIds,
+    leaseType: contract.leaseType || contract.lease_type || "",
+    startDate: contract.startDate || contract.start_date || "",
+    endDate: contract.endDate || contract.end_date || "",
+    status: contract.status || "Active",
+  };
+};
 
 const normalizeUser = (user) => ({
   id: Number(user.id || 0),
@@ -145,6 +181,24 @@ const normalizeUser = (user) => ({
         ? "Active"
         : "Inactive",
 });
+
+const normalizeAssignedVehicleDriver = (vehicle) => {
+  const assignedDriver = vehicle?.assigned_driver || vehicle?.assignedDriver;
+  const assignedDriverId =
+    vehicle?.assigned_driver_id ||
+    vehicle?.assignedDriverId ||
+    assignedDriver?.id;
+
+  if (!assignedDriverId) return null;
+
+  return {
+    id: Number(assignedDriverId),
+    name:
+      assignedDriver?.name || vehicle?.assignedDriverName || "Assigned driver",
+    role: assignedDriver?.role || "Driver",
+    status: "Active",
+  };
+};
 
 const normalizeAllocation = (allocation) => ({
   id:
@@ -163,6 +217,10 @@ const normalizeAllocation = (allocation) => ({
   ),
   vehicleId: String(allocation.vehicleId || allocation.vehicle_id || ""),
   driverId: String(allocation.driverId || allocation.driver_id || ""),
+  vehicleLeaseType:
+    allocation.vehicleLeaseType ||
+    allocation.vehicle_lease_type ||
+    DEFAULT_VEHICLE_LEASE_TYPE,
   startDate:
     allocation.startDate ||
     allocation.start_date ||
@@ -258,18 +316,71 @@ const extractList = (payload, keys) => {
   return [];
 };
 
-const createEmptyPair = () => ({ vehicleId: "", driverId: "" });
+const createEmptyPair = () => ({
+  vehicleLeaseType: DEFAULT_VEHICLE_LEASE_TYPE,
+  vehicleId: "",
+  driverId: "",
+});
 const createEmptyRange = () => ({
   startDate: "",
   endDate: "",
   pairs: [createEmptyPair()],
 });
 
+const isLeaseVehicle = (vehicle) =>
+  String(vehicle.status || "").toLowerCase() === "on lease";
+
+const getLeaseDays = (startDate, endDate) => {
+  if (!startDate || !endDate) return null;
+  const leaseStart = new Date(startDate);
+  const leaseEnd = new Date(endDate);
+  if (Number.isNaN(leaseStart.getTime()) || Number.isNaN(leaseEnd.getTime())) {
+    return null;
+  }
+
+  return Math.abs(leaseEnd - leaseStart) / (1000 * 60 * 60 * 24);
+};
+
+const getVehicleLeaseType = (vehicle) => {
+  if (!isLeaseVehicle(vehicle)) return DEFAULT_VEHICLE_LEASE_TYPE;
+  if (vehicle.leaseType === "Long-Term Lease") return "Long-Term Lease";
+
+  if (!vehicle.leaseStartDate || !vehicle.leaseEndDate) {
+    return vehicle.leaseType === "Short-Term Lease"
+      ? "Short-Term Lease"
+      : DEFAULT_VEHICLE_LEASE_TYPE;
+  }
+
+  const leaseDays = getLeaseDays(vehicle.leaseStartDate, vehicle.leaseEndDate);
+  if (leaseDays === null) {
+    return DEFAULT_VEHICLE_LEASE_TYPE;
+  }
+
+  return leaseDays > 365 ? "Long-Term Lease" : "Short-Term Lease";
+};
+
+const isVehicleAvailableForSafariRange = (vehicle, startDate, endDate) => {
+  if (vehicle.status === "Available") return true;
+  if (!isLeaseVehicle(vehicle)) return false;
+
+  if (
+    !vehicle.leaseStartDate ||
+    !vehicle.leaseEndDate ||
+    !startDate ||
+    !endDate
+  ) {
+    return true;
+  }
+
+  return vehicle.leaseStartDate <= startDate && vehicle.leaseEndDate >= endDate;
+};
+
 export default function SafariAllocations() {
   const [leads, setLeads] = useState([]);
   const [proformas, setProformas] = useState([]);
   const [quotations, setQuotations] = useState([]);
   const [vehicles, setVehicles] = useState([]);
+  const [leaseContracts, setLeaseContracts] = useState([]);
   const [users, setUsers] = useState([]);
   const [allocations, setAllocations] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -292,6 +403,7 @@ export default function SafariAllocations() {
         proformasRes,
         quotationsRes,
         vehiclesRes,
+        leaseContractsRes,
         usersRes,
         allocationsRes,
       ] = await Promise.all([
@@ -299,6 +411,7 @@ export default function SafariAllocations() {
         apiFetch("/proforma-invoices"),
         apiFetch("/quotations"),
         apiFetch("/vehicles"),
+        apiFetch("/lease-contracts"),
         apiFetch("/users"),
         apiFetch("/safari-allocations"),
       ]);
@@ -308,6 +421,7 @@ export default function SafariAllocations() {
         proformasPayload,
         quotationsPayload,
         vehiclesPayload,
+        leaseContractsPayload,
         usersPayload,
         allocationsPayload,
       ] = await Promise.all([
@@ -315,6 +429,7 @@ export default function SafariAllocations() {
         proformasRes.json().catch(() => ({})),
         quotationsRes.json().catch(() => ({})),
         vehiclesRes.json().catch(() => ({})),
+        leaseContractsRes.json().catch(() => ({})),
         usersRes.json().catch(() => ({})),
         allocationsRes.json().catch(() => ({})),
       ]);
@@ -337,6 +452,11 @@ export default function SafariAllocations() {
           vehiclesPayload?.message || "Unable to fetch vehicles.",
         );
       }
+      if (!leaseContractsRes.ok) {
+        throw new Error(
+          leaseContractsPayload?.message || "Unable to fetch lease contracts.",
+        );
+      }
       if (!usersRes.ok) {
         throw new Error(usersPayload?.message || "Unable to fetch users.");
       }
@@ -355,6 +475,11 @@ export default function SafariAllocations() {
       );
       setVehicles(
         extractList(vehiclesPayload, "vehicles").map(normalizeVehicle),
+      );
+      setLeaseContracts(
+        extractList(leaseContractsPayload, "contracts").map(
+          normalizeLeaseContract,
+        ),
       );
       setUsers(extractList(usersPayload, "users").map(normalizeUser));
       setAllocations(
@@ -501,6 +626,39 @@ export default function SafariAllocations() {
     return opsUsers.length > 0 ? opsUsers : activeUsers;
   }, [users]);
 
+  const assignedDriverOptions = useMemo(() => {
+    const assignedDrivers = vehicles
+      .map(normalizeAssignedVehicleDriver)
+      .filter(Boolean);
+    const uniqueDrivers = new Map();
+
+    [...users, ...assignedDrivers].forEach((driver) => {
+      if (!driver?.id) return;
+      uniqueDrivers.set(String(driver.id), driver);
+    });
+
+    return Array.from(uniqueDrivers.values());
+  }, [users, vehicles]);
+
+  const getAssignedDriverForVehicle = (vehicle) => {
+    if (!vehicle?.assignedDriverId) return null;
+
+    return assignedDriverOptions.find(
+      (driver) => String(driver.id) === String(vehicle.assignedDriverId),
+    );
+  };
+
+  const mergeDriverOptions = (options, extraDriver) => {
+    if (!extraDriver?.id) return options;
+    if (
+      options.some((driver) => String(driver.id) === String(extraDriver.id))
+    ) {
+      return options;
+    }
+
+    return [...options, extraDriver];
+  };
+
   const resolvedAllocations = useMemo(() => {
     return allocations.map((allocation) => {
       const safari = safariOptions.find(
@@ -509,9 +667,13 @@ export default function SafariAllocations() {
       const vehicle = vehicles.find(
         (item) => String(item.id) === String(allocation.vehicleId),
       );
-      const driver = driverOptions.find(
-        (item) => String(item.id) === String(allocation.driverId),
-      );
+      const driver =
+        driverOptions.find(
+          (item) => String(item.id) === String(allocation.driverId),
+        ) ||
+        assignedDriverOptions.find(
+          (item) => String(item.id) === String(allocation.driverId),
+        );
       return {
         ...allocation,
         safari:
@@ -544,7 +706,14 @@ export default function SafariAllocations() {
         driver: driver || allocation.driver || null,
       };
     });
-  }, [allocations, safariOptions, vehicles, driverOptions, groupNameByLead]);
+  }, [
+    allocations,
+    safariOptions,
+    vehicles,
+    driverOptions,
+    assignedDriverOptions,
+    groupNameByLead,
+  ]);
 
   const filteredAllocations = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
@@ -575,9 +744,26 @@ export default function SafariAllocations() {
     });
   }, [resolvedAllocations, searchTerm]);
 
+  const activeLeaseContractVehicleIds = useMemo(() => {
+    const ids = new Set();
+
+    leaseContracts
+      .filter((contract) => contract.status === "Active")
+      .forEach((contract) => {
+        contract.vehicleIds.forEach((vehicleId) => ids.add(String(vehicleId)));
+      });
+
+    return ids;
+  }, [leaseContracts]);
+
   const vehicleOptions = useMemo(
-    () => vehicles.filter((vehicle) => ["Available"].includes(vehicle.status)),
-    [vehicles],
+    () =>
+      vehicles.filter(
+        (vehicle) =>
+          vehicle.status === "Available" ||
+          activeLeaseContractVehicleIds.has(String(vehicle.id)),
+      ),
+    [vehicles, activeLeaseContractVehicleIds],
   );
 
   const availableDrivers = useMemo(() => driverOptions, [driverOptions]);
@@ -599,6 +785,16 @@ export default function SafariAllocations() {
       (vehicle.vehicleNo || "Vehicle") +
       " | Reg: " +
       (vehicle.plateNo || "N/A");
+    const resolvedLeaseType = activeLeaseContractVehicleIds.has(
+      String(vehicle.id),
+    )
+      ? "Long-Term Lease"
+      : getVehicleLeaseType(vehicle);
+    const leaseLabel = isLeaseVehicle(vehicle)
+      ? " | " +
+        resolvedLeaseType +
+        (vehicle.leaseClientName ? ": " + vehicle.leaseClientName : "")
+      : "";
     const driverLabel = vehicle.assignedDriverName
       ? " | Driver: " + vehicle.assignedDriverName
       : "";
@@ -606,7 +802,7 @@ export default function SafariAllocations() {
       ? " - " + vehicle.make + " " + (vehicle.model || "")
       : "";
 
-    return baseLabel + driverLabel + makeLabel;
+    return baseLabel + leaseLabel + driverLabel + makeLabel;
   };
 
   const rangesOverlap = (aStart, aEnd, bStart, bEnd) => {
@@ -730,9 +926,13 @@ export default function SafariAllocations() {
     const matchedVehicle = vehicles.find(
       (vehicle) => String(vehicle.id) === String(vehicleId),
     );
-    const assignedDriverId = matchedVehicle?.assignedDriverId
-      ? String(matchedVehicle.assignedDriverId)
-      : "";
+    const assignedDriver = getAssignedDriverForVehicle(matchedVehicle);
+    const assignedDriverId = assignedDriver ? String(assignedDriver.id) : "";
+    const vehicleLeaseType = activeLeaseContractVehicleIds.has(
+      String(vehicleId),
+    )
+      ? "Long-Term Lease"
+      : DEFAULT_VEHICLE_LEASE_TYPE;
 
     setForm((current) => ({
       ...current,
@@ -744,8 +944,34 @@ export default function SafariAllocations() {
             if (rowIndex !== pairIdx) return pair;
             return {
               ...pair,
+              vehicleLeaseType,
               vehicleId,
               driverId: assignedDriverId || "",
+            };
+          }),
+        };
+      }),
+    }));
+  };
+
+  const handleVehicleLeaseTypeChange = (
+    rangeIdx,
+    pairIdx,
+    vehicleLeaseType,
+  ) => {
+    setForm((current) => ({
+      ...current,
+      ranges: current.ranges.map((range, index) => {
+        if (index !== rangeIdx) return range;
+        return {
+          ...range,
+          pairs: range.pairs.map((pair, rowIndex) => {
+            if (rowIndex !== pairIdx) return pair;
+            return {
+              ...pair,
+              vehicleLeaseType,
+              vehicleId: "",
+              driverId: "",
             };
           }),
         };
@@ -796,16 +1022,28 @@ export default function SafariAllocations() {
     const selectedDriverId = String(
       currentRange.pairs[pairIdx]?.driverId || "",
     );
+    const selectedVehicleLeaseType =
+      currentRange.pairs[pairIdx]?.vehicleLeaseType ||
+      DEFAULT_VEHICLE_LEASE_TYPE;
     const current = currentRange.pairs[pairIdx]?.vehicleId || "";
-    return vehicles.filter(
-      (v) =>
-        (["Available"].includes(v.status) &&
-          (selectedDriverId
-            ? String(v.assignedDriverId || "") === selectedDriverId
-            : Boolean(v.assignedDriverId)) &&
-          !otherSelected.has(String(v.id))) ||
-        String(v.id) === current,
-    );
+    return vehicles.filter((v) => {
+      const isCurrent = String(v.id) === current;
+      if (isCurrent) return true;
+      if (otherSelected.has(String(v.id))) return false;
+      if (selectedVehicleLeaseType === "Long-Term Lease") {
+        if (!activeLeaseContractVehicleIds.has(String(v.id))) return false;
+        return selectedDriverId
+          ? !v.assignedDriverId ||
+              String(v.assignedDriverId) === selectedDriverId
+          : true;
+      }
+
+      if (v.status !== "Available") return false;
+
+      return selectedDriverId
+        ? String(v.assignedDriverId || "") === selectedDriverId
+        : Boolean(v.assignedDriverId);
+    });
   };
 
   const getDriversForRow = (rangeIdx, pairIdx) => {
@@ -821,11 +1059,12 @@ export default function SafariAllocations() {
         String(vehicle.id) ===
         String(currentRange.pairs[pairIdx]?.vehicleId || ""),
     );
+    const assignedDriver = getAssignedDriverForVehicle(selectedVehicle);
     const vehicleAssignedDriverId = selectedVehicle?.assignedDriverId
       ? String(selectedVehicle.assignedDriverId)
       : "";
     const current = currentRange.pairs[pairIdx]?.driverId || "";
-    return driverOptions.filter(
+    return mergeDriverOptions(driverOptions, assignedDriver).filter(
       (d) =>
         ((vehicleAssignedDriverId
           ? String(d.id) === vehicleAssignedDriverId
@@ -898,6 +1137,8 @@ export default function SafariAllocations() {
             {
               vehicleId: String(allocation.vehicleId || ""),
               driverId: String(allocation.driverId || ""),
+              vehicleLeaseType:
+                allocation.vehicleLeaseType || DEFAULT_VEHICLE_LEASE_TYPE,
             },
           ],
         },
@@ -1026,6 +1267,7 @@ export default function SafariAllocations() {
         proformaInvoiceId: safari?.piId ? Number(safari.piId) : null,
         vehicleId: Number(pair.vehicleId),
         driverId: Number(pair.driverId),
+        vehicleLeaseType: pair.vehicleLeaseType || DEFAULT_VEHICLE_LEASE_TYPE,
         startDate,
         endDate,
         notes: form.notes,
@@ -1248,13 +1490,13 @@ export default function SafariAllocations() {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">
-            Available Vehicles
+            Selectable Vehicles
           </p>
           <p className="text-2xl font-bold text-blue-700 mt-1">
             {stats.availableVehicles}
           </p>
           <p className="mt-1 text-xs text-blue-700/80">
-            Currently marked available in fleet list
+            Available vehicles plus active lease vehicles
           </p>
         </div>
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -1606,8 +1848,37 @@ export default function SafariAllocations() {
                       {range.pairs.map((pair, pairIdx) => (
                         <div
                           key={`${rangeIdx}-${pairIdx}`}
-                          className="grid grid-cols-1 md:grid-cols-2 gap-3"
+                          className="grid grid-cols-1 md:grid-cols-3 gap-3"
                         >
+                          <div>
+                            <label className="block text-xs text-slate-400 mb-1">
+                              Lease Type
+                              {range.pairs.length > 1
+                                ? " " + (pairIdx + 1)
+                                : ""}
+                            </label>
+                            <select
+                              value={
+                                pair.vehicleLeaseType ||
+                                DEFAULT_VEHICLE_LEASE_TYPE
+                              }
+                              onChange={(event) =>
+                                handleVehicleLeaseTypeChange(
+                                  rangeIdx,
+                                  pairIdx,
+                                  event.target.value,
+                                )
+                              }
+                              disabled={isSaving}
+                              className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
+                            >
+                              <option value="Short-Term Lease">
+                                Short Term
+                              </option>
+                              <option value="Long-Term Lease">Long Term</option>
+                            </select>
+                          </div>
+
                           <div>
                             <label className="block text-xs text-slate-400 mb-1">
                               Vehicle
