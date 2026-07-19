@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   AlertCircle,
   Camera,
@@ -74,6 +75,13 @@ const normalizeVehicle = (vehicle) => ({
   plateNo: vehicle.plate_no || vehicle.plateNo || "",
   make: vehicle.make || "",
   model: vehicle.model || "",
+  assignedDriverId:
+    vehicle.assigned_driver_id ||
+    vehicle.assignedDriverId ||
+    vehicle.assigned_driver?.id ||
+    vehicle.assignedDriver?.id ||
+    "",
+  assignedDriver: vehicle.assigned_driver || vehicle.assignedDriver || null,
 });
 
 const normalizeSafari = (lead) => ({
@@ -107,12 +115,19 @@ const statusClass = (status) =>
     : "bg-amber-100 text-amber-700 border-amber-200";
 
 export default function IncidentReports() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [reports, setReports] = useState([]);
   const [vehicles, setVehicles] = useState([]);
   const [safaris, setSafaris] = useState([]);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [typeFilter, setTypeFilter] = useState("All");
+  const [vehicleFilter, setVehicleFilter] = useState(
+    searchParams.get("vehicleId") || "All",
+  );
+  const [driverFilter, setDriverFilter] = useState(
+    searchParams.get("driverId") || "All",
+  );
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -145,7 +160,7 @@ export default function IncidentReports() {
         extractList(safarisPayload, ["leads", "bookings"]).map(normalizeSafari),
       );
     } catch (err) {
-      setError(err.message || "Failed to load incident reports.");
+      setError(err.message || "Failed to load performance dashboard.");
     } finally {
       setLoading(false);
     }
@@ -155,6 +170,37 @@ export default function IncidentReports() {
     loadAll();
   }, []);
 
+  useEffect(() => {
+    setVehicleFilter(searchParams.get("vehicleId") || "All");
+    setDriverFilter(searchParams.get("driverId") || "All");
+  }, [searchParams]);
+
+  const drivers = useMemo(() => {
+    const unique = new Map();
+    vehicles.forEach((vehicle) => {
+      const driver = vehicle.assignedDriver;
+      const driverId = vehicle.assignedDriverId || driver?.id;
+      if (!driverId) return;
+      unique.set(String(driverId), {
+        id: String(driverId),
+        name: driver?.name || "Assigned Driver",
+      });
+    });
+    return Array.from(unique.values()).sort((a, b) =>
+      a.name.localeCompare(b.name),
+    );
+  }, [vehicles]);
+
+  const updateLinkedFilter = (key, value) => {
+    const next = new URLSearchParams(searchParams);
+    if (value === "All") {
+      next.delete(key);
+    } else {
+      next.set(key, value);
+    }
+    setSearchParams(next, { replace: true });
+  };
+
   const filteredReports = useMemo(() => {
     const term = search.trim().toLowerCase();
 
@@ -163,6 +209,22 @@ export default function IncidentReports() {
         return false;
       if (typeFilter !== "All" && report.reportType !== typeFilter)
         return false;
+      if (vehicleFilter !== "All" && String(report.vehicleId) !== vehicleFilter)
+        return false;
+
+      const reportVehicle =
+        report.vehicle ||
+        vehicles.find(
+          (vehicle) => String(vehicle.id) === String(report.vehicleId),
+        );
+      const assignedDriverId =
+        reportVehicle?.assignedDriverId || reportVehicle?.assignedDriver?.id;
+      if (
+        driverFilter !== "All" &&
+        String(assignedDriverId || "") !== driverFilter
+      )
+        return false;
+
       if (!term) return true;
 
       const haystack = [
@@ -174,6 +236,7 @@ export default function IncidentReports() {
         report.closingRemarks,
         report.vehicle?.vehicleNo,
         report.vehicle?.plateNo,
+        reportVehicle?.assignedDriver?.name,
         report.safari?.bookingRef,
         report.safari?.clientCompany,
         report.safari?.groupName,
@@ -184,7 +247,15 @@ export default function IncidentReports() {
 
       return haystack.includes(term);
     });
-  }, [reports, search, statusFilter, typeFilter]);
+  }, [
+    reports,
+    search,
+    statusFilter,
+    typeFilter,
+    vehicleFilter,
+    driverFilter,
+    vehicles,
+  ]);
 
   const stats = useMemo(
     () => ({
@@ -278,14 +349,16 @@ export default function IncidentReports() {
       setForm(emptyForm());
       await Swal.fire({
         icon: "success",
-        title: form.id ? "Incident updated" : "Incident reported",
+        title: form.id
+          ? "Performance record updated"
+          : "Performance record saved",
         timer: 1400,
         showConfirmButton: false,
       });
     } catch (err) {
       await Swal.fire(
         "Error",
-        err.message || "Failed to save incident report.",
+        err.message || "Failed to save performance record.",
         "error",
       );
     } finally {
@@ -296,8 +369,8 @@ export default function IncidentReports() {
   const handleDelete = async (report) => {
     const result = await Swal.fire({
       icon: "warning",
-      title: "Delete incident report?",
-      text: "This will also remove uploaded incident photos.",
+      title: "Delete performance record?",
+      text: "This will also remove uploaded photos.",
       showCancelButton: true,
       confirmButtonText: "Delete",
       confirmButtonColor: "#dc2626",
@@ -317,7 +390,7 @@ export default function IncidentReports() {
     } catch (err) {
       await Swal.fire(
         "Error",
-        err.message || "Failed to delete incident report.",
+        err.message || "Failed to delete performance record.",
         "error",
       );
     }
@@ -329,6 +402,12 @@ export default function IncidentReports() {
     const plateNo = vehicle.plateNo || vehicle.plate_no || "N/A";
     return `${vehicleNo} (${plateNo})`;
   };
+
+  const getReportVehicle = (report) =>
+    report.vehicle ||
+    vehicles.find((vehicle) => String(vehicle.id) === String(report.vehicleId));
+
+  const getDriver = (vehicle) => vehicle?.assignedDriver || null;
 
   const getSafariLabel = (safari) => {
     if (!safari) return "-";
@@ -348,11 +427,11 @@ export default function IncidentReports() {
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">
-            Incident Reports
+            Performance Dashboard
           </h1>
           <p className="mt-1 text-sm text-slate-500">
-            Track vehicle incidents, actions taken, supporting photos, and
-            closure remarks.
+            Track vehicle performance reports, actions taken, supporting photos,
+            and closure remarks.
           </p>
         </div>
         <button
@@ -360,7 +439,7 @@ export default function IncidentReports() {
           onClick={openCreate}
           className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700"
         >
-          <Plus className="h-4 w-4" /> New Incident
+          <Plus className="h-4 w-4" /> New Record
         </button>
       </div>
 
@@ -440,6 +519,36 @@ export default function IncidentReports() {
               </option>
             ))}
           </select>
+          <select
+            value={vehicleFilter}
+            onChange={(event) => {
+              setVehicleFilter(event.target.value);
+              updateLinkedFilter("vehicleId", event.target.value);
+            }}
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+          >
+            <option value="All">All Vehicles</option>
+            {vehicles.map((vehicle) => (
+              <option key={vehicle.id} value={vehicle.id}>
+                {vehicle.vehicleNo || "Vehicle"} ({vehicle.plateNo || "N/A"})
+              </option>
+            ))}
+          </select>
+          <select
+            value={driverFilter}
+            onChange={(event) => {
+              setDriverFilter(event.target.value);
+              updateLinkedFilter("driverId", event.target.value);
+            }}
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+          >
+            <option value="All">All Drivers</option>
+            {drivers.map((driver) => (
+              <option key={driver.id} value={driver.id}>
+                {driver.name}
+              </option>
+            ))}
+          </select>
         </div>
 
         <div className="overflow-x-auto">
@@ -448,6 +557,7 @@ export default function IncidentReports() {
               <tr>
                 <th className="px-4 py-3">Date</th>
                 <th className="px-4 py-3">Vehicle</th>
+                <th className="px-4 py-3">Driver</th>
                 <th className="px-4 py-3">Safari</th>
                 <th className="px-4 py-3">Type</th>
                 <th className="px-4 py-3">Description / Action</th>
@@ -461,111 +571,137 @@ export default function IncidentReports() {
               {loading ? (
                 <tr>
                   <td
-                    colSpan={9}
+                    colSpan={10}
                     className="px-4 py-10 text-center text-slate-500"
                   >
                     <Loader className="mx-auto mb-2 h-5 w-5 animate-spin" />{" "}
-                    Loading incident reports...
+                    Loading performance records...
                   </td>
                 </tr>
               ) : filteredReports.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={9}
+                    colSpan={10}
                     className="px-4 py-10 text-center text-slate-500"
                   >
-                    No incident reports found.
+                    No performance records found.
                   </td>
                 </tr>
               ) : (
-                filteredReports.map((report) => (
-                  <tr
-                    key={report.id}
-                    className="align-top hover:bg-slate-50/70"
-                  >
-                    <td className="whitespace-nowrap px-4 py-3 font-medium text-slate-900">
-                      {formatDate(report.date)}
-                    </td>
-                    <td className="px-4 py-3 text-slate-700">
-                      {getVehicleLabel(report.vehicle)}
-                    </td>
-                    <td className="px-4 py-3 text-slate-700">
-                      {getSafariLabel(report.safari)}
-                    </td>
-                    <td className="px-4 py-3 text-slate-700">
-                      {report.reportType}
-                    </td>
-                    <td className="max-w-sm px-4 py-3 text-slate-700">
-                      <p className="font-medium text-slate-900">
-                        {report.description}
-                      </p>
-                      {report.actionTaken && (
-                        <p className="mt-1 text-xs text-slate-500">
-                          Action: {report.actionTaken}
+                filteredReports.map((report) => {
+                  const vehicle = getReportVehicle(report);
+                  const driver = getDriver(vehicle);
+
+                  return (
+                    <tr
+                      key={report.id}
+                      className="align-top hover:bg-slate-50/70"
+                    >
+                      <td className="whitespace-nowrap px-4 py-3 font-medium text-slate-900">
+                        {formatDate(report.date)}
+                      </td>
+                      <td className="px-4 py-3 text-slate-700">
+                        {vehicle ? (
+                          <Link
+                            to={`/vehicle-services?vehicleId=${vehicle.id}`}
+                            className="font-medium text-blue-700 hover:underline"
+                          >
+                            {getVehicleLabel(vehicle)}
+                          </Link>
+                        ) : (
+                          "-"
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-slate-700">
+                        {driver ? (
+                          <Link
+                            to={`/performance-dashboard?driverId=${driver.id}`}
+                            className="font-medium text-blue-700 hover:underline"
+                          >
+                            {driver.name}
+                          </Link>
+                        ) : (
+                          "-"
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-slate-700">
+                        {getSafariLabel(report.safari)}
+                      </td>
+                      <td className="px-4 py-3 text-slate-700">
+                        {report.reportType}
+                      </td>
+                      <td className="max-w-sm px-4 py-3 text-slate-700">
+                        <p className="font-medium text-slate-900">
+                          {report.description}
                         </p>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-slate-700">
-                      {report.photos.length > 0 ? (
-                        <div className="flex flex-wrap gap-2">
-                          {report.photos.slice(0, 3).map((photo) => (
-                            <a
-                              key={photo.path || photo.url}
-                              href={photo.url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="inline-flex h-9 w-9 items-center justify-center overflow-hidden rounded border border-slate-200 bg-slate-50"
-                              title="Open photo"
-                            >
-                              <img
-                                src={photo.url}
-                                alt="Incident"
-                                className="h-full w-full object-cover"
-                              />
-                            </a>
-                          ))}
-                          {report.photos.length > 3 && (
-                            <span className="text-xs text-slate-500">
-                              +{report.photos.length - 3}
-                            </span>
-                          )}
+                        {report.actionTaken && (
+                          <p className="mt-1 text-xs text-slate-500">
+                            Action: {report.actionTaken}
+                          </p>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-slate-700">
+                        {report.photos.length > 0 ? (
+                          <div className="flex flex-wrap gap-2">
+                            {report.photos.slice(0, 3).map((photo) => (
+                              <a
+                                key={photo.path || photo.url}
+                                href={photo.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex h-9 w-9 items-center justify-center overflow-hidden rounded border border-slate-200 bg-slate-50"
+                                title="Open photo"
+                              >
+                                <img
+                                  src={photo.url}
+                                  alt="Performance record"
+                                  className="h-full w-full object-cover"
+                                />
+                              </a>
+                            ))}
+                            {report.photos.length > 3 && (
+                              <span className="text-xs text-slate-500">
+                                +{report.photos.length - 3}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          "-"
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${statusClass(report.status)}`}
+                        >
+                          {report.status}
+                        </span>
+                      </td>
+                      <td className="max-w-xs px-4 py-3 text-slate-700">
+                        {report.closingRemarks || "-"}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="inline-flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => openEdit(report)}
+                            className="rounded p-1.5 text-slate-600 hover:bg-blue-50 hover:text-blue-600"
+                            title="Edit"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(report)}
+                            className="rounded p-1.5 text-slate-600 hover:bg-red-50 hover:text-red-600"
+                            title="Delete"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
                         </div>
-                      ) : (
-                        "-"
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span
-                        className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${statusClass(report.status)}`}
-                      >
-                        {report.status}
-                      </span>
-                    </td>
-                    <td className="max-w-xs px-4 py-3 text-slate-700">
-                      {report.closingRemarks || "-"}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="inline-flex items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => openEdit(report)}
-                          className="rounded p-1.5 text-slate-600 hover:bg-blue-50 hover:text-blue-600"
-                          title="Edit"
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDelete(report)}
-                          className="rounded p-1.5 text-slate-600 hover:bg-red-50 hover:text-red-600"
-                          title="Delete"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -577,7 +713,7 @@ export default function IncidentReports() {
           <div className="my-8 w-full max-w-3xl rounded-xl bg-white shadow-xl">
             <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
               <h2 className="text-lg font-semibold text-slate-900">
-                {form.id ? "Edit Incident Report" : "New Incident Report"}
+                {form.id ? "Edit Performance Record" : "New Performance Record"}
               </h2>
               <button
                 type="button"
@@ -794,7 +930,7 @@ export default function IncidentReports() {
                           >
                             <img
                               src={photo.url}
-                              alt="Incident"
+                              alt="Performance record"
                               className="h-full w-full object-cover"
                             />
                             {isMarked && (
@@ -844,7 +980,7 @@ export default function IncidentReports() {
                   className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-wait disabled:opacity-60"
                 >
                   {saving && <Loader className="h-4 w-4 animate-spin" />}
-                  {form.id ? "Update Incident" : "Save Incident"}
+                  {form.id ? "Update Record" : "Save Record"}
                 </button>
               </div>
             </form>

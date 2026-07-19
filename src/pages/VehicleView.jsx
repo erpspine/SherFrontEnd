@@ -73,6 +73,13 @@ const normalizeVehicle = (vehicle) => {
       "",
     createdAt: item.created_at || item.createdAt || "",
     updatedAt: item.updated_at || item.updatedAt || "",
+    assignedDriverId:
+      item.assigned_driver_id ||
+      item.assignedDriverId ||
+      item.assigned_driver?.id ||
+      item.assignedDriver?.id ||
+      "",
+    assignedDriver: item.assigned_driver || item.assignedDriver || null,
   };
 };
 
@@ -241,11 +248,33 @@ export default function VehicleView() {
               </p>
             </div>
           </div>
-          <div
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border ${statusCfg.color}`}
-          >
-            <span className={`w-1.5 h-1.5 rounded-full ${statusCfg.dot}`} />
-            {vehicle.status}
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() =>
+                navigate(`/vehicle-services?vehicleId=${vehicle.id}`)
+              }
+              className="inline-flex items-center gap-1.5 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-300 hover:bg-amber-500/20"
+            >
+              <Wrench className="h-3.5 w-3.5" />
+              Service Records
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                navigate(`/performance-dashboard?vehicleId=${vehicle.id}`)
+              }
+              className="inline-flex items-center gap-1.5 rounded-xl border border-blue-500/30 bg-blue-500/10 px-3 py-1.5 text-xs font-medium text-blue-300 hover:bg-blue-500/20"
+            >
+              <FileText className="h-3.5 w-3.5" />
+              Performance
+            </button>
+            <div
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border ${statusCfg.color}`}
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${statusCfg.dot}`} />
+              {vehicle.status}
+            </div>
           </div>
         </div>
       </div>
@@ -326,6 +355,27 @@ export default function VehicleView() {
                   icon={<Users className="w-4 h-4" />}
                   label="Seats"
                   value={vehicle.seats ? `${vehicle.seats} seats` : "-"}
+                />
+                <DetailItem
+                  icon={<Users className="w-4 h-4" />}
+                  label="Assigned Driver"
+                  value={
+                    vehicle.assignedDriver ? (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          navigate(
+                            `/performance-dashboard?driverId=${vehicle.assignedDriver.id}`,
+                          )
+                        }
+                        className="text-sm font-medium text-amber-300 hover:text-amber-200 hover:underline"
+                      >
+                        {vehicle.assignedDriver.name}
+                      </button>
+                    ) : (
+                      "-"
+                    )
+                  }
                 />
                 <DetailItem
                   icon={<Hash className="w-4 h-4" />}

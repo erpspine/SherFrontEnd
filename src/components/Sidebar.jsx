@@ -20,7 +20,6 @@ import {
   Calendar,
   Route,
   ChevronLeft,
-  AlertTriangle,
 } from "lucide-react";
 import {
   clearAuthSession,
@@ -82,9 +81,9 @@ export const menuGroups = [
         permission: null,
       },
       {
-        path: "/incident-reports",
-        icon: AlertTriangle,
-        label: "Incident Reports",
+        path: "/performance-dashboard",
+        icon: TrendingUp,
+        label: "Performance Dashboard",
         permission: "vehicles.view",
       },
       {

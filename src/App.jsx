@@ -31,7 +31,7 @@ import VehicleView from "./pages/VehicleView";
 import VehicleAvailability from "./pages/VehicleAvailability";
 // import RouteDistances from "./pages/RouteDistances";
 import Inspections from "./pages/Inspections";
-import IncidentReports from "./pages/IncidentReports";
+import PerformanceDashboard from "./pages/IncidentReports";
 import OdometerReports from "./pages/OdometerReports";
 import OdometerReportView from "./pages/OdometerReportView";
 import LongTermLeasing from "./pages/LongTermLeasing";
@@ -81,13 +81,17 @@ function ProtectedRoutes() {
           }
         />
         <Route
-          path="/incident-reports"
+          path="/performance-dashboard"
           element={
             <PermissionRoute
               permission="vehicles.view"
-              element={<IncidentReports />}
+              element={<PerformanceDashboard />}
             />
           }
+        />
+        <Route
+          path="/incident-reports"
+          element={<Navigate to="/performance-dashboard" replace />}
         />
         <Route
           path="/vehicles"

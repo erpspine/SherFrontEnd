@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   Search,
   Plus,
@@ -11,7 +12,6 @@ import {
   CheckCircle,
   AlertTriangle,
   Gauge,
-  Fuel,
 } from "lucide-react";
 import Swal from "sweetalert2";
 import { apiFetch } from "../utils/api";
@@ -37,12 +37,9 @@ const createServiceForm = () => ({
   vehicleId: "",
   serviceCenter: "",
   serviceType: "",
-  serviceDateOut: "",
-  serviceDateIn: "",
-  odometerOut: "",
+  serviceDate: "",
   odometerIn: "",
-  fuelOut: "",
-  fuelIn: "",
+  partsReplaced: "",
   cost: "",
   notes: "",
   status: "In Service",
@@ -61,14 +58,27 @@ const normalizeService = (entry) => ({
   vehicleId: Number(entry.vehicle_id || entry.vehicleId || 0),
   serviceCenter: entry.service_center || entry.serviceCenter || "",
   serviceType: entry.service_type || entry.serviceType || "",
+  serviceDate:
+    entry.service_date ||
+    entry.serviceDate ||
+    entry.service_date_out ||
+    entry.serviceDateOut ||
+    "",
   serviceDateOut: entry.service_date_out || entry.serviceDateOut || "",
   serviceDateIn: entry.service_date_in || entry.serviceDateIn || "",
-  odometerOut: Number(entry.odometer_out ?? entry.odometerOut ?? 0),
+  partsReplaced: entry.parts_replaced || entry.partsReplaced || "",
+  odometerOut:
+    entry.odometer_out === null || entry.odometerOut === null
+      ? ""
+      : Number(entry.odometer_out ?? entry.odometerOut ?? ""),
   odometerIn:
     entry.odometer_in === null || entry.odometerIn === null
       ? ""
       : Number(entry.odometer_in ?? entry.odometerIn ?? ""),
-  fuelOut: Number(entry.fuel_out ?? entry.fuelOut ?? 0),
+  fuelOut:
+    entry.fuel_out === null || entry.fuelOut === null
+      ? ""
+      : Number(entry.fuel_out ?? entry.fuelOut ?? ""),
   fuelIn:
     entry.fuel_in === null || entry.fuelIn === null
       ? ""
@@ -110,10 +120,14 @@ const formatDate = (value) => {
 const formatCurrency = (value) => `USD ${Number(value || 0).toLocaleString()}`;
 
 export default function VehicleServices() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [services, setServices] = useState([]);
   const [vehicles, setVehicles] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
+  const [vehicleFilter, setVehicleFilter] = useState(
+    searchParams.get("vehicleId") || "All",
+  );
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -168,9 +182,16 @@ export default function VehicleServices() {
     loadData();
   }, []);
 
+  useEffect(() => {
+    setVehicleFilter(searchParams.get("vehicleId") || "All");
+  }, [searchParams]);
+
   const openNew = () => {
     setEditingServiceId(null);
-    setForm(createServiceForm());
+    setForm({
+      ...createServiceForm(),
+      vehicleId: vehicleFilter !== "All" ? vehicleFilter : "",
+    });
     setErrorMessage("");
     setIsModalOpen(true);
   };
@@ -194,12 +215,9 @@ export default function VehicleServices() {
         vehicleId: String(entry.vehicleId || ""),
         serviceCenter: entry.serviceCenter,
         serviceType: entry.serviceType,
-        serviceDateOut: toDateInput(entry.serviceDateOut),
-        serviceDateIn: toDateInput(entry.serviceDateIn),
-        odometerOut: String(entry.odometerOut || ""),
+        serviceDate: toDateInput(entry.serviceDate),
         odometerIn: entry.odometerIn === "" ? "" : String(entry.odometerIn),
-        fuelOut: String(entry.fuelOut || ""),
-        fuelIn: entry.fuelIn === "" ? "" : String(entry.fuelIn),
+        partsReplaced: entry.partsReplaced,
         cost: entry.cost === "" ? "" : String(entry.cost),
         notes: entry.notes,
         status: entry.status,
@@ -265,44 +283,16 @@ export default function VehicleServices() {
   };
 
   const handleSave = async () => {
-    if (!form.vehicleId || !form.serviceDateOut) {
-      setErrorMessage("Vehicle and Date Out are required.");
+    if (!form.vehicleId || !form.serviceDate) {
+      setErrorMessage("Vehicle and Date are required.");
       await Swal.fire({
         title: "Missing Required Fields",
-        text: "Please select vehicle and date out.",
+        text: "Please select vehicle and date.",
         icon: "warning",
         background: "#0f172a",
         color: "#e2e8f0",
       });
       return;
-    }
-
-    if (form.odometerOut === "" || form.fuelOut === "") {
-      setErrorMessage("Odometer Out and Fuel Out are required.");
-      await Swal.fire({
-        title: "Missing Required Fields",
-        text: "Please fill odometer out and fuel out when vehicle goes for service.",
-        icon: "warning",
-        background: "#0f172a",
-        color: "#e2e8f0",
-      });
-      return;
-    }
-
-    if (form.status === "Returned") {
-      if (!form.serviceDateIn || form.odometerIn === "" || form.fuelIn === "") {
-        setErrorMessage(
-          "Date In, Odometer In and Fuel In are required when status is Returned.",
-        );
-        await Swal.fire({
-          title: "Missing Return Details",
-          text: "Please fill return date, odometer in and fuel in.",
-          icon: "warning",
-          background: "#0f172a",
-          color: "#e2e8f0",
-        });
-        return;
-      }
     }
 
     setIsSaving(true);
@@ -313,12 +303,9 @@ export default function VehicleServices() {
         vehicleId: Number(form.vehicleId),
         serviceCenter: form.serviceCenter || null,
         serviceType: form.serviceType || null,
-        serviceDateOut: form.serviceDateOut,
-        serviceDateIn: form.serviceDateIn || null,
-        odometerOut: Number(form.odometerOut || 0),
+        serviceDate: form.serviceDate,
         odometerIn: form.odometerIn === "" ? null : Number(form.odometerIn),
-        fuelOut: Number(form.fuelOut || 0),
-        fuelIn: form.fuelIn === "" ? null : Number(form.fuelIn),
+        partsReplaced: form.partsReplaced || null,
         cost: form.cost === "" ? null : Number(form.cost),
         notes: form.notes || null,
         status: form.status,
@@ -393,14 +380,29 @@ export default function VehicleServices() {
         searchableVehicle.includes(query) ||
         (service.serviceCenter || "").toLowerCase().includes(query) ||
         (service.serviceType || "").toLowerCase().includes(query) ||
+        (service.partsReplaced || "").toLowerCase().includes(query) ||
         (service.notes || "").toLowerCase().includes(query);
 
       const matchStatus =
         statusFilter === "All" || service.status === statusFilter;
 
-      return matchSearch && matchStatus;
+      const matchVehicle =
+        vehicleFilter === "All" || String(service.vehicleId) === vehicleFilter;
+
+      return matchSearch && matchStatus && matchVehicle;
     });
-  }, [searchTerm, services, statusFilter, vehiclesById]);
+  }, [searchTerm, services, statusFilter, vehicleFilter, vehiclesById]);
+
+  const handleVehicleFilterChange = (value) => {
+    setVehicleFilter(value);
+    const next = new URLSearchParams(searchParams);
+    if (value === "All") {
+      next.delete("vehicleId");
+    } else {
+      next.set("vehicleId", value);
+    }
+    setSearchParams(next, { replace: true });
+  };
 
   return (
     <div className="space-y-6">
@@ -408,8 +410,8 @@ export default function VehicleServices() {
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Vehicle Service</h1>
           <p className="text-slate-500 mt-1">
-            Record when vehicles go for service and when they return with
-            odometer and fuel levels.
+            Record vehicle service dates, parts replaced, odometer readings,
+            cost and status.
           </p>
         </div>
         <button
@@ -468,6 +470,20 @@ export default function VehicleServices() {
           </div>
 
           <div className="flex flex-wrap gap-2">
+            <select
+              value={vehicleFilter}
+              onChange={(event) =>
+                handleVehicleFilterChange(event.target.value)
+              }
+              className="rounded-xl bg-slate-100 px-3 py-2 text-sm font-medium text-slate-600 outline-none hover:bg-slate-200"
+            >
+              <option value="All">All Vehicles</option>
+              {vehicles.map((vehicle) => (
+                <option key={vehicle.id} value={vehicle.id}>
+                  {vehicle.vehicleNo} ({vehicle.plateNo})
+                </option>
+              ))}
+            </select>
             {["All", ...serviceStatuses].map((status) => (
               <button
                 key={status}
@@ -487,19 +503,16 @@ export default function VehicleServices() {
 
       <section className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1460px]">
+          <table className="w-full min-w-[1120px]">
             <thead className="table-head-gradient">
               <tr className="border-b border-slate-200">
                 {[
                   "Vehicle",
                   "Service Center",
                   "Type",
-                  "Date Out",
-                  "Date In",
-                  "Odometer Out",
-                  "Odometer In",
-                  "Fuel Out",
-                  "Fuel In",
+                  "Date",
+                  "Odometer",
+                  "Parts Replaced",
                   "Cost",
                   "Status",
                   "Notes",
@@ -519,7 +532,7 @@ export default function VehicleServices() {
                 <tr>
                   <td
                     className="py-14 px-4 text-center text-slate-500"
-                    colSpan={13}
+                    colSpan={10}
                   >
                     Loading service records...
                   </td>
@@ -528,7 +541,7 @@ export default function VehicleServices() {
                 <tr>
                   <td
                     className="py-14 px-4 text-center text-slate-500"
-                    colSpan={13}
+                    colSpan={10}
                   >
                     No service records found.
                   </td>
@@ -552,9 +565,12 @@ export default function VehicleServices() {
                             <Car className="w-3.5 h-3.5 text-cyan-600" />
                           </div>
                           <div>
-                            <p className="text-sm text-slate-900 font-medium whitespace-nowrap">
+                            <Link
+                              to={`/vehicles/${vehicle?.id || service.vehicleId}`}
+                              className="text-sm text-slate-900 font-medium whitespace-nowrap hover:text-cyan-700 hover:underline"
+                            >
                               {vehicle?.vehicleNo || "Unknown"}
-                            </p>
+                            </Link>
                             <p className="text-xs text-slate-500 whitespace-nowrap">
                               {vehicle?.plateNo || "-"} · {vehicle?.make || ""}{" "}
                               {vehicle?.model || ""}
@@ -569,22 +585,18 @@ export default function VehicleServices() {
                         {service.serviceType || "-"}
                       </td>
                       <td className="py-3 px-4 text-sm text-slate-700 whitespace-nowrap">
-                        {formatDate(service.serviceDateOut)}
-                      </td>
-                      <td className="py-3 px-4 text-sm text-slate-700 whitespace-nowrap">
-                        {formatDate(service.serviceDateIn)}
-                      </td>
-                      <td className="py-3 px-4 text-sm text-slate-700 whitespace-nowrap">
-                        {service.odometerOut}
+                        {formatDate(service.serviceDate)}
                       </td>
                       <td className="py-3 px-4 text-sm text-slate-700 whitespace-nowrap">
                         {service.odometerIn === "" ? "-" : service.odometerIn}
                       </td>
-                      <td className="py-3 px-4 text-sm text-slate-700 whitespace-nowrap">
-                        {service.fuelOut}%
-                      </td>
-                      <td className="py-3 px-4 text-sm text-slate-700 whitespace-nowrap">
-                        {service.fuelIn === "" ? "-" : `${service.fuelIn}%`}
+                      <td className="py-3 px-4 text-sm text-slate-500 max-w-[220px]">
+                        <span
+                          className="block truncate"
+                          title={service.partsReplaced}
+                        >
+                          {service.partsReplaced || "-"}
+                        </span>
                       </td>
                       <td className="py-3 px-4 text-sm text-slate-700 whitespace-nowrap">
                         {service.cost === ""
@@ -642,7 +654,7 @@ export default function VehicleServices() {
                     : "New Service Record"}
                 </h2>
                 <p className="text-sm text-slate-400 mt-1">
-                  Track vehicle departure and return service readings.
+                  Track vehicle service details and parts replaced.
                 </p>
               </div>
               <button
@@ -749,122 +761,15 @@ export default function VehicleServices() {
 
                   <div>
                     <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                      Date Out <span className="text-red-400">*</span>
+                      Date <span className="text-red-400">*</span>
                     </label>
                     <input
                       type="date"
-                      value={form.serviceDateOut}
+                      value={form.serviceDate}
                       onChange={(event) =>
                         setForm((current) => ({
                           ...current,
-                          serviceDateOut: event.target.value,
-                        }))
-                      }
-                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                      Date In (when returned)
-                    </label>
-                    <input
-                      type="date"
-                      value={form.serviceDateIn}
-                      onChange={(event) =>
-                        setForm((current) => ({
-                          ...current,
-                          serviceDateIn: event.target.value,
-                        }))
-                      }
-                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <h3 className="text-sm font-semibold text-slate-300 mb-3 flex items-center gap-2">
-                  <Gauge className="w-4 h-4 text-cyan-400" />
-                  Odometer Readings
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                      Odometer Out <span className="text-red-400">*</span>
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      value={form.odometerOut}
-                      onChange={(event) =>
-                        setForm((current) => ({
-                          ...current,
-                          odometerOut: event.target.value,
-                        }))
-                      }
-                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                      Odometer In (on return)
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      value={form.odometerIn}
-                      onChange={(event) =>
-                        setForm((current) => ({
-                          ...current,
-                          odometerIn: event.target.value,
-                        }))
-                      }
-                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <h3 className="text-sm font-semibold text-slate-300 mb-3 flex items-center gap-2">
-                  <Fuel className="w-4 h-4 text-emerald-400" />
-                  Fuel Levels (%)
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                      Fuel Out <span className="text-red-400">*</span>
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      max="100"
-                      value={form.fuelOut}
-                      onChange={(event) =>
-                        setForm((current) => ({
-                          ...current,
-                          fuelOut: event.target.value,
-                        }))
-                      }
-                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                      Fuel In (on return)
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      max="100"
-                      value={form.fuelIn}
-                      onChange={(event) =>
-                        setForm((current) => ({
-                          ...current,
-                          fuelIn: event.target.value,
+                          serviceDate: event.target.value,
                         }))
                       }
                       className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500"
@@ -893,6 +798,50 @@ export default function VehicleServices() {
               </div>
 
               <div>
+                <h3 className="text-sm font-semibold text-slate-300 mb-3 flex items-center gap-2">
+                  <Gauge className="w-4 h-4 text-cyan-400" />
+                  Odometer Reading
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-400 mb-1.5">
+                      Odometer
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={form.odometerIn}
+                      onChange={(event) =>
+                        setForm((current) => ({
+                          ...current,
+                          odometerIn: event.target.value,
+                        }))
+                      }
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-slate-400 mb-1.5">
+                      Parts Replaced
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={form.partsReplaced}
+                      onChange={(event) =>
+                        setForm((current) => ({
+                          ...current,
+                          partsReplaced: event.target.value,
+                        }))
+                      }
+                      placeholder="e.g. Brake pads, oil filter, tyres"
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 resize-none"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div>
                 <label className="block text-xs font-medium text-slate-400 mb-1.5">
                   Notes
                 </label>
@@ -905,7 +854,7 @@ export default function VehicleServices() {
                       notes: event.target.value,
                     }))
                   }
-                  placeholder="What was serviced, replaced, observations..."
+                  placeholder="Service notes and observations..."
                   className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 resize-none"
                 />
               </div>
