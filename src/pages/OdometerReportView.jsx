@@ -19,6 +19,7 @@ export default function OdometerReportView() {
   const { tripId } = useParams();
   const [searchParams] = useSearchParams();
   const effectiveTripId = tripId || searchParams.get("tripId") || "";
+  const reportType = searchParams.get("type") === "lease" ? "lease" : "safari";
   const [isLoading, setIsLoading] = useState(true);
   const [isDownloading, setIsDownloading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
@@ -32,7 +33,9 @@ export default function OdometerReportView() {
       setErrorMessage("");
       try {
         const response = await apiFetch(
-          `/trips/${effectiveTripId}/odometer-logs/report`,
+          reportType === "lease"
+            ? `/lease-trips/${effectiveTripId}/odometer-logs/report`
+            : `/trips/${effectiveTripId}/odometer-logs/report`,
         );
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) {
@@ -53,13 +56,15 @@ export default function OdometerReportView() {
     if (effectiveTripId) {
       load();
     }
-  }, [effectiveTripId]);
+  }, [effectiveTripId, reportType]);
 
   const handleDownload = async () => {
     setIsDownloading(true);
     try {
       const response = await apiFetch(
-        `/trips/${effectiveTripId}/odometer-logs/pdf`,
+        reportType === "lease"
+          ? `/lease-trips/${effectiveTripId}/odometer-logs/pdf`
+          : `/trips/${effectiveTripId}/odometer-logs/pdf`,
         {
           headers: {
             Accept: "application/pdf",
@@ -76,7 +81,7 @@ export default function OdometerReportView() {
       const objectUrl = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = objectUrl;
-      anchor.download = `odometer-log-report-trip-${effectiveTripId}.pdf`;
+      anchor.download = `odometer-log-report-${reportType}-${effectiveTripId}.pdf`;
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
@@ -110,7 +115,10 @@ export default function OdometerReportView() {
           <h1 className="text-2xl font-bold text-slate-900">
             Odometer Report View
           </h1>
-          <p className="mt-1 text-slate-500">Trip #{effectiveTripId || "-"}</p>
+          <p className="mt-1 text-slate-500">
+            {reportType === "lease" ? "Lease" : "Trip"} #
+            {effectiveTripId || "-"}
+          </p>
         </div>
 
         <button
@@ -218,6 +226,7 @@ export default function OdometerReportView() {
                   <tr>
                     <th className="px-4 py-3">Refill</th>
                     <th className="px-4 py-3">Date</th>
+                    <th className="px-4 py-3">Fill Type</th>
                     <th className="px-4 py-3 text-right">Odometer</th>
                     <th className="px-4 py-3 text-right">Fuel Added</th>
                     <th className="px-4 py-3 text-right">Fuel Consumed</th>
@@ -229,7 +238,7 @@ export default function OdometerReportView() {
                   {fuelRefills.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={7}
+                        colSpan={8}
                         className="px-4 py-8 text-center text-slate-400"
                       >
                         No fuel refill data.
@@ -241,6 +250,9 @@ export default function OdometerReportView() {
                         <td className="px-4 py-3">#{refill.refillNo}</td>
                         <td className="px-4 py-3">
                           {formatDate(refill.date, true)}
+                        </td>
+                        <td className="px-4 py-3">
+                          {refill.fillTypeLabel || "-"}
                         </td>
                         <td className="px-4 py-3 text-right">
                           {refill.odometer ?? "-"}
@@ -310,7 +322,16 @@ export default function OdometerReportView() {
                         <td className="px-4 py-3">
                           {formatDate(log.recorded_at, true)}
                         </td>
-                        <td className="px-4 py-3">{log.entry_type || "-"}</td>
+                        <td className="px-4 py-3">
+                          {log.entry_type || "-"}
+                          {log.entry_type === "Fuel" && (
+                            <div className="text-xs text-slate-500">
+                              {(log.fuel_fill_type || "full_tank") === "extra"
+                                ? "Partial Refill"
+                                : "Full Tank"}
+                            </div>
+                          )}
+                        </td>
                         <td className="px-4 py-3">{log.location || "-"}</td>
                         <td className="px-4 py-3 text-right">
                           {log.odometer_reading ?? "-"}

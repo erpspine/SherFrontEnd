@@ -6,14 +6,36 @@ import { apiFetch } from "../utils/api";
 
 const normalizeAllocation = (raw) => ({
   id: Number(raw.id || 0),
+  assignmentType: raw.assignmentType || raw.assignment_type || "safari",
   startDate: raw.startDate || raw.start_date || "",
   endDate: raw.endDate || raw.end_date || "",
   status: raw.status || "-",
   safari: raw.safari || null,
   lead: raw.lead || null,
+  contract: raw.contract || raw.leaseContract || raw.lease_contract || null,
+  groupName: raw.groupName || raw.group_name || "",
+  itinerary: raw.itinerary || "",
+  odometerLogCount: Number(
+    raw.odometerLogCount ??
+      raw.odometer_log_count ??
+      raw.odometer_logs_count ??
+      0,
+  ),
+  latestOdometerLogAt:
+    raw.latestOdometerLogAt || raw.latest_odometer_log_at || "",
   vehicle: raw.vehicle || null,
   driver: raw.driver || null,
 });
+
+const toDateKey = (value) => {
+  if (!value) return "";
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value)) {
+    return value.slice(0, 10);
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toISOString().slice(0, 10);
+};
 
 const formatDate = (value) => {
   if (!value) return "-";
@@ -25,11 +47,21 @@ const formatDate = (value) => {
 
 const buildTripLabel = (allocation) => {
   const safari = allocation.safari || allocation.lead || {};
+  const contract = allocation.contract || {};
+  const isLease = allocation.assignmentType === "long_term_lease";
   return {
-    bookingRef: safari.bookingRef || safari.booking_ref || "-",
-    groupName: safari.groupName || safari.group_name || "-",
-    clientCompany: safari.clientCompany || safari.client_company || "-",
-    routeParks: safari.routeParks || safari.route_parks || "-",
+    bookingRef: isLease
+      ? contract.leaseType || contract.lease_type || "Long Term Lease"
+      : safari.bookingRef || safari.booking_ref || "-",
+    groupName: isLease
+      ? allocation.groupName || contract.groupName || contract.group_name || "-"
+      : safari.groupName || safari.group_name || "-",
+    clientCompany: isLease
+      ? contract.clientName || contract.client_name || "-"
+      : safari.clientCompany || safari.client_company || "-",
+    routeParks: isLease
+      ? allocation.itinerary || "-"
+      : safari.routeParks || safari.route_parks || "-",
     vehicle:
       [
         allocation.vehicle?.vehicleNo || allocation.vehicle?.vehicle_no,
@@ -41,11 +73,26 @@ const buildTripLabel = (allocation) => {
   };
 };
 
+const isLeaseAllocation = (allocation) =>
+  allocation.assignmentType === "long_term_lease";
+
+const buildReportPath = (allocation, suffix) =>
+  isLeaseAllocation(allocation)
+    ? `/lease-trips/${allocation.id}/odometer-logs/${suffix}`
+    : `/trips/${allocation.id}/odometer-logs/${suffix}`;
+
+const buildViewPath = (allocation) =>
+  `/odometer-reports/view?tripId=${allocation.id}&type=${
+    isLeaseAllocation(allocation) ? "lease" : "safari"
+  }`;
+
 export default function OdometerReports() {
   const [allocations, setAllocations] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isDownloadingId, setIsDownloadingId] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
 
   useEffect(() => {
@@ -53,21 +100,50 @@ export default function OdometerReports() {
       setIsLoading(true);
       setErrorMessage("");
       try {
-        const response = await apiFetch("/safari-allocations");
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok) {
-          throw new Error(payload?.message || "Failed to load safari trips.");
+        const [safariResponse, leaseResponse] = await Promise.all([
+          apiFetch("/safari-allocations"),
+          apiFetch("/lease-allocations"),
+        ]);
+        const [safariPayload, leasePayload] = await Promise.all([
+          safariResponse.json().catch(() => ({})),
+          leaseResponse.json().catch(() => ({})),
+        ]);
+
+        if (!safariResponse.ok) {
+          throw new Error(
+            safariPayload?.message || "Failed to load safari trips.",
+          );
         }
 
-        const list = Array.isArray(payload?.allocations)
-          ? payload.allocations
-          : Array.isArray(payload)
-            ? payload
+        const safariList = Array.isArray(safariPayload?.allocations)
+          ? safariPayload.allocations
+          : Array.isArray(safariPayload)
+            ? safariPayload
             : [];
+        const leaseList = leaseResponse.ok
+          ? Array.isArray(leasePayload?.allocations)
+            ? leasePayload.allocations
+            : Array.isArray(leasePayload)
+              ? leasePayload
+              : []
+          : [];
 
-        setAllocations(list.map(normalizeAllocation));
+        setAllocations(
+          [
+            ...safariList.map((item) => ({
+              ...item,
+              assignmentType: "safari",
+            })),
+            ...leaseList.map((item) => ({
+              ...item,
+              assignmentType: "long_term_lease",
+            })),
+          ].map(normalizeAllocation),
+        );
       } catch (error) {
-        setErrorMessage(error.message || "Failed to load safari trips.");
+        setErrorMessage(
+          error.message || "Failed to load odometer report trips.",
+        );
       } finally {
         setIsLoading(false);
       }
@@ -78,32 +154,43 @@ export default function OdometerReports() {
 
   const filtered = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
-    if (!q) return allocations;
+    return allocations
+      .filter((item) => {
+        const x = buildTripLabel(item);
+        const transactionDate = toDateKey(item.latestOdometerLogAt);
+        const matchesSearch =
+          !q ||
+          String(item.id).includes(q) ||
+          String(x.bookingRef).toLowerCase().includes(q) ||
+          String(x.groupName).toLowerCase().includes(q) ||
+          String(x.clientCompany).toLowerCase().includes(q) ||
+          String(x.vehicle).toLowerCase().includes(q) ||
+          String(x.driver).toLowerCase().includes(q);
+        const matchesFrom = !dateFrom || transactionDate >= dateFrom;
+        const matchesTo = !dateTo || transactionDate <= dateTo;
 
-    return allocations.filter((item) => {
-      const x = buildTripLabel(item);
-      return (
-        String(item.id).includes(q) ||
-        String(x.bookingRef).toLowerCase().includes(q) ||
-        String(x.groupName).toLowerCase().includes(q) ||
-        String(x.clientCompany).toLowerCase().includes(q) ||
-        String(x.vehicle).toLowerCase().includes(q) ||
-        String(x.driver).toLowerCase().includes(q)
-      );
-    });
-  }, [allocations, searchTerm]);
+        return matchesSearch && matchesFrom && matchesTo;
+      })
+      .sort((a, b) => {
+        const aDate = a.latestOdometerLogAt
+          ? new Date(a.latestOdometerLogAt).getTime()
+          : 0;
+        const bDate = b.latestOdometerLogAt
+          ? new Date(b.latestOdometerLogAt).getTime()
+          : 0;
+        if (aDate !== bDate) return bDate - aDate;
+        return Number(b.id || 0) - Number(a.id || 0);
+      });
+  }, [allocations, searchTerm, dateFrom, dateTo]);
 
   const handleDownload = async (allocation) => {
     setIsDownloadingId(allocation.id);
     try {
-      const response = await apiFetch(
-        `/trips/${allocation.id}/odometer-logs/pdf`,
-        {
-          headers: {
-            Accept: "application/pdf",
-          },
+      const response = await apiFetch(buildReportPath(allocation, "pdf"), {
+        headers: {
+          Accept: "application/pdf",
         },
-      );
+      });
 
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
@@ -114,7 +201,9 @@ export default function OdometerReports() {
       const objectUrl = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = objectUrl;
-      anchor.download = `odometer-log-report-trip-${allocation.id}.pdf`;
+      anchor.download = `odometer-log-report-${
+        isLeaseAllocation(allocation) ? "lease" : "trip"
+      }-${allocation.id}.pdf`;
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
@@ -140,22 +229,44 @@ export default function OdometerReports() {
             Odometer Reports
           </h1>
           <p className="text-slate-500 mt-1">
-            Download per-trip odometer and fuel PDF reports.
+            Download safari and long term lease odometer and fuel PDF reports.
           </p>
         </div>
       </div>
 
       <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="border-b border-slate-200 p-4">
-          <div className="flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 focus-within:border-amber-400 focus-within:ring-4 focus-within:ring-amber-400/20 transition-all lg:w-96">
-            <Search className="w-4 h-4 text-slate-400 shrink-0" />
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(event) => setSearchTerm(event.target.value)}
-              placeholder="Search by booking, group, client, vehicle, or driver"
-              className="w-full bg-transparent text-sm text-slate-900 placeholder-slate-400 outline-none"
-            />
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+            <div className="flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 focus-within:border-amber-400 focus-within:ring-4 focus-within:ring-amber-400/20 transition-all lg:w-96">
+              <Search className="w-4 h-4 text-slate-400 shrink-0" />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
+                placeholder="Search by booking, group, client, vehicle, or driver"
+                className="w-full bg-transparent text-sm text-slate-900 placeholder-slate-400 outline-none"
+              />
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <label className="flex items-center gap-2 text-xs font-medium text-slate-500">
+                Transaction From
+                <input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(event) => setDateFrom(event.target.value)}
+                  className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 outline-none focus:border-amber-400"
+                />
+              </label>
+              <label className="flex items-center gap-2 text-xs font-medium text-slate-500">
+                To
+                <input
+                  type="date"
+                  value={dateTo}
+                  onChange={(event) => setDateTo(event.target.value)}
+                  className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 outline-none focus:border-amber-400"
+                />
+              </label>
+            </div>
           </div>
         </div>
 
@@ -173,6 +284,7 @@ export default function OdometerReports() {
                 <th className="px-4 py-3">Client / Group</th>
                 <th className="px-4 py-3">Vehicle / Driver</th>
                 <th className="px-4 py-3">Dates</th>
+                <th className="px-4 py-3">Transaction Date</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3 text-right">Action</th>
               </tr>
@@ -180,13 +292,13 @@ export default function OdometerReports() {
             <tbody className="divide-y divide-slate-100">
               {isLoading ? (
                 <tr>
-                  <td colSpan={6} className="py-10 text-center text-slate-400">
+                  <td colSpan={7} className="py-10 text-center text-slate-400">
                     Loading trips...
                   </td>
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-10 text-center text-slate-400">
+                  <td colSpan={7} className="py-10 text-center text-slate-400">
                     No trips found.
                   </td>
                 </tr>
@@ -201,7 +313,8 @@ export default function OdometerReports() {
                       <td className="px-4 py-3">
                         <div className="inline-flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-amber-700 font-semibold">
                           <Route className="w-3.5 h-3.5" />
-                          Trip #{allocation.id}
+                          {isLeaseAllocation(allocation) ? "Lease" : "Trip"} #
+                          {allocation.id}
                         </div>
                         <div className="text-xs text-slate-500 mt-1">
                           {x.bookingRef}
@@ -233,6 +346,16 @@ export default function OdometerReports() {
                         </div>
                       </td>
                       <td className="px-4 py-3">
+                        <div className="text-sm font-medium text-slate-700">
+                          {formatDate(allocation.latestOdometerLogAt)}
+                        </div>
+                        <div className="text-xs text-slate-500">
+                          {allocation.odometerLogCount > 0
+                            ? `${allocation.odometerLogCount} entr${allocation.odometerLogCount === 1 ? "y" : "ies"}`
+                            : "No entries"}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
                         <span className="inline-flex items-center rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
                           {allocation.status || "-"}
                         </span>
@@ -240,7 +363,7 @@ export default function OdometerReports() {
                       <td className="px-4 py-3 text-right">
                         <div className="inline-flex items-center gap-2">
                           <Link
-                            to={`/odometer-reports/view?tripId=${allocation.id}`}
+                            to={buildViewPath(allocation)}
                             className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
                           >
                             View
