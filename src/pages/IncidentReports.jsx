@@ -21,7 +21,9 @@ const emptyForm = () => ({
   id: null,
   date: new Date().toISOString().slice(0, 10),
   vehicleId: "",
+  bookingType: "short_term",
   safariId: "",
+  leaseAllocationId: "",
   reportType: "Routine",
   description: "",
   actionTaken: "",
@@ -94,11 +96,49 @@ const normalizeSafari = (lead) => ({
   bookingStatus: lead.booking_status || lead.bookingStatus || "",
 });
 
+const normalizeLeaseAllocation = (allocation) => ({
+  id: Number(allocation.id || 0),
+  vehicleId: String(allocation.vehicleId || allocation.vehicle_id || ""),
+  driverId: String(allocation.driverId || allocation.driver_id || ""),
+  clientCompany:
+    allocation.contract?.clientName ||
+    allocation.contract?.client_name ||
+    allocation.clientCompany ||
+    allocation.client_company ||
+    "-",
+  groupName:
+    allocation.groupName ||
+    allocation.group_name ||
+    allocation.contract?.groupName ||
+    allocation.contract?.group_name ||
+    "",
+  leaseType:
+    allocation.contract?.leaseType ||
+    allocation.contract?.lease_type ||
+    allocation.leaseType ||
+    allocation.lease_type ||
+    "Long Term",
+  startDate: allocation.startDate || allocation.start_date || "",
+  endDate: allocation.endDate || allocation.end_date || "",
+  vehicle: allocation.vehicle || null,
+  driver: allocation.driver || null,
+  contract: allocation.contract || null,
+});
+
 const normalizeReport = (report) => ({
   id: Number(report.id || 0),
   date: report.date || report.incident_date || "",
   vehicleId: String(report.vehicleId || report.vehicle_id || ""),
+  bookingType:
+    report.leaseAllocationId ||
+    report.lease_allocation_id ||
+    report.leaseAllocation
+      ? "long_term"
+      : "short_term",
   safariId: String(report.safariId || report.lead_id || ""),
+  leaseAllocationId: String(
+    report.leaseAllocationId || report.lease_allocation_id || "",
+  ),
   reportType: report.reportType || report.report_type || "Routine",
   description: report.description || "",
   actionTaken: report.actionTaken || report.action_taken || "",
@@ -107,6 +147,12 @@ const normalizeReport = (report) => ({
   closingRemarks: report.closingRemarks || report.closing_remarks || "",
   vehicle: report.vehicle || null,
   safari: report.safari || report.lead || null,
+  leaseAllocation:
+    report.leaseAllocation || report.lease_allocation
+      ? normalizeLeaseAllocation(
+          report.leaseAllocation || report.lease_allocation,
+        )
+      : null,
 });
 
 const statusClass = (status) =>
@@ -119,6 +165,7 @@ export default function IncidentReports() {
   const [reports, setReports] = useState([]);
   const [vehicles, setVehicles] = useState([]);
   const [safaris, setSafaris] = useState([]);
+  const [leaseAllocations, setLeaseAllocations] = useState([]);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [typeFilter, setTypeFilter] = useState("All");
@@ -139,11 +186,12 @@ export default function IncidentReports() {
     setError("");
 
     try {
-      const [reportsPayload, vehiclesPayload, safarisPayload] =
+      const [reportsPayload, vehiclesPayload, safarisPayload, leasesPayload] =
         await Promise.all([
           apiJson("/incident-reports"),
           apiJson("/vehicles"),
           apiJson("/leads"),
+          apiJson("/lease-allocations"),
         ]);
 
       setReports(
@@ -158,6 +206,11 @@ export default function IncidentReports() {
       );
       setSafaris(
         extractList(safarisPayload, ["leads", "bookings"]).map(normalizeSafari),
+      );
+      setLeaseAllocations(
+        extractList(leasesPayload, ["allocations", "leaseAllocations"]).map(
+          normalizeLeaseAllocation,
+        ),
       );
     } catch (err) {
       setError(err.message || "Failed to load performance dashboard.");
@@ -240,6 +293,9 @@ export default function IncidentReports() {
         report.safari?.bookingRef,
         report.safari?.clientCompany,
         report.safari?.groupName,
+        report.leaseAllocation?.clientCompany,
+        report.leaseAllocation?.groupName,
+        report.leaseAllocation?.leaseType,
       ]
         .filter(Boolean)
         .join(" ")
@@ -278,7 +334,9 @@ export default function IncidentReports() {
       id: report.id,
       date: report.date || "",
       vehicleId: String(report.vehicleId || ""),
+      bookingType: report.bookingType || "short_term",
       safariId: String(report.safariId || ""),
+      leaseAllocationId: String(report.leaseAllocationId || ""),
       reportType: report.reportType || "Routine",
       description: report.description || "",
       actionTaken: report.actionTaken || "",
@@ -324,7 +382,11 @@ export default function IncidentReports() {
     const payload = new FormData();
     payload.append("date", form.date);
     payload.append("vehicleId", form.vehicleId);
-    if (form.safariId) payload.append("safariId", form.safariId);
+    if (form.bookingType === "long_term" && form.leaseAllocationId) {
+      payload.append("leaseAllocationId", form.leaseAllocationId);
+    } else if (form.safariId) {
+      payload.append("safariId", form.safariId);
+    }
     payload.append("reportType", form.reportType);
     payload.append("description", form.description);
     payload.append("actionTaken", form.actionTaken || "");
@@ -421,6 +483,22 @@ export default function IncidentReports() {
       .filter(Boolean)
       .join(" - ");
   };
+
+  const getLeaseLabel = (lease) => {
+    if (!lease) return "-";
+    return [
+      `Lease #${lease.id}`,
+      lease.groupName || lease.clientCompany,
+      lease.leaseType,
+    ]
+      .filter(Boolean)
+      .join(" - ");
+  };
+
+  const getBookingLabel = (report) =>
+    report.bookingType === "long_term"
+      ? getLeaseLabel(report.leaseAllocation)
+      : getSafariLabel(report.safari);
 
   return (
     <div className="space-y-6">
@@ -558,7 +636,7 @@ export default function IncidentReports() {
                 <th className="px-4 py-3">Date</th>
                 <th className="px-4 py-3">Vehicle</th>
                 <th className="px-4 py-3">Driver</th>
-                <th className="px-4 py-3">Safari</th>
+                <th className="px-4 py-3">Booking</th>
                 <th className="px-4 py-3">Type</th>
                 <th className="px-4 py-3">Description / Action</th>
                 <th className="px-4 py-3">Photos</th>
@@ -625,7 +703,7 @@ export default function IncidentReports() {
                         )}
                       </td>
                       <td className="px-4 py-3 text-slate-700">
-                        {getSafariLabel(report.safari)}
+                        {getBookingLabel(report)}
                       </td>
                       <td className="px-4 py-3 text-slate-700">
                         {report.reportType}
@@ -798,28 +876,81 @@ export default function IncidentReports() {
 
                 <div>
                   <label className="mb-1 block text-sm font-medium text-slate-700">
-                    Safari / Booking
+                    Booking Type
                   </label>
                   <select
-                    value={form.safariId}
+                    value={form.bookingType}
                     onChange={(event) =>
                       setForm((current) => ({
                         ...current,
-                        safariId: event.target.value,
+                        bookingType: event.target.value,
+                        safariId: "",
+                        leaseAllocationId: "",
                       }))
                     }
                     className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                   >
-                    <option value="">Select booking...</option>
-                    {safaris.map((safari) => (
-                      <option key={safari.id} value={safari.id}>
-                        {safari.bookingRef} -{" "}
-                        {safari.groupName || safari.clientCompany} (
-                        {formatDate(safari.startDate)} to{" "}
-                        {formatDate(safari.endDate)})
-                      </option>
-                    ))}
+                    <option value="short_term">Short Term Booking</option>
+                    <option value="long_term">Long Term Lease</option>
                   </select>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-700">
+                    {form.bookingType === "long_term"
+                      ? "Long Term Lease"
+                      : "Safari / Booking"}
+                  </label>
+                  {form.bookingType === "long_term" ? (
+                    <select
+                      value={form.leaseAllocationId}
+                      onChange={(event) => {
+                        const selectedLease = leaseAllocations.find(
+                          (lease) => String(lease.id) === event.target.value,
+                        );
+                        setForm((current) => ({
+                          ...current,
+                          leaseAllocationId: event.target.value,
+                          safariId: "",
+                          vehicleId:
+                            selectedLease?.vehicleId || current.vehicleId,
+                        }));
+                      }}
+                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                    >
+                      <option value="">Select lease...</option>
+                      {leaseAllocations.map((lease) => (
+                        <option key={lease.id} value={lease.id}>
+                          Lease #{lease.id} -{" "}
+                          {lease.groupName || lease.clientCompany} (
+                          {formatDate(lease.startDate)} to{" "}
+                          {formatDate(lease.endDate)})
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <select
+                      value={form.safariId}
+                      onChange={(event) =>
+                        setForm((current) => ({
+                          ...current,
+                          safariId: event.target.value,
+                          leaseAllocationId: "",
+                        }))
+                      }
+                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                    >
+                      <option value="">Select booking...</option>
+                      {safaris.map((safari) => (
+                        <option key={safari.id} value={safari.id}>
+                          {safari.bookingRef} -{" "}
+                          {safari.groupName || safari.clientCompany} (
+                          {formatDate(safari.startDate)} to{" "}
+                          {formatDate(safari.endDate)})
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
 
                 <div className="md:col-span-2">

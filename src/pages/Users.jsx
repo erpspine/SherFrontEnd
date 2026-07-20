@@ -144,6 +144,12 @@ const normalizeUser = (user) => ({
   driver_license: user.driver_license || user.driverLicense || "",
   tour_guide_license: user.tour_guide_license || user.tourGuideLicense || "",
   blacklist_reason: user.blacklist_reason || user.blacklistReason || "",
+  status_reason:
+    user.status_reason ||
+    user.statusReason ||
+    user.blacklist_reason ||
+    user.blacklistReason ||
+    "",
   work_experience: user.work_experience || user.workExperience || "",
   role: roleOptions.includes(toTitleCase(user.role))
     ? toTitleCase(user.role)
@@ -322,7 +328,10 @@ export default function Users() {
     const matchSearch =
       user.name.toLowerCase().includes(q) ||
       user.email.toLowerCase().includes(q) ||
-      user.phone.toLowerCase().includes(q);
+      user.phone.toLowerCase().includes(q) ||
+      String(user.status_reason || "")
+        .toLowerCase()
+        .includes(q);
     const matchRole = roleFilter === "All" || user.role === roleFilter;
     const matchStatus = statusFilter === "All" || user.status === statusFilter;
     const matchLanguage =
@@ -385,7 +394,8 @@ export default function Users() {
         driving_started_at: selectedUser.driving_started_at || "",
         driver_license: selectedUser.driver_license || "",
         tour_guide_license: selectedUser.tour_guide_license || "",
-        blacklist_reason: selectedUser.blacklist_reason || "",
+        blacklist_reason:
+          selectedUser.status_reason || selectedUser.blacklist_reason || "",
         status: selectedUser.status,
         receive_notifications: selectedUser.receive_notifications,
       });
@@ -401,6 +411,21 @@ export default function Users() {
       await Swal.fire({
         title: "Missing Required Fields",
         text: "Please provide Name and Email.",
+        icon: "warning",
+        background: "#0f172a",
+        color: "#e2e8f0",
+      });
+      return;
+    }
+
+    if (
+      form.status === "Inactive" &&
+      String(form.blacklist_reason || "").trim() === ""
+    ) {
+      setErrorMessage("Please provide a reason for making this user inactive.");
+      await Swal.fire({
+        title: "Inactive Reason Required",
+        text: "Please enter the reason this user is inactive.",
         icon: "warning",
         background: "#0f172a",
         color: "#e2e8f0",
@@ -481,7 +506,8 @@ export default function Users() {
             ? String(form.tour_guide_license || "").trim() || null
             : null,
         blacklist_reason:
-          form.role === "Driver" && form.status === "Blacklisted"
+          form.status === "Inactive" ||
+          (form.role === "Driver" && form.status === "Blacklisted")
             ? String(form.blacklist_reason || "").trim()
             : null,
         status: form.status,
@@ -989,10 +1015,12 @@ export default function Users() {
                         <div className="text-slate-900 font-medium text-sm">
                           {user.name}
                         </div>
-                        {user.status === "Blacklisted" &&
-                          user.blacklist_reason && (
-                            <div className="mt-1 max-w-[320px] text-xs text-rose-600">
-                              {user.blacklist_reason}
+                        {["Inactive", "Blacklisted"].includes(user.status) &&
+                          user.status_reason && (
+                            <div
+                              className={`mt-1 max-w-[320px] text-xs ${user.status === "Blacklisted" ? "text-rose-600" : "text-slate-500"}`}
+                            >
+                              Reason: {user.status_reason}
                             </div>
                           )}
                         {hasDriverProfileData(user) && (
@@ -1200,9 +1228,10 @@ export default function Users() {
                         shouldClearBlacklist && form.status === "Blacklisted"
                           ? "Active"
                           : form.status,
-                      blacklist_reason: shouldClearBlacklist
-                        ? ""
-                        : form.blacklist_reason,
+                      blacklist_reason:
+                        shouldClearBlacklist && form.status === "Blacklisted"
+                          ? ""
+                          : form.blacklist_reason,
                     });
                   }}
                   className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-amber-500"
@@ -1307,10 +1336,11 @@ export default function Users() {
                     setForm({
                       ...form,
                       status: nextStatus,
-                      blacklist_reason:
-                        nextStatus === "Blacklisted"
-                          ? form.blacklist_reason
-                          : "",
+                      blacklist_reason: ["Inactive", "Blacklisted"].includes(
+                        nextStatus,
+                      )
+                        ? form.blacklist_reason
+                        : "",
                     });
                   }}
                   className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-amber-500"
@@ -1328,18 +1358,24 @@ export default function Users() {
                 </select>
               </div>
 
-              {form.role === "Driver" && form.status === "Blacklisted" && (
+              {["Inactive", "Blacklisted"].includes(form.status) && (
                 <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-slate-300 mb-2">
-                    Blacklist Reason
+                    {form.status === "Inactive"
+                      ? "Inactive Reason"
+                      : "Blacklist Reason"}
                   </label>
                   <textarea
+                    required
                     value={form.blacklist_reason}
                     onChange={(e) =>
                       setForm({ ...form, blacklist_reason: e.target.value })
                     }
-                    rows={3}
-                    placeholder="Reason this driver should not be used again"
+                    placeholder={
+                      form.status === "Inactive"
+                        ? "Explain why this user is inactive"
+                        : "Explain why this driver is blacklisted"
+                    }
                     className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-amber-500 resize-none"
                   />
                 </div>
