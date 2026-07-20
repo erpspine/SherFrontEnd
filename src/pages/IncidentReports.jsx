@@ -4,6 +4,7 @@ import {
   AlertCircle,
   Camera,
   ClipboardList,
+  Download,
   Loader,
   Pencil,
   Plus,
@@ -69,6 +70,13 @@ const formatDate = (value) => {
     month: "short",
     year: "numeric",
   });
+};
+
+const filenameFromHeader = (header, fallback) => {
+  const match = String(header || "").match(
+    /filename\*?=(?:UTF-8'')?["']?([^"';]+)["']?/i,
+  );
+  return match ? decodeURIComponent(match[1]) : fallback;
 };
 
 const normalizeVehicle = (vehicle) => ({
@@ -167,6 +175,8 @@ export default function IncidentReports() {
   const [safaris, setSafaris] = useState([]);
   const [leaseAllocations, setLeaseAllocations] = useState([]);
   const [search, setSearch] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [typeFilter, setTypeFilter] = useState("All");
   const [vehicleFilter, setVehicleFilter] = useState(
@@ -177,6 +187,7 @@ export default function IncidentReports() {
   );
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [error, setError] = useState("");
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState(emptyForm());
@@ -262,6 +273,8 @@ export default function IncidentReports() {
         return false;
       if (typeFilter !== "All" && report.reportType !== typeFilter)
         return false;
+      if (dateFrom && String(report.date || "") < dateFrom) return false;
+      if (dateTo && String(report.date || "") > dateTo) return false;
       if (vehicleFilter !== "All" && String(report.vehicleId) !== vehicleFilter)
         return false;
 
@@ -306,6 +319,8 @@ export default function IncidentReports() {
   }, [
     reports,
     search,
+    dateFrom,
+    dateTo,
     statusFilter,
     typeFilter,
     vehicleFilter,
@@ -315,13 +330,15 @@ export default function IncidentReports() {
 
   const stats = useMemo(
     () => ({
-      total: reports.length,
-      open: reports.filter((report) => report.status === "Open").length,
-      closed: reports.filter((report) => report.status === "Closed").length,
-      accidents: reports.filter((report) => report.reportType === "Accident")
+      total: filteredReports.length,
+      open: filteredReports.filter((report) => report.status === "Open").length,
+      closed: filteredReports.filter((report) => report.status === "Closed")
         .length,
+      accidents: filteredReports.filter(
+        (report) => report.reportType === "Accident",
+      ).length,
     }),
-    [reports],
+    [filteredReports],
   );
 
   const openCreate = () => {
@@ -458,6 +475,54 @@ export default function IncidentReports() {
     }
   };
 
+  const handleExportExcel = async () => {
+    const params = new URLSearchParams();
+    if (search.trim()) params.set("search", search.trim());
+    if (dateFrom) params.set("dateFrom", dateFrom);
+    if (dateTo) params.set("dateTo", dateTo);
+    if (statusFilter !== "All") params.set("status", statusFilter);
+    if (typeFilter !== "All") params.set("reportType", typeFilter);
+    if (vehicleFilter !== "All") params.set("vehicleId", vehicleFilter);
+    if (driverFilter !== "All") params.set("driverId", driverFilter);
+
+    setExporting(true);
+    try {
+      const query = params.toString();
+      const response = await apiFetch(
+        `/incident-reports/export/excel${query ? `?${query}` : ""}`,
+        { headers: { Accept: "text/csv" } },
+      );
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(
+          payload?.message || "Unable to export performance dashboard.",
+        );
+      }
+
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = filenameFromHeader(
+        response.headers.get("content-disposition"),
+        "performance-dashboard.csv",
+      );
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch (err) {
+      await Swal.fire(
+        "Export Failed",
+        err.message || "Unable to export performance dashboard.",
+        "error",
+      );
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const getVehicleLabel = (vehicle) => {
     if (!vehicle) return "-";
     const vehicleNo = vehicle.vehicleNo || vehicle.vehicle_no || "Vehicle";
@@ -512,13 +577,24 @@ export default function IncidentReports() {
             and closure remarks.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={openCreate}
-          className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700"
-        >
-          <Plus className="h-4 w-4" /> New Record
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={handleExportExcel}
+            disabled={exporting}
+            className="inline-flex items-center justify-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-700 shadow-sm hover:bg-emerald-100 disabled:cursor-wait disabled:opacity-60"
+          >
+            <Download className="h-4 w-4" />
+            {exporting ? "Exporting..." : "Export Excel"}
+          </button>
+          <button
+            type="button"
+            onClick={openCreate}
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700"
+          >
+            <Plus className="h-4 w-4" /> New Record
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -562,8 +638,8 @@ export default function IncidentReports() {
       </div>
 
       <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
-        <div className="flex flex-col gap-3 border-b border-slate-200 p-4 lg:flex-row lg:items-center">
-          <div className="relative flex-1">
+        <div className="space-y-3 border-b border-slate-200 p-4">
+          <div className="relative w-full">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
@@ -573,60 +649,80 @@ export default function IncidentReports() {
               className="w-full rounded-lg border border-slate-300 py-2 pl-9 pr-3 text-sm outline-none focus:border-blue-500"
             />
           </div>
-          <select
-            value={typeFilter}
-            onChange={(event) => setTypeFilter(event.target.value)}
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          >
-            <option value="All">All Types</option>
-            {REPORT_TYPES.map((type) => (
-              <option key={type} value={type}>
-                {type}
-              </option>
-            ))}
-          </select>
-          <select
-            value={statusFilter}
-            onChange={(event) => setStatusFilter(event.target.value)}
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          >
-            <option value="All">All Statuses</option>
-            {STATUSES.map((status) => (
-              <option key={status} value={status}>
-                {status}
-              </option>
-            ))}
-          </select>
-          <select
-            value={vehicleFilter}
-            onChange={(event) => {
-              setVehicleFilter(event.target.value);
-              updateLinkedFilter("vehicleId", event.target.value);
-            }}
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          >
-            <option value="All">All Vehicles</option>
-            {vehicles.map((vehicle) => (
-              <option key={vehicle.id} value={vehicle.id}>
-                {vehicle.vehicleNo || "Vehicle"} ({vehicle.plateNo || "N/A"})
-              </option>
-            ))}
-          </select>
-          <select
-            value={driverFilter}
-            onChange={(event) => {
-              setDriverFilter(event.target.value);
-              updateLinkedFilter("driverId", event.target.value);
-            }}
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          >
-            <option value="All">All Drivers</option>
-            {drivers.map((driver) => (
-              <option key={driver.id} value={driver.id}>
-                {driver.name}
-              </option>
-            ))}
-          </select>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
+            <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-slate-500">
+              From
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={(event) => setDateFrom(event.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-500"
+              />
+            </label>
+            <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-slate-500">
+              To
+              <input
+                type="date"
+                value={dateTo}
+                onChange={(event) => setDateTo(event.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-500"
+              />
+            </label>
+            <select
+              value={typeFilter}
+              onChange={(event) => setTypeFilter(event.target.value)}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            >
+              <option value="All">All Types</option>
+              {REPORT_TYPES.map((type) => (
+                <option key={type} value={type}>
+                  {type}
+                </option>
+              ))}
+            </select>
+            <select
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value)}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            >
+              <option value="All">All Statuses</option>
+              {STATUSES.map((status) => (
+                <option key={status} value={status}>
+                  {status}
+                </option>
+              ))}
+            </select>
+            <select
+              value={vehicleFilter}
+              onChange={(event) => {
+                setVehicleFilter(event.target.value);
+                updateLinkedFilter("vehicleId", event.target.value);
+              }}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            >
+              <option value="All">All Vehicles</option>
+              {vehicles.map((vehicle) => (
+                <option key={vehicle.id} value={vehicle.id}>
+                  {vehicle.vehicleNo || "Vehicle"} ({vehicle.plateNo || "N/A"})
+                </option>
+              ))}
+            </select>
+            <select
+              value={driverFilter}
+              onChange={(event) => {
+                setDriverFilter(event.target.value);
+                updateLinkedFilter("driverId", event.target.value);
+              }}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            >
+              <option value="All">All Drivers</option>
+              {drivers.map((driver) => (
+                <option key={driver.id} value={driver.id}>
+                  {driver.name}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         <div className="overflow-x-auto">
