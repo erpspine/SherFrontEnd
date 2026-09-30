@@ -1,3 +1,4 @@
+import { useNavigate } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
@@ -17,7 +18,34 @@ import {
   X,
 } from "lucide-react";
 import { apiFetch } from "../utils/api";
+import { canDelete } from "../utils/auth";
 import Swal from "sweetalert2";
+import Select from "react-select";
+
+const allocationSelectStyles = {
+  control: (base) => ({
+    ...base,
+    backgroundColor: "#1e293b",
+    borderColor: "#334155",
+    borderRadius: 8,
+    minHeight: 42,
+  }),
+  singleValue: (base) => ({ ...base, color: "#fff" }),
+  input: (base) => ({ ...base, color: "#fff" }),
+  placeholder: (base) => ({ ...base, color: "#94a3b8" }),
+  menu: (base) => ({ ...base, backgroundColor: "#1e293b" }),
+  option: (base, state) => ({
+    ...base,
+    color: "#fff",
+    backgroundColor: state.isSelected
+      ? "#475569"
+      : state.isFocused
+        ? "#334155"
+        : "transparent",
+    overflowWrap: "anywhere",
+  }),
+  menuPortal: (base) => ({ ...base, zIndex: 9999 }),
+};
 
 const parseDateValue = (value) => {
   if (!value) return null;
@@ -356,6 +384,19 @@ const normalizeJobCard = (jobCard) => {
 
   return {
     id: jobCard.id,
+    perDiemCount: Number(
+      jobCard.per_diem_vouchers_count ?? jobCard.perDiemCount ?? 0,
+    ),
+    assignedDriverCount: Number(
+      jobCard.assigned_driver_count ?? jobCard.assignedDriverCount ?? 0,
+    ),
+    perDiemUpdatedAt:
+      jobCard.per_diem_vouchers_max_updated_at ||
+      jobCard.perDiemUpdatedAt ||
+      "",
+    driverProfiles: Array.isArray(jobCard.driverProfiles)
+      ? jobCard.driverProfiles
+      : [],
     leadId: Number(jobCard.lead_id ?? jobCard.leadId ?? 0),
     groupName:
       jobCard.group_name ||
@@ -598,6 +639,8 @@ export default function JobCards() {
   const [form, setForm] = useState(createEmptyForm());
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const navigate = useNavigate();
+  const [generatingPerDiemId, setGeneratingPerDiemId] = useState(null);
   const [downloadingJobCardId, setDownloadingJobCardId] = useState(null);
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -1465,6 +1508,117 @@ export default function JobCards() {
     }
   };
 
+  const handleGeneratePerDiem = async (jobCard) => {
+    setGeneratingPerDiemId(jobCard.id);
+    try {
+      const existingResponse = await apiFetch(
+        `/per-diems?jobCardId=${jobCard.id}`,
+      );
+      const existing = await existingResponse.json();
+      if (!existingResponse.ok)
+        throw new Error(
+          existing.message || "Unable to check existing per diem.",
+        );
+      const details = await apiFetch(`/job-cards/${jobCard.id}`);
+      const payload = await details.json();
+      if (!details.ok)
+        throw new Error(payload.message || "Unable to load job card.");
+      const drivers = (payload.jobCard?.driverProfiles || []).filter((driver) =>
+        driver.name?.trim(),
+      );
+      if (!drivers.length)
+        throw new Error("Assign a driver to this job card first.");
+
+      const existingKeys = new Set(
+        (existing.perDiems || []).map((voucher) => String(voucher.driverKey)),
+      );
+      const missingDrivers = drivers.filter(
+        (driver) => !existingKeys.has(String(driver.key)),
+      );
+      const canUpdateExisting =
+        jobCard.perDiemCount > 0 &&
+        jobCard.updatedAt &&
+        jobCard.perDiemUpdatedAt &&
+        new Date(jobCard.updatedAt).getTime() >
+          new Date(jobCard.perDiemUpdatedAt).getTime();
+      const selectableDrivers = missingDrivers.length
+        ? missingDrivers
+        : canUpdateExisting
+          ? drivers
+          : [];
+      if (!selectableDrivers.length) return;
+
+      const selection = await Swal.fire({
+        title: missingDrivers.length ? "Generate Per Diem" : "Update Per Diem",
+        input: "select",
+        inputOptions: Object.fromEntries(
+          selectableDrivers.map((driver) => [driver.key, driver.name]),
+        ),
+        inputPlaceholder: "Select driver",
+        showCancelButton: true,
+        confirmButtonText: missingDrivers.length
+          ? "Generate PDF"
+          : "Update PDF",
+        inputValidator: (value) =>
+          !value ? "Please select a driver." : undefined,
+      });
+      if (!selection.isConfirmed) return;
+
+      const selectedDriver = selectableDrivers.find(
+        (driver) => driver.key === selection.value,
+      );
+      const response = await apiFetch(`/job-cards/${jobCard.id}/per-diem`, {
+        method: "POST",
+        body: { driverKey: selection.value },
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(
+          error.message ||
+            `Unable to generate per diem for ${selectedDriver?.name || "the selected driver"}.`,
+        );
+      }
+      const url = URL.createObjectURL(await response.blob());
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download =
+        response.headers
+          .get("Content-Disposition")
+          ?.match(/filename="?([^";]+)"?/)?.[1] ||
+        `per-diem-${jobCard.jobCardNo || jobCard.id}-${selectedDriver?.name || "driver"}.pdf`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+      const nextCount = new Set([...existingKeys, String(selection.value)])
+        .size;
+      setJobCards((current) =>
+        current.map((card) =>
+          card.id === jobCard.id
+            ? {
+                ...card,
+                perDiemCount: nextCount,
+                perDiemUpdatedAt:
+                  missingDrivers.length && nextCount >= drivers.length
+                    ? new Date().toISOString()
+                    : card.perDiemUpdatedAt,
+              }
+            : card,
+        ),
+      );
+      navigate(`/per-diems?jobCardId=${jobCard.id}`);
+    } catch (error) {
+      await Swal.fire({
+        title: "Per Diem Failed",
+        text: error.message,
+        icon: "error",
+      });
+    } finally {
+      setGeneratingPerDiemId(null);
+    }
+  };
+
   const handleDownloadPdf = async (jobCard) => {
     setDownloadingJobCardId(jobCard.id);
     try {
@@ -1727,6 +1881,12 @@ export default function JobCards() {
             return {
               ...item,
               ...saved,
+              // PUT responses do not include the aggregate per-diem fields.
+              // Keep them so an edit can immediately enable regeneration.
+              perDiemCount: saved.perDiemCount || item.perDiemCount,
+              assignedDriverCount:
+                saved.assignedDriverCount || item.assignedDriverCount,
+              perDiemUpdatedAt: saved.perDiemUpdatedAt || item.perDiemUpdatedAt,
               // Some update responses are partial; keep existing dates when not returned.
               safariStartDate: saved.safariStartDate || item.safariStartDate,
               safariEndDate: saved.safariEndDate || item.safariEndDate,
@@ -1987,6 +2147,42 @@ export default function JobCards() {
                             <Download className="w-4 h-4" />
                           )}
                         </button>
+                        {(() => {
+                          const perDiemNeedsRegeneration =
+                            card.perDiemCount > 0 &&
+                            card.updatedAt &&
+                            card.perDiemUpdatedAt &&
+                            new Date(card.updatedAt).getTime() >
+                              new Date(card.perDiemUpdatedAt).getTime();
+                          const allDriversGenerated =
+                            card.assignedDriverCount > 0
+                              ? card.perDiemCount >= card.assignedDriverCount
+                              : card.perDiemCount > 0;
+                          const perDiemGenerated =
+                            allDriversGenerated && !perDiemNeedsRegeneration;
+                          return (
+                            <button
+                              onClick={() => handleGeneratePerDiem(card)}
+                              disabled={
+                                generatingPerDiemId !== null || perDiemGenerated
+                              }
+                              className={`px-2.5 py-1.5 text-xs font-medium rounded-lg disabled:opacity-50 ${
+                                perDiemGenerated
+                                  ? "text-emerald-700 border border-emerald-200 bg-emerald-50"
+                                  : "text-amber-800 border border-amber-200 bg-amber-50 hover:bg-amber-100"
+                              }`}
+                              title="Per Diem"
+                            >
+                              {generatingPerDiemId === card.id
+                                ? "Loading..."
+                                : perDiemNeedsRegeneration
+                                  ? "Regenerate"
+                                  : perDiemGenerated
+                                    ? "Generated"
+                                    : "Per Diem"}
+                            </button>
+                          );
+                        })()}
                         <button
                           onClick={() => openView(card)}
                           className="p-2 text-slate-500 hover:text-cyan-600 hover:bg-slate-100 rounded-lg transition-colors"
@@ -2010,13 +2206,15 @@ export default function JobCards() {
                             Close
                           </button>
                         )}
-                        <button
-                          onClick={() => handleDelete(card.id)}
-                          className="p-2 text-slate-500 hover:text-red-600 hover:bg-slate-100 rounded-lg transition-colors"
-                          title="Delete"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        {canDelete() && (
+                          <button
+                            onClick={() => handleDelete(card.id)}
+                            className="p-2 text-slate-500 hover:text-red-600 hover:bg-slate-100 rounded-lg transition-colors"
+                            title="Delete"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
                       </div>
                     </td>
                     <td className="py-3 px-3 text-sm text-slate-700 whitespace-nowrap">
@@ -2285,23 +2483,36 @@ export default function JobCards() {
 
                 {isSafariType && !isCloseMode && (
                   <div>
-                    <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                    <label
+                      htmlFor="job-card-lead"
+                      className="block text-xs font-medium text-slate-300 mb-1.5"
+                    >
                       Lead (PI Sent) *
                     </label>
-                    <select
-                      value={form.leadId}
-                      onChange={(event) => onSelectLead(event.target.value)}
-                      disabled={isSaving || Boolean(editingId)}
-                      className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
-                    >
-                      <option value="">Select lead</option>
-                      {availableSafariLeads.map((lead) => (
-                        <option key={lead.id} value={lead.id}>
-                          {lead.bookingRef} -{" "}
-                          {lead.groupName || lead.clientCompany}
-                        </option>
-                      ))}
-                    </select>
+                    <Select
+                      inputId="job-card-lead"
+                      options={availableSafariLeads}
+                      value={
+                        leads.find(
+                          (lead) => String(lead.id) === String(form.leadId),
+                        ) || null
+                      }
+                      getOptionValue={(lead) => String(lead.id)}
+                      getOptionLabel={(lead) =>
+                        `${lead.bookingRef} - ${lead.groupName || lead.clientCompany}`
+                      }
+                      onChange={(lead) =>
+                        onSelectLead(lead ? String(lead.id) : "")
+                      }
+                      isDisabled={isSaving || Boolean(editingId)}
+                      isSearchable
+                      placeholder="Select lead"
+                      noOptionsMessage={() => "No matching leads"}
+                      className="text-sm"
+                      menuPortalTarget={document.body}
+                      menuPosition="fixed"
+                      styles={allocationSelectStyles}
+                    />
                     {!editingId && availableSafariLeads.length === 0 && (
                       <p className="text-xs text-slate-500 mt-1">
                         All PI-sent safari leads already have job cards.
@@ -2317,19 +2528,24 @@ export default function JobCards() {
 
                 {isLeaseType && !isCloseMode && (
                   <div className="md:col-span-2">
-                    <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                    <label
+                      htmlFor="job-card-lease-allocation"
+                      className="block text-xs font-medium text-slate-300 mb-1.5"
+                    >
                       Lease Allocation <span className="text-red-400">*</span>
                     </label>
-                    <select
-                      value={form.leaseAllocationId}
-                      onChange={(event) =>
-                        onSelectLeaseAllocation(event.target.value)
+                    <Select
+                      inputId="job-card-lease-allocation"
+                      options={availableLeaseAllocations}
+                      value={
+                        availableLeaseAllocations.find(
+                          (allocation) =>
+                            String(allocation.id) ===
+                            String(form.leaseAllocationId),
+                        ) || null
                       }
-                      disabled={isSaving || Boolean(editingId)}
-                      className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
-                    >
-                      <option value="">Select lease allocation</option>
-                      {availableLeaseAllocations.map((allocation) => {
+                      getOptionValue={(allocation) => String(allocation.id)}
+                      getOptionLabel={(allocation) => {
                         const vehicleLabel = [
                           allocation.vehicleNo,
                           allocation.plateNo,
@@ -2346,16 +2562,22 @@ export default function JobCards() {
                         ]
                           .filter(Boolean)
                           .join(" → ");
-                        return (
-                          <option key={allocation.id} value={allocation.id}>
-                            #{allocation.id} -{" "}
-                            {allocation.clientName || "Client"}
-                            {vehicleLabel ? ` - ${vehicleLabel}` : ""}
-                            {dateLabel ? ` (${dateLabel})` : ""}
-                          </option>
-                        );
-                      })}
-                    </select>
+                        return `#${allocation.id} - ${allocation.clientName || "Client"}${vehicleLabel ? ` - ${vehicleLabel}` : ""}${dateLabel ? ` (${dateLabel})` : ""}`;
+                      }}
+                      onChange={(allocation) =>
+                        onSelectLeaseAllocation(
+                          allocation ? String(allocation.id) : "",
+                        )
+                      }
+                      isDisabled={isSaving || Boolean(editingId)}
+                      isSearchable
+                      placeholder="Select lease allocation"
+                      noOptionsMessage={() => "No matching lease allocations"}
+                      className="text-sm"
+                      menuPortalTarget={document.body}
+                      menuPosition="fixed"
+                      styles={allocationSelectStyles}
+                    />
                     {availableLeaseAllocations.length === 0 && (
                       <p className="text-xs text-slate-500 mt-1">
                         No lease allocations available without job cards.
@@ -3111,6 +3333,32 @@ export default function JobCards() {
                   <p className="text-slate-400 text-xs uppercase">Group Name</p>
                   <p className="text-white mt-1">{selectedJobCardGroupName}</p>
                 </div>
+              </div>
+
+              <div className="space-y-3">
+                <h3 className="text-slate-300 font-semibold">
+                  Driver/Guide Details
+                </h3>
+                {selectedJobCard.driverProfiles.map((driver, index) => (
+                  <div
+                    key={index}
+                    className="grid grid-cols-1 md:grid-cols-2 gap-2 bg-slate-800/30 border border-slate-700/50 rounded-xl p-4"
+                  >
+                    {[
+                      ["Name", driver.name],
+                      ["Phone", driver.phone],
+                      ["Plate No", driver.plateNo],
+                      ["Languages", driver.languages],
+                      ["Driver Licence", driver.driverLicense],
+                      ["Tour Guide Licence", driver.guideLicense],
+                    ].map(([label, value]) => (
+                      <p key={label} className="text-slate-300">
+                        {label}:{" "}
+                        <span className="text-white">{detailValue(value)}</span>
+                      </p>
+                    ))}
+                  </div>
+                ))}
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

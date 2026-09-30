@@ -5,6 +5,10 @@ const ROLES_KEY = "auth_roles";
 const PERMISSIONS_KEY = "auth_permissions";
 
 const ALL_KEYS = [TOKEN_KEY, TOKEN_TYPE_KEY, USER_KEY, ROLES_KEY, PERMISSIONS_KEY];
+const DELETE_ALLOWED_EMAILS = new Set([
+    "tanveer@sher.co.tz",
+    "arif@sher.co.tz",
+]);
 export const getAuthRoles = () => {
     for (const storage of storageList) {
         const raw = storage.getItem(ROLES_KEY);
@@ -23,8 +27,14 @@ export const getAuthPermissions = () => {
     return [];
 };
 
+export const canDelete = () => {
+    const email = String(getAuthUser()?.email || "").trim().toLowerCase();
+    return DELETE_ALLOWED_EMAILS.has(email);
+};
+
 export const hasPermission = (permission) => {
     if (!permission) return true;
+    if (permission.endsWith(".delete") && !canDelete()) return false;
     if (hasRole("Admin")) return true;
     return getAuthPermissions().includes(permission);
 };

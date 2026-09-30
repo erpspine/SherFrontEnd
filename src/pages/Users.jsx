@@ -16,6 +16,7 @@ import {
   KeyRound,
   Copy,
   Download,
+  FileSpreadsheet,
   Send,
 } from "lucide-react";
 import { apiFetch } from "../utils/api";
@@ -53,6 +54,10 @@ const createFormState = () => ({
   name: "",
   email: "",
   phone: "",
+  tin: "",
+  nida: "",
+  bank_name: "",
+  bank_account_number: "",
   role: "Viewer",
   languages_spoken: [],
   driving_started_at: "",
@@ -131,9 +136,14 @@ const formatLastLogin = (value) => {
 
 const normalizeUser = (user) => ({
   id: user.id,
+  assigned_vehicles: user.assigned_vehicles || [],
   name: user.name || "",
   email: user.email || "",
   phone: user.phone || "",
+  tin: user.tin || "",
+  nida: user.nida || "",
+  bank_name: user.bank_name || "",
+  bank_account_number: user.bank_account_number || "",
   languages_spoken: user.languages_spoken || user.languagesSpoken || "",
   languages_spoken_list: Array.isArray(
     user.languages_spoken_list || user.languagesSpokenList,
@@ -158,6 +168,10 @@ const normalizeUser = (user) => ({
   receive_notifications: Boolean(user.receive_notifications),
   lastLogin: formatLastLogin(user.last_login_at || user.lastLogin),
 });
+
+const assignedVehicleLabel = (user) => user.assigned_vehicles
+  .map(vehicle => vehicle.plate_no)
+  .filter(Boolean).join(", ") || "—";
 
 const extractList = (payload) => {
   if (Array.isArray(payload)) return payload;
@@ -265,6 +279,7 @@ const getDriverProfileText = (user) =>
   [
     `Driver name: ${user.name || "-"}`,
     `Phone: ${user.phone || "-"}`,
+    `Vehicle: ${assignedVehicleLabel(user)}`,
     `Language: ${Array.isArray(user.languages_spoken_list) && user.languages_spoken_list.length > 0 ? user.languages_spoken_list.join(", ") : "-"}`,
     `Driver licence: ${user.driver_license || "-"}`,
     `Guide License: ${user.tour_guide_license || "-"}`,
@@ -326,6 +341,7 @@ export default function Users() {
   const filteredUsers = users.filter((user) => {
     const q = searchTerm.toLowerCase();
     const matchSearch =
+      assignedVehicleLabel(user).toLowerCase().includes(q) ||
       user.name.toLowerCase().includes(q) ||
       user.email.toLowerCase().includes(q) ||
       user.phone.toLowerCase().includes(q) ||
@@ -363,6 +379,26 @@ export default function Users() {
     );
   });
 
+  const exportExcel = () => {
+    const headers = ["Name", "Email", "Phone", "Role", "Vehicle", "Languages", "Experience", "Driver Licence", "Guide Licence", "Status", "Status reason", "Notifications", "Last Login"];
+    const escapeCell = (value) => {
+      let text = String(value ?? "");
+      if (/^[\s]*[=+@-]/.test(text)) text = "'" + text;
+      return text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+    };
+    const rows = filteredUsers.map(user => [user.name, user.email, user.phone, user.role,
+      assignedVehicleLabel(user), user.languages_spoken_list.join(", "), formatExperienceLabel(user),
+      user.driver_license, user.tour_guide_license, user.status, user.status_reason,
+      user.receive_notifications ? "Enabled" : "Disabled", user.lastLogin]);
+    const table = `<table><thead><tr>${headers.map(label => `<th>${label}</th>`).join("")}</tr></thead><tbody>${rows.map(row => `<tr>${row.map(value => `<td style='mso-number-format:"\\@"'>${escapeCell(value)}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+    const url = URL.createObjectURL(new Blob([`<html><meta charset="utf-8"><body>${table}</body></html>`], { type: "application/vnd.ms-excel" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `users-${roleFilter.toLowerCase()}-${new Date().toISOString().slice(0, 10)}.xls`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   const openCreate = () => {
     setErrorMessage("");
     setEditingId(null);
@@ -387,6 +423,10 @@ export default function Users() {
         name: selectedUser.name,
         email: selectedUser.email,
         phone: selectedUser.phone,
+        tin: selectedUser.tin || "",
+        nida: selectedUser.nida || "",
+        bank_name: selectedUser.bank_name || "",
+        bank_account_number: selectedUser.bank_account_number || "",
         role: selectedUser.role,
         languages_spoken: parseLanguagesInput(
           selectedUser.languages_spoken_list,
@@ -488,6 +528,10 @@ export default function Users() {
         name: form.name,
         email: form.email,
         phone: form.phone,
+        tin: form.tin.trim() || null,
+        nida: form.nida.trim() || null,
+        bank_name: form.bank_name.trim() || null,
+        bank_account_number: form.bank_account_number.trim() || null,
         role: form.role,
         languages_spoken:
           form.role === "Driver"
@@ -806,6 +850,11 @@ export default function Users() {
             Manage system users, permissions, and account status.
           </p>
         </div>
+        <div className="flex items-center gap-3">
+        <button type="button" onClick={exportExcel} disabled={isLoading || !filteredUsers.length}
+          className="flex items-center gap-2 px-4 py-2.5 border border-slate-300 rounded-xl text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40">
+          <FileSpreadsheet className="w-4 h-4" /> Export Excel
+        </button>
         <button
           onClick={openCreate}
           className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-amber-400 to-amber-600 text-white rounded-xl font-medium text-sm hover:opacity-90 transition-opacity shadow-lg shadow-amber-500/25"
@@ -813,6 +862,7 @@ export default function Users() {
           <Plus className="w-4 h-4" />
           New User
         </button>
+        </div>
       </div>
 
       {errorMessage && (
@@ -923,6 +973,7 @@ export default function Users() {
                   "Email",
                   "Phone",
                   "Role",
+                  "Vehicle",
                   "Languages",
                   "Experience",
                   "Driver Licence",
@@ -1056,6 +1107,9 @@ export default function Users() {
                       {user.role}
                     </span>
                   </td>
+                  <td className="py-4 px-6 text-sm text-slate-600 min-w-[180px]">
+                    {assignedVehicleLabel(user)}
+                  </td>
                   <td className="py-4 px-6">
                     {Array.isArray(user.languages_spoken_list) &&
                     user.languages_spoken_list.length > 0 ? (
@@ -1158,6 +1212,8 @@ export default function Users() {
             </div>
 
             <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <h3 className="md:col-span-2 text-base font-semibold text-white border-b border-slate-700 pb-2 mt-2">Personal Details</h3>
+
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-slate-300 mb-2">
                   Full Name
@@ -1204,6 +1260,53 @@ export default function Users() {
                 </div>
               </div>
 
+              <h3 className="md:col-span-2 text-base font-semibold text-white border-b border-slate-700 pb-2 mt-2">Identification Details</h3>
+              <div>
+                <label htmlFor="user-tin" className="block text-sm font-medium text-slate-300 mb-2">TIN</label>
+                <input
+                  id="user-tin"
+                  type="text"
+                  maxLength={50}
+                  value={form.tin}
+                  onChange={(e) => setForm({ ...form, tin: e.target.value })}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-amber-500"
+                />
+              </div>
+              <div>
+                <label htmlFor="user-nida" className="block text-sm font-medium text-slate-300 mb-2">NIDA Number</label>
+                <input
+                  id="user-nida"
+                  type="text"
+                  maxLength={50}
+                  value={form.nida}
+                  onChange={(e) => setForm({ ...form, nida: e.target.value })}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-amber-500"
+                />
+              </div>
+              <h3 className="md:col-span-2 text-base font-semibold text-white border-b border-slate-700 pb-2 mt-2">Bank Details</h3>
+              <div>
+                <label htmlFor="user-bank_name" className="block text-sm font-medium text-slate-300 mb-2">Bank Name</label>
+                <input
+                  id="user-bank_name"
+                  type="text"
+                  maxLength={255}
+                  value={form.bank_name}
+                  onChange={(e) => setForm({ ...form, bank_name: e.target.value })}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-amber-500"
+                />
+              </div>
+              <div>
+                <label htmlFor="user-bank_account_number" className="block text-sm font-medium text-slate-300 mb-2">Bank Account Number</label>
+                <input
+                  id="user-bank_account_number"
+                  type="text"
+                  maxLength={100}
+                  value={form.bank_account_number}
+                  onChange={(e) => setForm({ ...form, bank_account_number: e.target.value })}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-amber-500"
+                />
+              </div>
+              <h3 className="md:col-span-2 text-base font-semibold text-white border-b border-slate-700 pb-2 mt-2">Account Details</h3>
               <div>
                 <label className="block text-sm font-medium text-slate-300 mb-2">
                   Role

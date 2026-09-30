@@ -4,8 +4,10 @@ import {
   Calendar,
   Car,
   ClipboardList,
+  Download,
   Edit,
   FileText,
+  Loader,
   MapPin,
   Plus,
   Search,
@@ -15,10 +17,24 @@ import {
   X,
 } from "lucide-react";
 import Swal from "sweetalert2";
+import Select from "react-select";
 import { apiFetch } from "../utils/api";
 
 const DEFAULT_VEHICLE_LEASE_TYPE = "Short-Term Lease";
-const VEHICLE_LEASE_TYPES = ["Short-Term Lease", "Long-Term Lease"];
+const SUBCONTRACT_LEASE_TYPE = "Subcontract";
+const VEHICLE_LEASE_TYPES = [
+  "Short-Term Lease",
+  "Long-Term Lease",
+  SUBCONTRACT_LEASE_TYPE,
+];
+const STATUS_FILTERS = [
+  "Assigned",
+  "Pending",
+  "In Progress",
+  "Completed",
+  "Cancelled",
+];
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 const createFormState = () => ({
   leadId: "",
@@ -61,6 +77,63 @@ const formatDateTime = (value) => {
     hour: "2-digit",
     minute: "2-digit",
   });
+};
+
+const parseIsoDate = (value) => {
+  if (!value || typeof value !== "string") return null;
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) return null;
+  return Date.UTC(year, month - 1, day);
+};
+
+const toIsoDate = (utcMs) => {
+  if (!Number.isFinite(utcMs)) return "";
+  return new Date(utcMs).toISOString().slice(0, 10);
+};
+
+const filenameFromHeader = (disposition, fallback) => {
+  if (!disposition) return fallback;
+
+  const utfMatch = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utfMatch?.[1]) {
+    return decodeURIComponent(utfMatch[1]);
+  }
+
+  const basicMatch = disposition.match(/filename="?([^";]+)"?/i);
+  if (basicMatch?.[1]) {
+    return basicMatch[1];
+  }
+
+  return fallback;
+};
+
+const isDriverRequiredForLeaseType = (vehicleLeaseType) =>
+  (vehicleLeaseType || DEFAULT_VEHICLE_LEASE_TYPE) !== SUBCONTRACT_LEASE_TYPE;
+
+const countInclusiveDaysInWindow = (allocation, fromDate, toDate) => {
+  const allocationStart = parseIsoDate(
+    allocation?.startDate || allocation?.safari?.startDate || "",
+  );
+  const allocationEnd = parseIsoDate(
+    allocation?.endDate ||
+      allocation?.safari?.endDate ||
+      allocation?.startDate ||
+      allocation?.safari?.startDate ||
+      "",
+  );
+
+  if (!Number.isFinite(allocationStart) || !Number.isFinite(allocationEnd)) {
+    return 0;
+  }
+
+  const rangeStart = parseIsoDate(fromDate || "") ?? allocationStart;
+  const rangeEnd = parseIsoDate(toDate || "") ?? allocationEnd;
+
+  const start = Math.max(allocationStart, rangeStart);
+  const end = Math.min(allocationEnd, rangeEnd);
+
+  if (end < start) return 0;
+  return Math.floor((end - start) / DAY_MS) + 1;
 };
 
 const normalizeLead = (lead) => ({
@@ -132,6 +205,7 @@ const normalizeQuotation = (quotation) => ({
 
 const normalizeVehicle = (vehicle) => ({
   id: Number(vehicle.id || 0),
+  ownershipType: vehicle.ownership_type || vehicle.ownershipType || "Internal",
   vehicleNo: vehicle.vehicle_no || vehicle.vehicleNo || "",
   plateNo: vehicle.plate_no || vehicle.plateNo || "",
   make: vehicle.make || "",
@@ -342,6 +416,10 @@ const getLeaseDays = (startDate, endDate) => {
 };
 
 const getVehicleLeaseType = (vehicle) => {
+  if (String(vehicle.ownershipType || "").toLowerCase() === "subcontracted") {
+    return SUBCONTRACT_LEASE_TYPE;
+  }
+
   if (!isLeaseVehicle(vehicle)) return DEFAULT_VEHICLE_LEASE_TYPE;
   if (vehicle.leaseType === "Long-Term Lease") return "Long-Term Lease";
 
@@ -384,6 +462,12 @@ export default function SafariAllocations() {
   const [users, setUsers] = useState([]);
   const [allocations, setAllocations] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState("All");
+  const [vehicleFilter, setVehicleFilter] = useState("All");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [clipOverlapDates, setClipOverlapDates] = useState(false);
+  const [exportType, setExportType] = useState("");
   const [reportRangeStart, setReportRangeStart] = useState("");
   const [reportRangeEnd, setReportRangeEnd] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -532,7 +616,7 @@ export default function SafariAllocations() {
     // safari (client/group name) when editing. createSafariOptions filters
     // already-allocated leads out for the create flow.
     const allocatablePIs = proformas.filter((pi) =>
-      ["Confirmed", "Partially Allocated", "Allocated"].includes(pi.status),
+      ["Confirmed", "Partially Allocated", "Allocated", "Deposit", "Paid"].includes(pi.status),
     );
 
     const latestProformaByLead = new Map();
@@ -717,8 +801,44 @@ export default function SafariAllocations() {
 
   const filteredAllocations = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
-    if (!query) return resolvedAllocations;
+    const overlapsRange = (allocation) => {
+      if (!dateFrom && !dateTo) return true;
+
+      const allocationStart =
+        allocation?.startDate || allocation?.safari?.startDate || "";
+      const allocationEnd =
+        allocation?.endDate ||
+        allocation?.safari?.endDate ||
+        allocationStart ||
+        "";
+
+      if (!allocationStart && !allocationEnd) return false;
+
+      const effectiveStart = allocationStart || allocationEnd;
+      const effectiveEnd = allocationEnd || allocationStart;
+
+      if (dateFrom && effectiveEnd < dateFrom) return false;
+      if (dateTo && effectiveStart > dateTo) return false;
+      return true;
+    };
+
     return resolvedAllocations.filter((allocation) => {
+      if (statusFilter !== "All" && allocation.status !== statusFilter) {
+        return false;
+      }
+      if (
+        vehicleFilter !== "All" &&
+        String(allocation?.vehicle?.id || allocation?.vehicleId || "") !==
+          String(vehicleFilter)
+      ) {
+        return false;
+      }
+      if (!overlapsRange(allocation)) {
+        return false;
+      }
+
+      if (!query) return true;
+
       return (
         String(allocation.safari?.bookingRef || "")
           .toLowerCase()
@@ -742,7 +862,63 @@ export default function SafariAllocations() {
           .includes(query)
       );
     });
-  }, [resolvedAllocations, searchTerm]);
+  }, [
+    resolvedAllocations,
+    searchTerm,
+    statusFilter,
+    vehicleFilter,
+    dateFrom,
+    dateTo,
+  ]);
+
+  const vehicleFilterOptions = useMemo(() => {
+    const byId = new Map();
+    resolvedAllocations.forEach((allocation) => {
+      const id = Number(allocation?.vehicle?.id || allocation?.vehicleId || 0);
+      if (!id || byId.has(id)) return;
+
+      const vehicleNo = allocation?.vehicle?.vehicleNo || "-";
+      const plateNo = allocation?.vehicle?.plateNo || "";
+      byId.set(id, {
+        id,
+        label: plateNo ? `${vehicleNo} (${plateNo})` : vehicleNo,
+      });
+    });
+
+    return Array.from(byId.values()).sort((a, b) =>
+      a.label.localeCompare(b.label),
+    );
+  }, [resolvedAllocations]);
+
+  const clientInsights = useMemo(() => {
+    const isScheduledStatus = (status) =>
+      status === "Assigned" || status === "Pending";
+
+    const scheduledSafariDays = filteredAllocations.reduce(
+      (sum, allocation) =>
+        isScheduledStatus(allocation.status)
+          ? sum + countInclusiveDaysInWindow(allocation, dateFrom, dateTo)
+          : sum,
+      0,
+    );
+
+    const totalSafariDays = filteredAllocations.reduce(
+      (sum, allocation) =>
+        sum + countInclusiveDaysInWindow(allocation, dateFrom, dateTo),
+      0,
+    );
+
+    return {
+      scheduledSafariDays,
+      totalSafariDays,
+      allocationCount: filteredAllocations.length,
+      hasData: filteredAllocations.length > 0,
+      rangeLabel:
+        dateFrom || dateTo
+          ? `${toIsoDate(parseIsoDate(dateFrom || "") ?? Number.NaN) || "Any"} to ${toIsoDate(parseIsoDate(dateTo || "") ?? Number.NaN) || "Any"}`
+          : "all dates",
+    };
+  }, [filteredAllocations, dateFrom, dateTo]);
 
   const activeLeaseContractVehicleIds = useMemo(() => {
     const ids = new Set();
@@ -795,6 +971,8 @@ export default function SafariAllocations() {
         resolvedLeaseType +
         (vehicle.leaseClientName ? ": " + vehicle.leaseClientName : "")
       : "";
+    const ownershipLabel =
+      vehicle.ownershipType === "Subcontracted" ? " | Subcontracted" : "";
     const driverLabel = vehicle.assignedDriverName
       ? " | Driver: " + vehicle.assignedDriverName
       : "";
@@ -802,7 +980,7 @@ export default function SafariAllocations() {
       ? " - " + vehicle.make + " " + (vehicle.model || "")
       : "";
 
-    return baseLabel + leaseLabel + driverLabel + makeLabel;
+    return baseLabel + leaseLabel + ownershipLabel + driverLabel + makeLabel;
   };
 
   const rangesOverlap = (aStart, aEnd, bStart, bEnd) => {
@@ -932,7 +1110,9 @@ export default function SafariAllocations() {
       String(vehicleId),
     )
       ? "Long-Term Lease"
-      : DEFAULT_VEHICLE_LEASE_TYPE;
+      : matchedVehicle?.ownershipType === "Subcontracted"
+        ? SUBCONTRACT_LEASE_TYPE
+        : DEFAULT_VEHICLE_LEASE_TYPE;
 
     setForm((current) => ({
       ...current,
@@ -1030,7 +1210,19 @@ export default function SafariAllocations() {
       const isCurrent = String(v.id) === current;
       if (isCurrent) return true;
       if (otherSelected.has(String(v.id))) return false;
+      if (selectedVehicleLeaseType === SUBCONTRACT_LEASE_TYPE) {
+        if (v.ownershipType !== "Subcontracted") return false;
+        if (!["Available", "On Lease"].includes(String(v.status || ""))) {
+          return false;
+        }
+
+        return selectedDriverId
+          ? String(v.assignedDriverId || "") === selectedDriverId
+          : true;
+      }
+
       if (selectedVehicleLeaseType === "Long-Term Lease") {
+        if (v.ownershipType === "Subcontracted") return false;
         if (!activeLeaseContractVehicleIds.has(String(v.id))) return false;
         return selectedDriverId
           ? !v.assignedDriverId ||
@@ -1038,6 +1230,7 @@ export default function SafariAllocations() {
           : true;
       }
 
+      if (v.ownershipType === "Subcontracted") return false;
       if (v.status !== "Available") return false;
 
       return selectedDriverId
@@ -1237,16 +1430,21 @@ export default function SafariAllocations() {
         !range.endDate ||
         range.startDate > range.endDate ||
         range.pairs.length === 0 ||
-        range.pairs.some((pair) => !pair.vehicleId || !pair.driverId),
+        range.pairs.some(
+          (pair) =>
+            !pair.vehicleId ||
+            (isDriverRequiredForLeaseType(pair.vehicleLeaseType) &&
+              !pair.driverId),
+        ),
     );
 
     if (invalidRange) {
       setErrorMessage(
-        "Each date range must have valid From/To dates and fully selected vehicle/driver rows.",
+        "Each date range must have valid From/To dates and fully selected vehicle rows. Driver is required except for Subcontract.",
       );
       await Swal.fire({
         title: "Missing Required Fields",
-        text: "Each date range must have valid From/To dates and fully selected vehicle/driver rows.",
+        text: "Each date range must have valid From/To dates and fully selected vehicle rows. Driver is required except for Subcontract.",
         icon: "warning",
         background: "#0f172a",
         color: "#e2e8f0",
@@ -1266,7 +1464,10 @@ export default function SafariAllocations() {
         leadId: Number(form.leadId),
         proformaInvoiceId: safari?.piId ? Number(safari.piId) : null,
         vehicleId: Number(pair.vehicleId),
-        driverId: Number(pair.driverId),
+        driverId:
+          isDriverRequiredForLeaseType(pair.vehicleLeaseType) || pair.driverId
+            ? Number(pair.driverId)
+            : null,
         vehicleLeaseType: pair.vehicleLeaseType || DEFAULT_VEHICLE_LEASE_TYPE,
         startDate,
         endDate,
@@ -1371,6 +1572,96 @@ export default function SafariAllocations() {
     }
   };
 
+  const buildExportParams = () => {
+    const params = new URLSearchParams();
+    if (searchTerm.trim()) params.set("search", searchTerm.trim());
+    if (statusFilter !== "All") params.set("status", statusFilter);
+    if (vehicleFilter !== "All") params.set("vehicleId", vehicleFilter);
+    if (dateFrom) params.set("dateFrom", dateFrom);
+    if (dateTo) params.set("dateTo", dateTo);
+    if (clipOverlapDates) params.set("clipOverlapDates", "1");
+    return params;
+  };
+
+  const handleExportExcel = async () => {
+    setExportType("excel");
+    try {
+      const params = buildExportParams();
+      const query = params.toString();
+      const response = await apiFetch(
+        `/safari-allocations/export/excel${query ? `?${query}` : ""}`,
+      );
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload?.message || "Failed to export Excel.");
+      }
+
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = filenameFromHeader(
+        response.headers.get("content-disposition"),
+        "safari-allocations-report.csv",
+      );
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch (error) {
+      await Swal.fire({
+        title: "Export Failed",
+        text: error.message || "Failed to export Excel.",
+        icon: "error",
+        background: "#0f172a",
+        color: "#e2e8f0",
+      });
+    } finally {
+      setExportType("");
+    }
+  };
+
+  const handleExportPdf = async () => {
+    setExportType("pdf");
+    try {
+      const params = buildExportParams();
+      const query = params.toString();
+      const response = await apiFetch(
+        `/safari-allocations/export/pdf${query ? `?${query}` : ""}`,
+        { headers: { Accept: "application/pdf" } },
+      );
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload?.message || "Failed to export PDF.");
+      }
+
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = filenameFromHeader(
+        response.headers.get("content-disposition"),
+        "safari-allocations-report.pdf",
+      );
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch (error) {
+      await Swal.fire({
+        title: "Export Failed",
+        text: error.message || "Failed to export PDF.",
+        icon: "error",
+        background: "#0f172a",
+        color: "#e2e8f0",
+      });
+    } finally {
+      setExportType("");
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -1383,13 +1674,56 @@ export default function SafariAllocations() {
             proforma invoices.
           </p>
         </div>
-        <button
-          onClick={openCreate}
-          className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-amber-400 to-amber-600 text-white rounded-xl font-medium text-sm hover:opacity-90 transition-opacity shadow-lg shadow-amber-500/25"
-        >
-          <Plus className="w-4 h-4" />
-          New Allocation
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={clipOverlapDates}
+              onChange={(event) => setClipOverlapDates(event.target.checked)}
+              className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+            />
+            <span>Clip overlapping dates to filter period</span>
+          </label>
+          <button
+            type="button"
+            onClick={handleExportPdf}
+            disabled={isLoading || exportType === "pdf"}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 disabled:cursor-wait disabled:opacity-60"
+          >
+            {exportType === "pdf" ? (
+              <>
+                <Loader className="w-4 h-4 animate-spin" /> Exporting PDF...
+              </>
+            ) : (
+              <>
+                <FileText className="w-4 h-4" /> PDF Report
+              </>
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={handleExportExcel}
+            disabled={isLoading || exportType === "excel"}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60"
+          >
+            {exportType === "excel" ? (
+              <>
+                <Loader className="w-4 h-4 animate-spin" /> Exporting Excel...
+              </>
+            ) : (
+              <>
+                <Download className="w-4 h-4" /> Export Excel
+              </>
+            )}
+          </button>
+          <button
+            onClick={openCreate}
+            className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-amber-400 to-amber-600 text-white rounded-xl font-medium text-sm hover:opacity-90 transition-opacity shadow-lg shadow-amber-500/25"
+          >
+            <Plus className="w-4 h-4" />
+            New Allocation
+          </button>
+        </div>
       </div>
 
       {errorMessage && !isModalOpen && (
@@ -1513,18 +1847,104 @@ export default function SafariAllocations() {
         </div>
       </div>
 
-      <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div className="flex items-center gap-3 border-b border-slate-200 px-4 py-3 focus-within:border-amber-400 transition-colors">
-          <Search className="w-4 h-4 text-slate-400 shrink-0" />
+      {clientInsights.hasData && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <p className="text-sm text-blue-800">
+            Vehicles are on safari for{" "}
+            <span className="font-semibold">
+              {clientInsights.scheduledSafariDays}
+            </span>{" "}
+            scheduled day{clientInsights.scheduledSafariDays === 1 ? "" : "s"}{" "}
+            in the selected duration.
+          </p>
+          <p className="text-xs text-blue-700 mt-1">
+            Total safari vehicle-days in current filters:{" "}
+            <span className="font-semibold">
+              {clientInsights.totalSafariDays}
+            </span>{" "}
+            across{" "}
+            <span className="font-semibold">
+              {clientInsights.allocationCount}
+            </span>{" "}
+            allocation{clientInsights.allocationCount === 1 ? "" : "s"} (
+            {clientInsights.rangeLabel}).
+          </p>
+        </div>
+      )}
+
+      <div className="bg-white border border-slate-200 rounded-lg p-4 flex flex-wrap gap-3 items-center">
+        <div className="relative flex-1 min-w-[220px]">
+          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
             value={searchTerm}
             onChange={(event) => setSearchTerm(event.target.value)}
-            placeholder="Search by safari, group name, PI, vehicle, or driver"
-            className="w-full bg-transparent text-sm text-slate-900 placeholder-slate-400 outline-none"
+            placeholder="Search safari, group, PI, vehicle, or driver"
+            className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-sm"
           />
         </div>
 
+        <select
+          value={vehicleFilter}
+          onChange={(event) => setVehicleFilter(event.target.value)}
+          className="px-3 py-2 border border-slate-300 rounded-lg text-sm"
+        >
+          <option value="All">All Vehicles</option>
+          {vehicleFilterOptions.map((vehicle) => (
+            <option key={vehicle.id} value={vehicle.id}>
+              {vehicle.label}
+            </option>
+          ))}
+        </select>
+
+        <select
+          value={statusFilter}
+          onChange={(event) => setStatusFilter(event.target.value)}
+          className="px-3 py-2 border border-slate-300 rounded-lg text-sm"
+        >
+          <option value="All">All Statuses</option>
+          {STATUS_FILTERS.map((status) => (
+            <option key={status} value={status}>
+              {status}
+            </option>
+          ))}
+        </select>
+
+        <input
+          type="date"
+          value={dateFrom}
+          onChange={(event) => setDateFrom(event.target.value)}
+          max={dateTo || undefined}
+          className="px-3 py-2 border border-slate-300 rounded-lg text-sm"
+          aria-label="Date from"
+          title="Date from"
+        />
+        <input
+          type="date"
+          value={dateTo}
+          onChange={(event) => setDateTo(event.target.value)}
+          min={dateFrom || undefined}
+          className="px-3 py-2 border border-slate-300 rounded-lg text-sm"
+          aria-label="Date to"
+          title="Date to"
+        />
+
+        <button
+          type="button"
+          onClick={() => {
+            setSearchTerm("");
+            setVehicleFilter("All");
+            setStatusFilter("All");
+            setDateFrom("");
+            setDateTo("");
+          }}
+          className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-700 hover:bg-slate-50"
+        >
+          Clear Filters
+        </button>
+      </div>
+
+      <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-slate-200 text-sm">
             <thead className="table-head-gradient text-left text-xs uppercase tracking-wide text-slate-500">
@@ -1697,25 +2117,33 @@ export default function SafariAllocations() {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="md:col-span-2">
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                  <label htmlFor="safari-select" className="block text-xs font-medium text-slate-300 mb-1.5">
                     Safari *
                   </label>
-                  <select
-                    value={form.leadId}
-                    onChange={(event) => handleLeadChange(event.target.value)}
-                    disabled={isSaving || Boolean(editingId)}
-                    className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
-                  >
-                    <option value="">Select safari</option>
-                    {(editingId ? safariOptions : createSafariOptions).map(
-                      (safari) => (
-                        <option key={safari.leadId} value={safari.leadId}>
-                          Group: {safari.groupName || "-"} | {safari.bookingRef}{" "}
-                          | {safari.clientCompany} | {safari.piNo}
-                        </option>
-                      ),
-                    )}
-                  </select>
+                  <Select
+                    inputId="safari-select"
+                    options={editingId ? safariOptions : createSafariOptions}
+                    value={safariOptions.find((safari) => safari.leadId === form.leadId) || null}
+                    getOptionValue={(safari) => safari.leadId}
+                    getOptionLabel={(safari) => `Group: ${safari.groupName || "-"} | ${safari.bookingRef} | ${safari.clientCompany} | ${safari.piNo}`}
+                    onChange={(safari) => handleLeadChange(safari?.leadId || "")}
+                    isDisabled={isSaving || Boolean(editingId)}
+                    isSearchable
+                    placeholder="Select safari"
+                    noOptionsMessage={() => "No matching safaris"}
+                    className="text-sm"
+                    menuPortalTarget={document.body}
+                    menuPosition="fixed"
+                    styles={{
+                      control: (base) => ({ ...base, backgroundColor: "#1e293b", borderColor: "#334155", borderRadius: 8, minHeight: 42 }),
+                      singleValue: (base) => ({ ...base, color: "#fff" }),
+                      input: (base) => ({ ...base, color: "#fff" }),
+                      placeholder: (base) => ({ ...base, color: "#94a3b8" }),
+                      menu: (base) => ({ ...base, backgroundColor: "#1e293b" }),
+                      option: (base, state) => ({ ...base, color: "#fff", backgroundColor: state.isSelected ? "#475569" : state.isFocused ? "#334155" : "transparent", overflowWrap: "anywhere" }),
+                      menuPortal: (base) => ({ ...base, zIndex: 9999 }),
+                    }}
+                  />
                   {form.leadId && (
                     <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs">
                       <div>
@@ -1872,10 +2300,15 @@ export default function SafariAllocations() {
                               disabled={isSaving}
                               className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
                             >
-                              <option value="Short-Term Lease">
-                                Short Term
-                              </option>
-                              <option value="Long-Term Lease">Long Term</option>
+                              {VEHICLE_LEASE_TYPES.map((leaseType) => (
+                                <option key={leaseType} value={leaseType}>
+                                  {leaseType === "Short-Term Lease"
+                                    ? "Short Term"
+                                    : leaseType === "Long-Term Lease"
+                                      ? "Long Term"
+                                      : "Subcontract"}
+                                </option>
+                              ))}
                             </select>
                           </div>
 
@@ -1915,6 +2348,11 @@ export default function SafariAllocations() {
                                 Driver
                                 {range.pairs.length > 1
                                   ? " " + (pairIdx + 1)
+                                  : ""}
+                                {(pair.vehicleLeaseType ||
+                                  DEFAULT_VEHICLE_LEASE_TYPE) ===
+                                SUBCONTRACT_LEASE_TYPE
+                                  ? " (Optional for Subcontract)"
                                   : ""}
                               </label>
                               <select

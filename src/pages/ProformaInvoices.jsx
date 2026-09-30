@@ -386,7 +386,7 @@ export default function ProformaInvoices() {
         const matchStatus =
           statusFilter === "All" ||
           (statusFilter === "Allocate"
-            ? ["Confirmed", "Partially Allocated"].includes(pi.status)
+            ? ["Confirmed", "Partially Allocated", "Deposit", "Paid"].includes(pi.status)
             : pi.status === statusFilter);
 
         const itineraryDates = (pi.daySections || [])
@@ -1101,7 +1101,7 @@ export default function ProformaInvoices() {
                             Confirm
                           </button>
                         )}
-                        {["Confirmed", "Partially Allocated"].includes(
+                        {["Confirmed", "Partially Allocated", "Deposit", "Paid"].includes(
                           pi.status,
                         ) && (
                           <button

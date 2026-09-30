@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
+import Select from "react-select";
 import {
   Search,
   Plus,
   Wrench,
+  Eye,
+  Download,
   Edit,
   Trash2,
   X,
@@ -33,16 +36,66 @@ const statusConfig = {
   },
 };
 
+const createServiceItem = () => ({
+  service: "",
+  details: "",
+  cost: "",
+});
+
+const parsePartsReplacedItems = (value) => {
+  const trimmed = (value || "").trim();
+
+  if (!trimmed) {
+    return [createServiceItem()];
+  }
+
+  return trimmed
+    .split(/\r?\n|,|;/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => ({
+      service: part,
+      details: "",
+      cost: "",
+    }));
+};
+
+const syncPartsReplacedIntoServiceItems = (
+  partsReplaced,
+  serviceItems = [],
+) => {
+  const trimmed = (partsReplaced || "").trim();
+  const hasExistingContent = (serviceItems || []).some(
+    (item) =>
+      (item?.service || "").trim() !== "" ||
+      (item?.details || "").trim() !== "" ||
+      (item?.cost || "") !== "",
+  );
+
+  if (!trimmed) {
+    return serviceItems && serviceItems.length > 0
+      ? serviceItems
+      : [createServiceItem()];
+  }
+
+  if (hasExistingContent) {
+    return serviceItems;
+  }
+
+  return parsePartsReplacedItems(trimmed);
+};
+
 const createServiceForm = () => ({
   vehicleId: "",
   serviceCenter: "",
   serviceType: "",
   serviceDate: "",
+  odometerOut: "",
   odometerIn: "",
-  partsReplaced: "",
   cost: "",
   notes: "",
   status: "In Service",
+  serviceItems: [createServiceItem()],
 });
 
 const normalizeVehicle = (vehicle) => ({
@@ -58,6 +111,18 @@ const normalizeService = (entry) => ({
   vehicleId: Number(entry.vehicle_id || entry.vehicleId || 0),
   serviceCenter: entry.service_center || entry.serviceCenter || "",
   serviceType: entry.service_type || entry.serviceType || "",
+  serviceItems: Array.isArray(entry.service_items || entry.serviceItems)
+    ? (entry.service_items || entry.serviceItems)
+        .map((item) => ({
+          service: item?.service || "",
+          details: item?.details || "",
+          cost:
+            item?.cost === null || item?.cost === undefined
+              ? ""
+              : String(item.cost),
+        }))
+        .filter((item) => item.service || item.details || item.cost !== "")
+    : [],
   serviceDate:
     entry.service_date ||
     entry.serviceDate ||
@@ -114,10 +179,99 @@ const formatDate = (value) => {
   if (!value) return "-";
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleDateString();
+  return parsed.toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
 };
 
-const formatCurrency = (value) => `USD ${Number(value || 0).toLocaleString()}`;
+const formatServiceItemsDisplay = (items = []) => {
+  const entries = (items || [])
+    .map((item) => {
+      const serviceName = item?.service?.trim();
+      const details = item?.details?.trim();
+      const formattedCost =
+        item?.cost !== undefined && item?.cost !== null && item?.cost !== ""
+          ? ` (${formatCurrency(item.cost)})`
+          : "";
+
+      if (!serviceName && !details && !formattedCost) return "";
+
+      const label = [serviceName, details].filter(Boolean).join(" — ");
+      return `${label}${formattedCost}`.trim();
+    })
+    .filter(Boolean);
+
+  return entries.length ? entries.join(" • ") : "-";
+};
+
+const formatCurrency = (value) =>
+  `TZS ${Number(value || 0).toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
+
+const parseFilenameFromHeader = (contentDisposition, fallback) => {
+  if (!contentDisposition) return fallback;
+  const utfMatch = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utfMatch?.[1]) {
+    try {
+      return decodeURIComponent(utfMatch[1]);
+    } catch {
+      return utfMatch[1];
+    }
+  }
+  const basicMatch = contentDisposition.match(/filename="?([^";]+)"?/i);
+  return basicMatch?.[1] || fallback;
+};
+
+const vehicleSelectStyles = {
+  control: (base) => ({
+    ...base,
+    borderRadius: 12,
+    borderColor: "#cbd5e1",
+    minHeight: 42,
+    boxShadow: "none",
+    ":hover": { borderColor: "#94a3b8" },
+  }),
+  menu: (base) => ({
+    ...base,
+    zIndex: 60,
+  }),
+};
+
+const modalVehicleSelectStyles = {
+  ...vehicleSelectStyles,
+  control: (base) => ({
+    ...base,
+    borderRadius: 12,
+    borderColor: "#334155",
+    minHeight: 42,
+    boxShadow: "none",
+    backgroundColor: "#1e293b",
+    ":hover": { borderColor: "#f59e0b" },
+  }),
+  singleValue: (base) => ({
+    ...base,
+    color: "#ffffff",
+  }),
+  input: (base) => ({
+    ...base,
+    color: "#ffffff",
+  }),
+  placeholder: (base) => ({
+    ...base,
+    color: "#94a3b8",
+  }),
+  menu: (base) => ({
+    ...base,
+    backgroundColor: "#0f172a",
+    zIndex: 60,
+  }),
+  option: (base, state) => ({
+    ...base,
+    backgroundColor: state.isFocused ? "#1e293b" : "#0f172a",
+    color: "#e2e8f0",
+  }),
+};
 
 export default function VehicleServices() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -131,13 +285,36 @@ export default function VehicleServices() {
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [viewingService, setViewingService] = useState(null);
   const [editingServiceId, setEditingServiceId] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
   const [form, setForm] = useState(createServiceForm());
 
+  const lineItemsTotalCost = useMemo(
+    () =>
+      (form.serviceItems || []).reduce((sum, item) => {
+        const numericCost = Number(item?.cost || 0);
+        return sum + (Number.isFinite(numericCost) ? numericCost : 0);
+      }, 0),
+    [form.serviceItems],
+  );
+
   const vehiclesById = useMemo(
     () => new Map(vehicles.map((vehicle) => [Number(vehicle.id), vehicle])),
     [vehicles],
+  );
+
+  const vehicleOptions = useMemo(() => {
+    return vehicles.map((vehicle) => ({
+      value: String(vehicle.id),
+      label:
+        `${vehicle.vehicleNo || "Unknown"} (${vehicle.plateNo || "-"}) ${vehicle.make || ""} ${vehicle.model || ""}`.trim(),
+    }));
+  }, [vehicles]);
+
+  const vehicleFilterOptions = useMemo(
+    () => [{ value: "All", label: "All Vehicles" }, ...vehicleOptions],
+    [vehicleOptions],
   );
 
   const loadData = async () => {
@@ -196,6 +373,48 @@ export default function VehicleServices() {
     setIsModalOpen(true);
   };
 
+  const handleExport = async (type) => {
+    try {
+      const params = new URLSearchParams();
+      if (searchTerm.trim()) params.set("search", searchTerm.trim());
+      if (statusFilter !== "All") params.set("status", statusFilter);
+      if (vehicleFilter !== "All") params.set("vehicleId", vehicleFilter);
+
+      const query = params.toString();
+      const response = await apiFetch(
+        `/vehicle-services/export/${type}${query ? `?${query}` : ""}`,
+      );
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload?.message || `Failed to export ${type}.`);
+      }
+
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      const fallbackName = `vehicle-services.${type === "excel" ? "csv" : "pdf"}`;
+      link.download = parseFilenameFromHeader(
+        response.headers.get("content-disposition"),
+        fallbackName,
+      );
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch (error) {
+      setErrorMessage(error.message || "Failed to export service records.");
+      await Swal.fire({
+        title: "Export Failed",
+        text: error.message || "Failed to export service records.",
+        icon: "error",
+        background: "#0f172a",
+        color: "#e2e8f0",
+      });
+    }
+  };
+
   const openEdit = async (service) => {
     setErrorMessage("");
 
@@ -207,20 +426,34 @@ export default function VehicleServices() {
         throw new Error(payload?.message || "Unable to fetch service record.");
       }
 
-      const entry = normalizeService(
-        payload?.data || payload?.service || payload,
-      );
+      const serviceRecord =
+        payload?.vehicleService || payload?.data || payload?.service || payload;
+      const entry = normalizeService(serviceRecord);
       setEditingServiceId(entry.id);
+      const nextServiceItems =
+        entry.serviceItems && entry.serviceItems.length > 0
+          ? entry.serviceItems.map((item) => ({
+              service: item.service || "",
+              details: item.details || "",
+              cost:
+                item.cost === "" || item.cost === null ? "" : String(item.cost),
+            }))
+          : [];
+
       setForm({
         vehicleId: String(entry.vehicleId || ""),
-        serviceCenter: entry.serviceCenter,
-        serviceType: entry.serviceType,
-        serviceDate: toDateInput(entry.serviceDate),
+        serviceCenter: entry.serviceCenter || "",
+        serviceType: entry.serviceType || "",
+        serviceDate: toDateInput(
+          entry.serviceDate || entry.serviceDateOut || "",
+        ),
+        odometerOut: entry.odometerOut === "" ? "" : String(entry.odometerOut),
         odometerIn: entry.odometerIn === "" ? "" : String(entry.odometerIn),
-        partsReplaced: entry.partsReplaced,
-        cost: entry.cost === "" ? "" : String(entry.cost),
-        notes: entry.notes,
-        status: entry.status,
+        cost:
+          entry.cost === "" || entry.cost === null ? "" : String(entry.cost),
+        notes: entry.notes || "",
+        status: entry.status || "In Service",
+        serviceItems: nextServiceItems,
       });
       setIsModalOpen(true);
     } catch (error) {
@@ -299,14 +532,41 @@ export default function VehicleServices() {
     setErrorMessage("");
 
     try {
+      const fallbackServiceItems = form.serviceItems || [];
+
+      const serviceItems = (fallbackServiceItems || [])
+        .map((item) => ({
+          service: (item.service || "").trim(),
+          details: (item.details || "").trim(),
+          cost:
+            item.cost === "" || item.cost === null || item.cost === undefined
+              ? null
+              : Number(item.cost),
+        }))
+        .filter(
+          (item) =>
+            item.service !== "" || item.details !== "" || item.cost !== null,
+        );
+
+      const totalFromItems = serviceItems.reduce(
+        (sum, item) => sum + Number(item.cost || 0),
+        0,
+      );
+
       const payload = {
         vehicleId: Number(form.vehicleId),
         serviceCenter: form.serviceCenter || null,
         serviceType: form.serviceType || null,
+        serviceItems,
         serviceDate: form.serviceDate,
+        odometerOut: form.odometerOut === "" ? null : Number(form.odometerOut),
         odometerIn: form.odometerIn === "" ? null : Number(form.odometerIn),
-        partsReplaced: form.partsReplaced || null,
-        cost: form.cost === "" ? null : Number(form.cost),
+        cost:
+          form.cost === ""
+            ? totalFromItems > 0
+              ? totalFromItems
+              : null
+            : Number(form.cost),
         notes: form.notes || null,
         status: form.status,
       };
@@ -380,7 +640,6 @@ export default function VehicleServices() {
         searchableVehicle.includes(query) ||
         (service.serviceCenter || "").toLowerCase().includes(query) ||
         (service.serviceType || "").toLowerCase().includes(query) ||
-        (service.partsReplaced || "").toLowerCase().includes(query) ||
         (service.notes || "").toLowerCase().includes(query);
 
       const matchStatus =
@@ -404,23 +663,75 @@ export default function VehicleServices() {
     setSearchParams(next, { replace: true });
   };
 
+  const selectedVehicleFilterOption =
+    vehicleFilterOptions.find((option) => option.value === vehicleFilter) ||
+    vehicleFilterOptions[0];
+
+  const selectedVehicleFormOption =
+    vehicleOptions.find((option) => option.value === String(form.vehicleId)) ||
+    null;
+
+  const updateServiceItem = (index, key, value) => {
+    setForm((current) => ({
+      ...current,
+      serviceItems: (current.serviceItems || []).map((item, itemIndex) =>
+        itemIndex === index ? { ...item, [key]: value } : item,
+      ),
+    }));
+  };
+
+  const addServiceItem = () => {
+    setForm((current) => ({
+      ...current,
+      serviceItems: [...(current.serviceItems || []), createServiceItem()],
+    }));
+  };
+
+  const removeServiceItem = (index) => {
+    setForm((current) => {
+      const next = (current.serviceItems || []).filter(
+        (_, itemIndex) => itemIndex !== index,
+      );
+
+      return {
+        ...current,
+        serviceItems: next.length > 0 ? next : [createServiceItem()],
+      };
+    });
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Vehicle Service</h1>
           <p className="text-slate-500 mt-1">
-            Record vehicle service dates, parts replaced, odometer readings,
-            cost and status.
+            Record vehicle service dates, odometer readings, cost and status.
           </p>
         </div>
-        <button
-          onClick={openNew}
-          className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-amber-400 to-amber-600 text-white rounded-xl font-medium text-sm hover:opacity-90 transition-opacity shadow-lg shadow-amber-500/25"
-        >
-          <Plus className="w-4 h-4" />
-          New Service Record
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={() => handleExport("excel")}
+            className="flex items-center gap-2 px-3 py-2.5 bg-white border border-slate-200 text-slate-700 rounded-xl font-medium text-sm hover:bg-slate-50 transition-colors"
+          >
+            <Download className="w-4 h-4" />
+            Export Excel
+          </button>
+          <button
+            onClick={() => handleExport("pdf")}
+            className="flex items-center gap-2 px-3 py-2.5 bg-white border border-slate-200 text-slate-700 rounded-xl font-medium text-sm hover:bg-slate-50 transition-colors"
+          >
+            <Download className="w-4 h-4" />
+            Export PDF
+          </button>
+          <button
+            onClick={openNew}
+            className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-amber-400 to-amber-600 text-white rounded-xl font-medium text-sm hover:opacity-90 transition-opacity shadow-lg shadow-amber-500/25"
+          >
+            <Plus className="w-4 h-4" />
+            New Service Record
+          </button>
+        </div>
       </div>
 
       {errorMessage && !isModalOpen && (
@@ -470,20 +781,19 @@ export default function VehicleServices() {
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <select
-              value={vehicleFilter}
-              onChange={(event) =>
-                handleVehicleFilterChange(event.target.value)
-              }
-              className="rounded-xl bg-slate-100 px-3 py-2 text-sm font-medium text-slate-600 outline-none hover:bg-slate-200"
-            >
-              <option value="All">All Vehicles</option>
-              {vehicles.map((vehicle) => (
-                <option key={vehicle.id} value={vehicle.id}>
-                  {vehicle.vehicleNo} ({vehicle.plateNo})
-                </option>
-              ))}
-            </select>
+            <div className="min-w-[280px]">
+              <Select
+                options={vehicleFilterOptions}
+                value={selectedVehicleFilterOption}
+                onChange={(option) =>
+                  handleVehicleFilterChange(option?.value || "All")
+                }
+                isClearable={false}
+                isSearchable
+                placeholder="Search vehicle..."
+                styles={vehicleSelectStyles}
+              />
+            </div>
             {["All", ...serviceStatuses].map((status) => (
               <button
                 key={status}
@@ -510,9 +820,9 @@ export default function VehicleServices() {
                   "Vehicle",
                   "Service Center",
                   "Type",
+                  "Line Items",
                   "Date",
                   "Odometer",
-                  "Parts Replaced",
                   "Cost",
                   "Status",
                   "Notes",
@@ -532,7 +842,7 @@ export default function VehicleServices() {
                 <tr>
                   <td
                     className="py-14 px-4 text-center text-slate-500"
-                    colSpan={10}
+                    colSpan={11}
                   >
                     Loading service records...
                   </td>
@@ -541,7 +851,7 @@ export default function VehicleServices() {
                 <tr>
                   <td
                     className="py-14 px-4 text-center text-slate-500"
-                    colSpan={10}
+                    colSpan={11}
                   >
                     No service records found.
                   </td>
@@ -566,7 +876,7 @@ export default function VehicleServices() {
                           </div>
                           <div>
                             <Link
-                              to={`/vehicles/${vehicle?.id || service.vehicleId}`}
+                              to={`/vehicles/view?id=${vehicle?.id || service.vehicleId}`}
                               className="text-sm text-slate-900 font-medium whitespace-nowrap hover:text-cyan-700 hover:underline"
                             >
                               {vehicle?.vehicleNo || "Unknown"}
@@ -584,19 +894,21 @@ export default function VehicleServices() {
                       <td className="py-3 px-4 text-sm text-slate-700 whitespace-nowrap">
                         {service.serviceType || "-"}
                       </td>
+                      <td className="py-3 px-4 text-sm text-slate-600 max-w-[340px] align-top">
+                        <span
+                          className="block leading-relaxed whitespace-normal break-words"
+                          title={formatServiceItemsDisplay(
+                            service.serviceItems,
+                          )}
+                        >
+                          {formatServiceItemsDisplay(service.serviceItems)}
+                        </span>
+                      </td>
                       <td className="py-3 px-4 text-sm text-slate-700 whitespace-nowrap">
                         {formatDate(service.serviceDate)}
                       </td>
                       <td className="py-3 px-4 text-sm text-slate-700 whitespace-nowrap">
                         {service.odometerIn === "" ? "-" : service.odometerIn}
-                      </td>
-                      <td className="py-3 px-4 text-sm text-slate-500 max-w-[220px]">
-                        <span
-                          className="block truncate"
-                          title={service.partsReplaced}
-                        >
-                          {service.partsReplaced || "-"}
-                        </span>
                       </td>
                       <td className="py-3 px-4 text-sm text-slate-700 whitespace-nowrap">
                         {service.cost === ""
@@ -618,6 +930,14 @@ export default function VehicleServices() {
                       </td>
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setViewingService(service)}
+                            className="p-1.5 text-slate-400 hover:text-cyan-600 hover:bg-cyan-50 rounded-lg transition-colors"
+                            title="View"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
                           <button
                             onClick={() => openEdit(service)}
                             className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
@@ -654,7 +974,7 @@ export default function VehicleServices() {
                     : "New Service Record"}
                 </h2>
                 <p className="text-sm text-slate-400 mt-1">
-                  Track vehicle service details and parts replaced.
+                  Track vehicle service details and line items.
                 </p>
               </div>
               <button
@@ -682,23 +1002,20 @@ export default function VehicleServices() {
                     <label className="block text-xs font-medium text-slate-400 mb-1.5">
                       Vehicle <span className="text-red-400">*</span>
                     </label>
-                    <select
-                      value={form.vehicleId}
-                      onChange={(event) =>
+                    <Select
+                      options={vehicleOptions}
+                      value={selectedVehicleFormOption}
+                      onChange={(option) =>
                         setForm((current) => ({
                           ...current,
-                          vehicleId: event.target.value,
+                          vehicleId: option?.value || "",
                         }))
                       }
-                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500"
-                    >
-                      <option value="">Select vehicle...</option>
-                      {vehicles.map((vehicle) => (
-                        <option key={vehicle.id} value={vehicle.id}>
-                          {vehicle.vehicleNo} ({vehicle.plateNo})
-                        </option>
-                      ))}
-                    </select>
+                      isClearable
+                      isSearchable
+                      placeholder="Select vehicle..."
+                      styles={modalVehicleSelectStyles}
+                    />
                   </div>
 
                   <div>
@@ -793,7 +1110,104 @@ export default function VehicleServices() {
                       }
                       className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500"
                     />
+                    <p className="mt-1 text-[11px] text-slate-500">
+                      Line items total: {formatCurrency(lineItemsTotalCost)}
+                    </p>
                   </div>
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-semibold text-slate-300 flex items-center gap-2">
+                    <Wrench className="w-4 h-4 text-amber-400" />
+                    Service Line Items
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={addServiceItem}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-amber-400 bg-amber-500 px-3 py-1.5 text-xs font-semibold text-slate-900 shadow-sm hover:bg-amber-400"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Add Item
+                  </button>
+                </div>
+
+                <div className="space-y-3">
+                  {(form.serviceItems || []).map((item, index) => (
+                    <div
+                      key={`service-item-${index}`}
+                      className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm"
+                    >
+                      <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+                        <div className="md:col-span-4">
+                          <label className="block text-xs font-medium text-slate-600 mb-1.5">
+                            Service <span className="text-red-400">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={item.service}
+                            onChange={(event) =>
+                              updateServiceItem(
+                                index,
+                                "service",
+                                event.target.value,
+                              )
+                            }
+                            placeholder="e.g. Change Tyres"
+                            className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-amber-500"
+                          />
+                        </div>
+                        <div className="md:col-span-5">
+                          <label className="block text-xs font-medium text-slate-600 mb-1.5">
+                            Details
+                          </label>
+                          <input
+                            type="text"
+                            value={item.details}
+                            onChange={(event) =>
+                              updateServiceItem(
+                                index,
+                                "details",
+                                event.target.value,
+                              )
+                            }
+                            placeholder="e.g. Front axle pair"
+                            className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-amber-500"
+                          />
+                        </div>
+                        <div className="md:col-span-2">
+                          <label className="block text-xs font-medium text-slate-400 mb-1.5">
+                            Cost
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={item.cost}
+                            onChange={(event) =>
+                              updateServiceItem(
+                                index,
+                                "cost",
+                                event.target.value,
+                              )
+                            }
+                            className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-amber-500"
+                          />
+                        </div>
+                        <div className="md:col-span-1 flex items-end">
+                          <button
+                            type="button"
+                            onClick={() => removeServiceItem(index)}
+                            className="w-full inline-flex items-center justify-center rounded-xl border border-rose-500/40 bg-rose-500/10 py-2 text-rose-300 hover:bg-rose-500/20"
+                            title="Remove item"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
 
@@ -805,7 +1219,25 @@ export default function VehicleServices() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                      Odometer
+                      Odometer Out
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={form.odometerOut}
+                      onChange={(event) =>
+                        setForm((current) => ({
+                          ...current,
+                          odometerOut: event.target.value,
+                        }))
+                      }
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-slate-400 mb-1.5">
+                      Odometer In
                     </label>
                     <input
                       type="number"
@@ -818,24 +1250,6 @@ export default function VehicleServices() {
                         }))
                       }
                       className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                      Parts Replaced
-                    </label>
-                    <textarea
-                      rows={2}
-                      value={form.partsReplaced}
-                      onChange={(event) =>
-                        setForm((current) => ({
-                          ...current,
-                          partsReplaced: event.target.value,
-                        }))
-                      }
-                      placeholder="e.g. Brake pads, oil filter, tyres"
-                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 resize-none"
                     />
                   </div>
                 </div>
@@ -878,6 +1292,120 @@ export default function VehicleServices() {
                       : "Create Record"}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {viewingService && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-3xl max-h-[92vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-6 border-b border-slate-200">
+              <div>
+                <h2 className="text-xl font-bold text-slate-900">
+                  Service Details
+                </h2>
+                <p className="text-sm text-slate-500 mt-1">
+                  {viewingService.serviceCenter || "Service record"}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setViewingService(null)}
+                className="p-2 text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-5">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Vehicle
+                  </p>
+                  <p className="mt-1 text-sm font-medium text-slate-900">
+                    {viewingService.vehicle?.vehicleNo || "-"}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Date
+                  </p>
+                  <p className="mt-1 text-sm font-medium text-slate-900">
+                    {formatDate(viewingService.serviceDate)}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Service Center
+                  </p>
+                  <p className="mt-1 text-sm font-medium text-slate-900">
+                    {viewingService.serviceCenter || "-"}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Status
+                  </p>
+                  <p className="mt-1 text-sm font-medium text-slate-900">
+                    {viewingService.status}
+                  </p>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 overflow-hidden">
+                <div className="bg-slate-50 px-4 py-3 border-b border-slate-200">
+                  <h3 className="text-sm font-semibold text-slate-700">
+                    Service Line Items
+                  </h3>
+                </div>
+                {(viewingService.serviceItems || []).length === 0 ? (
+                  <div className="px-4 py-6 text-sm text-slate-500">
+                    No line items on this service record.
+                  </div>
+                ) : (
+                  <div className="divide-y divide-slate-200">
+                    {(viewingService.serviceItems || []).map((item, index) => (
+                      <div
+                        key={`${item.service}-${index}`}
+                        className="px-4 py-3"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-medium text-slate-900">
+                              {item.service || "-"}
+                            </p>
+                            {item.details && (
+                              <p className="text-sm text-slate-500 mt-1">
+                                {item.details}
+                              </p>
+                            )}
+                          </div>
+                          <div className="text-sm font-medium text-slate-700">
+                            {item.cost === "" ||
+                            item.cost === null ||
+                            item.cost === undefined
+                              ? "-"
+                              : formatCurrency(item.cost)}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {viewingService.notes && (
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Notes
+                  </p>
+                  <p className="mt-2 text-sm text-slate-700 whitespace-pre-line">
+                    {viewingService.notes}
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         </div>

@@ -20,7 +20,8 @@ import {
 import Swal from "sweetalert2";
 import { apiFetch } from "../utils/api";
 
-const createVehicleForm = () => ({
+const createVehicleForm = (ownershipType = "Internal") => ({
+  ownershipType,
   vehicleNo: "",
   plateNo: "",
   make: "",
@@ -41,6 +42,11 @@ const normalizeVehicle = (vehicle) => {
 
   return {
     id: item.id,
+    ownershipType:
+      item.ownership_type ||
+      item.ownershipType ||
+      item.vehicle_type ||
+      "Internal",
     vehicleNo:
       item.vehicle_no ||
       item.vehicleNo ||
@@ -213,7 +219,26 @@ const getStatusConfig = (status) => {
   }
 };
 
-export default function Vehicles() {
+export default function Vehicles({ ownershipType = "" }) {
+  const scopedOwnershipType =
+    ownershipType === "Internal" || ownershipType === "Subcontracted"
+      ? ownershipType
+      : "";
+  const isSubcontractedModule = scopedOwnershipType === "Subcontracted";
+  const pageTitle = isSubcontractedModule
+    ? "Subcontracted Fleet"
+    : scopedOwnershipType === "Internal"
+      ? "Internal Fleet"
+      : "Fleet Management";
+  const pageSubtitle = isSubcontractedModule
+    ? "Manage subcontracted vehicles used in operations"
+    : scopedOwnershipType === "Internal"
+      ? "Manage internal vehicles and availability"
+      : "Manage your vehicle fleet and availability";
+  const addButtonLabel = isSubcontractedModule
+    ? "Add Subcontracted Vehicle"
+    : "Add Vehicle";
+
   const navigate = useNavigate();
   const [vehicles, setVehicles] = useState([]);
   const [drivers, setDrivers] = useState([]);
@@ -222,7 +247,9 @@ export default function Vehicles() {
   const [selectedAssignment, setSelectedAssignment] = useState("All");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editVehicle, setEditVehicle] = useState(null);
-  const [form, setForm] = useState(createVehicleForm());
+  const [form, setForm] = useState(
+    createVehicleForm(scopedOwnershipType || "Internal"),
+  );
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
@@ -265,8 +292,12 @@ export default function Vehicles() {
     setErrorMessage("");
     setIsLoading(true);
     try {
+      const vehiclesPath = scopedOwnershipType
+        ? `/vehicles?ownershipType=${encodeURIComponent(scopedOwnershipType)}`
+        : "/vehicles";
+
       const [vehiclesResponse, jobCardsResponse] = await Promise.all([
-        apiFetch("/vehicles"),
+        apiFetch(vehiclesPath),
         apiFetch("/job-cards"),
       ]);
 
@@ -310,7 +341,7 @@ export default function Vehicles() {
 
   useEffect(() => {
     loadVehicles();
-  }, []);
+  }, [scopedOwnershipType]);
 
   const loadDrivers = async () => {
     try {
@@ -376,7 +407,7 @@ export default function Vehicles() {
 
   const openAdd = () => {
     setEditVehicle(null);
-    setForm(createVehicleForm());
+    setForm(createVehicleForm(scopedOwnershipType || "Internal"));
     setPhotoFile(null);
     setPhotoPreview("");
     setIsModalOpen(true);
@@ -464,7 +495,11 @@ export default function Vehicles() {
       }
       const selectedVehicle = normalizeVehicle(extractSingle(payload));
       setEditVehicle(selectedVehicle);
-      setForm({ ...selectedVehicle });
+      setForm({
+        ...selectedVehicle,
+        ownershipType:
+          selectedVehicle.ownershipType || scopedOwnershipType || "Internal",
+      });
       setPhotoFile(null);
       setPhotoPreview(selectedVehicle.photoUrl || "");
       setIsModalOpen(true);
@@ -570,6 +605,10 @@ export default function Vehicles() {
       payload.append("initialMileage", String(initialMileageValue));
       payload.append("mileage", String(initialMileageValue));
       payload.append("status", form.status || "Available");
+      payload.append(
+        "ownershipType",
+        form.ownershipType || scopedOwnershipType || "Internal",
+      );
       payload.append("assignedDriverId", String(form.assignedDriverId || ""));
       payload.append("chassis", form.chassis || "");
       payload.append("specs", form.specs || "");
@@ -600,7 +639,7 @@ export default function Vehicles() {
 
       setIsModalOpen(false);
       setEditVehicle(null);
-      setForm(createVehicleForm());
+      setForm(createVehicleForm(scopedOwnershipType || "Internal"));
       setPhotoFile(null);
       setPhotoPreview("");
       await loadVehicles();
@@ -635,19 +674,15 @@ export default function Vehicles() {
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">
-            Fleet Management
-          </h1>
-          <p className="text-slate-500 mt-1">
-            Manage your vehicle fleet and availability
-          </p>
+          <h1 className="text-2xl font-bold text-slate-900">{pageTitle}</h1>
+          <p className="text-slate-500 mt-1">{pageSubtitle}</p>
         </div>
         <button
           onClick={openAdd}
           className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-amber-400 to-amber-600 text-white rounded-xl font-medium text-sm hover:opacity-90 transition-opacity shadow-lg shadow-amber-500/25"
         >
           <Plus className="w-4 h-4" />
-          Add Vehicle
+          {addButtonLabel}
         </button>
       </div>
 
@@ -798,7 +833,7 @@ export default function Vehicles() {
                     <td className="py-4 px-6 text-sm font-medium whitespace-nowrap">
                       <button
                         type="button"
-                        onClick={() => navigate(`/vehicles/${v.id}`)}
+                        onClick={() => navigate(`/vehicles/view?id=${v.id}`)}
                         className="text-amber-600 hover:text-amber-700 hover:underline transition-colors"
                       >
                         {v.vehicleNo || "-"}
@@ -912,7 +947,8 @@ export default function Vehicles() {
         </div>
         <div className="px-6 py-4 border-t border-slate-200 flex items-center justify-between">
           <p className="text-sm text-slate-500">
-            Showing {filtered.length} of {vehicles.length} vehicles
+            Showing {filtered.length} of {vehicles.length}{" "}
+            {isSubcontractedModule ? "subcontracted" : ""} vehicles
           </p>
         </div>
       </section>

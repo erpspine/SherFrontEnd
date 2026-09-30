@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
+import Select from "react-select";
 import {
   AlertCircle,
   Camera,
   ClipboardList,
   Download,
+  Eye,
+  FileText,
   Loader,
   Pencil,
   Plus,
@@ -79,6 +82,13 @@ const filenameFromHeader = (header, fallback) => {
   return match ? decodeURIComponent(match[1]) : fallback;
 };
 
+const truncateText = (value, maxLength = 120) => {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength).trimEnd()}...`;
+};
+
 const normalizeVehicle = (vehicle) => ({
   id: Number(vehicle.id || 0),
   vehicleNo: vehicle.vehicle_no || vehicle.vehicleNo || "",
@@ -93,6 +103,19 @@ const normalizeVehicle = (vehicle) => ({
     "",
   assignedDriver: vehicle.assigned_driver || vehicle.assignedDriver || null,
 });
+
+const normalizeDriver = (driver) => {
+  if (!driver) return null;
+  const name = driver.name || driver.driverName || driver.driver_name || "";
+  const id = driver.id || driver.driverId || driver.driver_user_id || "";
+  if (!name && !id) return null;
+  return {
+    id: id ? String(id) : "",
+    name: name || "Assigned Driver",
+    email: driver.email || driver.driverEmail || driver.driver_email || "",
+    phone: driver.phone || driver.driverPhone || driver.driver_phone || "",
+  };
+};
 
 const normalizeSafari = (lead) => ({
   id: Number(lead.id || 0),
@@ -133,40 +156,77 @@ const normalizeLeaseAllocation = (allocation) => ({
   contract: allocation.contract || null,
 });
 
-const normalizeReport = (report) => ({
-  id: Number(report.id || 0),
-  date: report.date || report.incident_date || "",
-  vehicleId: String(report.vehicleId || report.vehicle_id || ""),
-  bookingType:
-    report.leaseAllocationId ||
-    report.lease_allocation_id ||
-    report.leaseAllocation
-      ? "long_term"
-      : "short_term",
-  safariId: String(report.safariId || report.lead_id || ""),
-  leaseAllocationId: String(
-    report.leaseAllocationId || report.lease_allocation_id || "",
-  ),
-  reportType: report.reportType || report.report_type || "Routine",
-  description: report.description || "",
-  actionTaken: report.actionTaken || report.action_taken || "",
-  photos: Array.isArray(report.photos) ? report.photos : [],
-  status: report.status || "Open",
-  closingRemarks: report.closingRemarks || report.closing_remarks || "",
-  vehicle: report.vehicle || null,
-  safari: report.safari || report.lead || null,
-  leaseAllocation:
-    report.leaseAllocation || report.lease_allocation
-      ? normalizeLeaseAllocation(
-          report.leaseAllocation || report.lease_allocation,
-        )
-      : null,
-});
+const normalizeReport = (report) => {
+  const driver = normalizeDriver(
+    report.driver ||
+      (report.driverName || report.driver_name
+        ? {
+            id: report.driverId || report.driver_user_id,
+            name: report.driverName || report.driver_name,
+            email: report.driverEmail || report.driver_email,
+            phone: report.driverPhone || report.driver_phone,
+          }
+        : null),
+  );
+
+  return {
+    id: Number(report.id || 0),
+    date: report.date || report.incident_date || "",
+    vehicleId: String(report.vehicleId || report.vehicle_id || ""),
+    driverId:
+      driver?.id || String(report.driverId || report.driver_user_id || ""),
+    driverName: driver?.name || report.driverName || report.driver_name || "",
+    driverEmail:
+      driver?.email || report.driverEmail || report.driver_email || "",
+    driverPhone:
+      driver?.phone || report.driverPhone || report.driver_phone || "",
+    driver,
+    bookingType:
+      report.leaseAllocationId ||
+      report.lease_allocation_id ||
+      report.leaseAllocation
+        ? "long_term"
+        : "short_term",
+    safariId: String(report.safariId || report.lead_id || ""),
+    leaseAllocationId: String(
+      report.leaseAllocationId || report.lease_allocation_id || "",
+    ),
+    reportType: report.reportType || report.report_type || "Routine",
+    description: report.description || "",
+    actionTaken: report.actionTaken || report.action_taken || "",
+    photos: Array.isArray(report.photos) ? report.photos : [],
+    status: report.status || "Open",
+    closingRemarks: report.closingRemarks || report.closing_remarks || "",
+    vehicle: report.vehicle || null,
+    safari: report.safari || report.lead || null,
+    leaseAllocation:
+      report.leaseAllocation || report.lease_allocation
+        ? normalizeLeaseAllocation(
+            report.leaseAllocation || report.lease_allocation,
+          )
+        : null,
+  };
+};
 
 const statusClass = (status) =>
   status === "Closed"
     ? "bg-emerald-100 text-emerald-700 border-emerald-200"
     : "bg-amber-100 text-amber-700 border-amber-200";
+
+const vehicleSelectStyles = {
+  control: (base) => ({
+    ...base,
+    borderRadius: 8,
+    borderColor: "#cbd5e1",
+    minHeight: 40,
+    boxShadow: "none",
+    ":hover": { borderColor: "#94a3b8" },
+  }),
+  menu: (base) => ({
+    ...base,
+    zIndex: 70,
+  }),
+};
 
 export default function IncidentReports() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -188,6 +248,7 @@ export default function IncidentReports() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
   const [error, setError] = useState("");
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState(emptyForm());
@@ -241,6 +302,15 @@ export default function IncidentReports() {
 
   const drivers = useMemo(() => {
     const unique = new Map();
+    reports.forEach((report) => {
+      const driver = report.driver;
+      const driverId = report.driverId || driver?.id;
+      if (!driverId) return;
+      unique.set(String(driverId), {
+        id: String(driverId),
+        name: driver?.name || report.driverName || "Assigned Driver",
+      });
+    });
     vehicles.forEach((vehicle) => {
       const driver = vehicle.assignedDriver;
       const driverId = vehicle.assignedDriverId || driver?.id;
@@ -253,7 +323,29 @@ export default function IncidentReports() {
     return Array.from(unique.values()).sort((a, b) =>
       a.name.localeCompare(b.name),
     );
-  }, [vehicles]);
+  }, [reports, vehicles]);
+
+  const vehicleOptions = useMemo(
+    () =>
+      vehicles.map((vehicle) => ({
+        value: String(vehicle.id),
+        label: `${vehicle.vehicleNo || "Vehicle"} (${vehicle.plateNo || "N/A"})${vehicle.make ? ` - ${vehicle.make}${vehicle.model ? ` ${vehicle.model}` : ""}` : ""}`,
+      })),
+    [vehicles],
+  );
+
+  const vehicleFilterOptions = useMemo(
+    () => [{ value: "All", label: "All Vehicles" }, ...vehicleOptions],
+    [vehicleOptions],
+  );
+
+  const selectedVehicleFilter =
+    vehicleFilterOptions.find((option) => option.value === vehicleFilter) ||
+    vehicleFilterOptions[0];
+
+  const selectedVehicleForm =
+    vehicleOptions.find((option) => option.value === String(form.vehicleId)) ||
+    null;
 
   const updateLinkedFilter = (key, value) => {
     const next = new URLSearchParams(searchParams);
@@ -284,7 +376,10 @@ export default function IncidentReports() {
           (vehicle) => String(vehicle.id) === String(report.vehicleId),
         );
       const assignedDriverId =
-        reportVehicle?.assignedDriverId || reportVehicle?.assignedDriver?.id;
+        report.driverId ||
+        report.driver?.id ||
+        reportVehicle?.assignedDriverId ||
+        reportVehicle?.assignedDriver?.id;
       if (
         driverFilter !== "All" &&
         String(assignedDriverId || "") !== driverFilter
@@ -302,6 +397,10 @@ export default function IncidentReports() {
         report.closingRemarks,
         report.vehicle?.vehicleNo,
         report.vehicle?.plateNo,
+        report.driverName,
+        report.driver?.name,
+        report.driver?.email,
+        report.driver?.phone,
         reportVehicle?.assignedDriver?.name,
         report.safari?.bookingRef,
         report.safari?.clientCompany,
@@ -386,6 +485,11 @@ export default function IncidentReports() {
 
   const handleSubmit = async (event) => {
     event.preventDefault();
+
+    if (!String(form.vehicleId || "").trim()) {
+      await Swal.fire("Missing", "Vehicle is required.", "warning");
+      return;
+    }
 
     if (form.status === "Closed" && !form.closingRemarks.trim()) {
       await Swal.fire(
@@ -475,7 +579,7 @@ export default function IncidentReports() {
     }
   };
 
-  const handleExportExcel = async () => {
+  const buildExportParams = () => {
     const params = new URLSearchParams();
     if (search.trim()) params.set("search", search.trim());
     if (dateFrom) params.set("dateFrom", dateFrom);
@@ -484,7 +588,11 @@ export default function IncidentReports() {
     if (typeFilter !== "All") params.set("reportType", typeFilter);
     if (vehicleFilter !== "All") params.set("vehicleId", vehicleFilter);
     if (driverFilter !== "All") params.set("driverId", driverFilter);
+    return params;
+  };
 
+  const handleExportExcel = async () => {
+    const params = buildExportParams();
     setExporting(true);
     try {
       const query = params.toString();
@@ -523,6 +631,47 @@ export default function IncidentReports() {
     }
   };
 
+  const handleExportPdf = async () => {
+    const params = buildExportParams();
+
+    setExportingPdf(true);
+    try {
+      const query = params.toString();
+      const response = await apiFetch(
+        `/incident-reports/export/pdf${query ? `?${query}` : ""}`,
+        { headers: { Accept: "application/pdf" } },
+      );
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(
+          payload?.message || "Unable to export performance dashboard PDF.",
+        );
+      }
+
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = filenameFromHeader(
+        response.headers.get("content-disposition"),
+        "performance-dashboard.pdf",
+      );
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch (err) {
+      await Swal.fire(
+        "Export Failed",
+        err.message || "Unable to export performance dashboard PDF.",
+        "error",
+      );
+    } finally {
+      setExportingPdf(false);
+    }
+  };
+
   const getVehicleLabel = (vehicle) => {
     if (!vehicle) return "-";
     const vehicleNo = vehicle.vehicleNo || vehicle.vehicle_no || "Vehicle";
@@ -534,7 +683,8 @@ export default function IncidentReports() {
     report.vehicle ||
     vehicles.find((vehicle) => String(vehicle.id) === String(report.vehicleId));
 
-  const getDriver = (vehicle) => vehicle?.assignedDriver || null;
+  const getDriver = (report, vehicle) =>
+    report.driver || vehicle?.assignedDriver || null;
 
   const getSafariLabel = (safari) => {
     if (!safari) return "-";
@@ -578,6 +728,15 @@ export default function IncidentReports() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={handleExportPdf}
+            disabled={exportingPdf}
+            className="inline-flex items-center justify-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-medium text-rose-700 shadow-sm hover:bg-rose-100 disabled:cursor-wait disabled:opacity-60"
+          >
+            <FileText className="h-4 w-4" />
+            {exportingPdf ? "Exporting..." : "PDF Report"}
+          </button>
           <button
             type="button"
             onClick={handleExportExcel}
@@ -692,21 +851,18 @@ export default function IncidentReports() {
                 </option>
               ))}
             </select>
-            <select
-              value={vehicleFilter}
-              onChange={(event) => {
-                setVehicleFilter(event.target.value);
-                updateLinkedFilter("vehicleId", event.target.value);
+            <Select
+              options={vehicleFilterOptions}
+              value={selectedVehicleFilter}
+              onChange={(option) => {
+                const nextValue = option?.value || "All";
+                setVehicleFilter(nextValue);
+                updateLinkedFilter("vehicleId", nextValue);
               }}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-            >
-              <option value="All">All Vehicles</option>
-              {vehicles.map((vehicle) => (
-                <option key={vehicle.id} value={vehicle.id}>
-                  {vehicle.vehicleNo || "Vehicle"} ({vehicle.plateNo || "N/A"})
-                </option>
-              ))}
-            </select>
+              isSearchable
+              isClearable={false}
+              styles={vehicleSelectStyles}
+            />
             <select
               value={driverFilter}
               onChange={(event) => {
@@ -764,7 +920,7 @@ export default function IncidentReports() {
               ) : (
                 filteredReports.map((report) => {
                   const vehicle = getReportVehicle(report);
-                  const driver = getDriver(vehicle);
+                  const driver = getDriver(report, vehicle);
 
                   return (
                     <tr
@@ -806,11 +962,20 @@ export default function IncidentReports() {
                       </td>
                       <td className="max-w-sm px-4 py-3 text-slate-700">
                         <p className="font-medium text-slate-900">
-                          {report.description}
+                          {truncateText(report.description, 120)}
                         </p>
+                        {String(report.description || "").trim().length >
+                          120 && (
+                          <Link
+                            to={`/performance-dashboard/view?id=${report.id}`}
+                            className="mt-1 inline-block text-xs font-medium text-blue-700 hover:underline"
+                          >
+                            View more
+                          </Link>
+                        )}
                         {report.actionTaken && (
                           <p className="mt-1 text-xs text-slate-500">
-                            Action: {report.actionTaken}
+                            Action: {truncateText(report.actionTaken, 90)}
                           </p>
                         )}
                       </td>
@@ -851,10 +1016,28 @@ export default function IncidentReports() {
                         </span>
                       </td>
                       <td className="max-w-xs px-4 py-3 text-slate-700">
-                        {report.closingRemarks || "-"}
+                        {report.closingRemarks
+                          ? truncateText(report.closingRemarks, 90)
+                          : "-"}
+                        {String(report.closingRemarks || "").trim().length >
+                          90 && (
+                          <Link
+                            to={`/performance-dashboard/view?id=${report.id}`}
+                            className="mt-1 block text-xs font-medium text-blue-700 hover:underline"
+                          >
+                            View more
+                          </Link>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="inline-flex items-center gap-1">
+                          <Link
+                            to={`/performance-dashboard/view?id=${report.id}`}
+                            className="rounded p-1.5 text-slate-600 hover:bg-indigo-50 hover:text-indigo-700"
+                            title="View"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Link>
                           <button
                             type="button"
                             onClick={() => openEdit(report)}
@@ -946,28 +1129,20 @@ export default function IncidentReports() {
                   <label className="mb-1 block text-sm font-medium text-slate-700">
                     Vehicle *
                   </label>
-                  <select
-                    required
-                    value={form.vehicleId}
-                    onChange={(event) =>
+                  <Select
+                    options={vehicleOptions}
+                    value={selectedVehicleForm}
+                    onChange={(option) =>
                       setForm((current) => ({
                         ...current,
-                        vehicleId: event.target.value,
+                        vehicleId: option?.value || "",
                       }))
                     }
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                  >
-                    <option value="">Select vehicle...</option>
-                    {vehicles.map((vehicle) => (
-                      <option key={vehicle.id} value={vehicle.id}>
-                        {vehicle.vehicleNo || "Vehicle"} -{" "}
-                        {vehicle.plateNo || "N/A"}{" "}
-                        {vehicle.make
-                          ? `(${vehicle.make} ${vehicle.model || ""})`
-                          : ""}
-                      </option>
-                    ))}
-                  </select>
+                    isSearchable
+                    isClearable
+                    placeholder="Select vehicle..."
+                    styles={vehicleSelectStyles}
+                  />
                 </div>
 
                 <div>

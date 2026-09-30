@@ -20,6 +20,7 @@ import {
   Calendar,
   Route,
   ChevronLeft,
+  Package,
 } from "lucide-react";
 import {
   clearAuthSession,
@@ -47,7 +48,13 @@ export const menuGroups = [
       {
         path: "/vehicles",
         icon: Car,
-        label: "Vehicles",
+        label: "Internal Vehicles",
+        permission: "vehicles.view",
+      },
+      {
+        path: "/subcontracted-vehicles",
+        icon: Car,
+        label: "Subcontracted Vehicles",
         permission: "vehicles.view",
       },
       {
@@ -55,6 +62,12 @@ export const menuGroups = [
         icon: Calendar,
         label: "Vehicle Availability",
         permission: "vehicles.view",
+      },
+      {
+        path: "/per-diems",
+        icon: ClipboardList,
+        label: "Per Diems",
+        permission: "job-cards.view",
       },
       {
         path: "/job-cards",
@@ -85,6 +98,24 @@ export const menuGroups = [
         icon: TrendingUp,
         label: "Performance Dashboard",
         permission: "vehicles.view",
+      },
+      {
+        path: "/performance-incident-management",
+        icon: ShieldCheck,
+        label: "Performance & Incident Mgmt",
+        permission: "vehicles.view",
+      },
+      {
+        path: "/fuel-report",
+        icon: Route,
+        label: "Fuel Consumption Report",
+        permission: "odometer-logs.view",
+      },
+      {
+        path: "/fuel-management",
+        icon: Route,
+        label: "Fuel Management",
+        permission: "odometer-logs.view",
       },
       {
         path: "/odometer-reports",
@@ -145,6 +176,12 @@ export const menuGroups = [
         permission: "clients.view",
       },
       {
+        path: "/inventory-store",
+        icon: Package,
+        label: "Store Inventory",
+        permission: "inventory.view",
+      },
+      {
         path: "/parks",
         icon: Trees,
         label: "Parks & Rates",
@@ -192,6 +229,7 @@ export const menuGroups = [
         label: "Settings",
         permission: "settings.view",
       },
+      { path: "/audit-log", icon: ClipboardList, label: "Audit Log", permission: "users.view" },
     ],
   },
 ];

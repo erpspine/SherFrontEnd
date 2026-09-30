@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   ClipboardList,
   Download,
+  FileText,
   Loader,
   Pencil,
   Plus,
@@ -216,6 +217,7 @@ export default function LeaseAllocations() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [exportType, setExportType] = useState("");
+  const [clipOverlapDates, setClipOverlapDates] = useState(false);
 
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState(emptyForm());
@@ -543,18 +545,22 @@ export default function LeaseAllocations() {
     }
   };
 
+  const buildExportParams = () => {
+    const params = new URLSearchParams();
+    if (search.trim()) params.set("search", search.trim());
+    if (statusFilter !== "All") params.set("status", statusFilter);
+    if (contractFilter !== "All") params.set("leaseContractId", contractFilter);
+    if (vehicleFilter !== "All") params.set("vehicleId", vehicleFilter);
+    if (dateFrom) params.set("dateFrom", dateFrom);
+    if (dateTo) params.set("dateTo", dateTo);
+    if (clipOverlapDates) params.set("clipOverlapDates", "1");
+    return params;
+  };
+
   const handleExportExcel = async () => {
     setExportType("excel");
     try {
-      const params = new URLSearchParams();
-      if (search.trim()) params.set("search", search.trim());
-      if (statusFilter !== "All") params.set("status", statusFilter);
-      if (contractFilter !== "All")
-        params.set("leaseContractId", contractFilter);
-      if (vehicleFilter !== "All") params.set("vehicleId", vehicleFilter);
-      if (dateFrom) params.set("dateFrom", dateFrom);
-      if (dateTo) params.set("dateTo", dateTo);
-
+      const params = buildExportParams();
       const query = params.toString();
       const response = await apiFetch(
         `/lease-allocations/export/excel${query ? `?${query}` : ""}`,
@@ -581,6 +587,44 @@ export default function LeaseAllocations() {
       Swal.fire(
         "Export Failed",
         err.message || "Failed to export Excel.",
+        "error",
+      );
+    } finally {
+      setExportType("");
+    }
+  };
+
+  const handleExportPdf = async () => {
+    setExportType("pdf");
+    try {
+      const params = buildExportParams();
+      const query = params.toString();
+      const response = await apiFetch(
+        `/lease-allocations/export/pdf${query ? `?${query}` : ""}`,
+        { headers: { Accept: "application/pdf" } },
+      );
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload?.message || "Failed to export PDF.");
+      }
+
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = filenameFromHeader(
+        response.headers.get("content-disposition"),
+        "lease-allocations-report.pdf",
+      );
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch (err) {
+      Swal.fire(
+        "Export Failed",
+        err.message || "Failed to export PDF.",
         "error",
       );
     } finally {
@@ -615,22 +659,49 @@ export default function LeaseAllocations() {
             requests.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={handleExportExcel}
-          disabled={loading || exportType === "excel"}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60"
-        >
-          {exportType === "excel" ? (
-            <>
-              <Loader className="w-4 h-4 animate-spin" /> Exporting Excel...
-            </>
-          ) : (
-            <>
-              <Download className="w-4 h-4" /> Export Excel
-            </>
-          )}
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={clipOverlapDates}
+              onChange={(event) => setClipOverlapDates(event.target.checked)}
+              className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+            />
+            <span>Clip overlapping dates to filter period</span>
+          </label>
+          <button
+            type="button"
+            onClick={handleExportPdf}
+            disabled={loading || exportType === "pdf"}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 disabled:cursor-wait disabled:opacity-60"
+          >
+            {exportType === "pdf" ? (
+              <>
+                <Loader className="w-4 h-4 animate-spin" /> Exporting PDF...
+              </>
+            ) : (
+              <>
+                <FileText className="w-4 h-4" /> PDF Report
+              </>
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={handleExportExcel}
+            disabled={loading || exportType === "excel"}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60"
+          >
+            {exportType === "excel" ? (
+              <>
+                <Loader className="w-4 h-4 animate-spin" /> Exporting Excel...
+              </>
+            ) : (
+              <>
+                <Download className="w-4 h-4" /> Export Excel
+              </>
+            )}
+          </button>
+        </div>
         <button
           onClick={openCreate}
           className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 shadow-sm"

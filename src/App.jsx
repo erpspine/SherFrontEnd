@@ -1,3 +1,6 @@
+import PerDiems from "./pages/PerDiems";
+import FuelReport from "./pages/FuelReport";
+import FuelManagement from "./pages/FuelManagement";
 ﻿import {
   BrowserRouter as Router,
   Routes,
@@ -7,6 +10,7 @@
 import Layout from "./components/Layout";
 import Dashboard from "./pages/Dashboard";
 import Vehicles from "./pages/Vehicles";
+import SubcontractVehicles from "./pages/SubcontractVehicles";
 import Clients from "./pages/Clients";
 import JobCards from "./pages/JobCards";
 import SafariAllocations from "./pages/SafariAllocations";
@@ -27,17 +31,22 @@ import Checklist from "./pages/Checklist";
 // import FuelRequisitionCreate from "./pages/FuelRequisitionCreate";
 // import FuelRequisitionApproval from "./pages/FuelRequisitionApproval";
 import VehicleServices from "./pages/VehicleServices";
+import VehicleServiceView from "./pages/VehicleServiceView";
 import VehicleView from "./pages/VehicleView";
 import VehicleAvailability from "./pages/VehicleAvailability";
 // import RouteDistances from "./pages/RouteDistances";
 import Inspections from "./pages/Inspections";
 import PerformanceDashboard from "./pages/IncidentReports";
+import PerformanceIncidentManagement from "./pages/PerformanceIncidentManagement";
+import PerformanceReportView from "./pages/PerformanceReportView";
 import OdometerReports from "./pages/OdometerReports";
 import OdometerReportView from "./pages/OdometerReportView";
 import LongTermLeasing from "./pages/LongTermLeasing";
 import LeaseCalendar from "./pages/LeaseCalendar";
 import LeaseAllocations from "./pages/LeaseAllocations";
 import LeaseProformaInvoices from "./pages/LeaseProformaInvoices";
+import InventoryStore from "./pages/InventoryStore";
+import AuditLog from "./pages/AuditLog";
 import { isAuthenticated, hasPermission } from "./utils/auth";
 
 function AccessDenied() {
@@ -90,6 +99,32 @@ function ProtectedRoutes() {
           }
         />
         <Route
+          path="/performance-incident-management/new"
+          element={<PermissionRoute permission="vehicles.update" element={<PerformanceIncidentManagement />} />}
+        />
+        <Route
+          path="/performance-incident-management/view"
+          element={<PermissionRoute permission="vehicles.view" element={<PerformanceIncidentManagement />} />}
+        />
+        <Route
+          path="/performance-incident-management"
+          element={
+            <PermissionRoute
+              permission="vehicles.view"
+              element={<PerformanceIncidentManagement />}
+            />
+          }
+        />
+        <Route
+          path="/performance-dashboard/view"
+          element={
+            <PermissionRoute
+              permission="vehicles.view"
+              element={<PerformanceReportView />}
+            />
+          }
+        />
+        <Route
           path="/incident-reports"
           element={<Navigate to="/performance-dashboard" replace />}
         />
@@ -98,12 +133,30 @@ function ProtectedRoutes() {
           element={
             <PermissionRoute
               permission="vehicles.view"
-              element={<Vehicles />}
+              element={<Vehicles ownershipType="Internal" />}
+            />
+          }
+        />
+        <Route
+          path="/subcontracted-vehicles"
+          element={
+            <PermissionRoute
+              permission="vehicles.view"
+              element={<SubcontractVehicles />}
             />
           }
         />
         <Route
           path="/vehicles/:id"
+          element={
+            <PermissionRoute
+              permission="vehicles.view"
+              element={<VehicleView />}
+            />
+          }
+        />
+        <Route
+          path="/vehicles/view"
           element={
             <PermissionRoute
               permission="vehicles.view"
@@ -161,6 +214,19 @@ function ProtectedRoutes() {
           element={
             <PermissionRoute permission="clients.view" element={<Clients />} />
           }
+        />
+        <Route
+          path="/inventory-store"
+          element={
+            <PermissionRoute
+              permission="inventory.view"
+              element={<InventoryStore />}
+            />
+          }
+        />
+        <Route
+          path="/per-diems"
+          element={<PermissionRoute permission="job-cards.view" element={<PerDiems />} />}
         />
         <Route
           path="/job-cards"
@@ -228,6 +294,7 @@ function ProtectedRoutes() {
             />
           }
         />
+        <Route path="/audit-log" element={<PermissionRoute permission="users.view" element={<AuditLog />} />} />
         <Route
           path="/users"
           element={
@@ -260,8 +327,28 @@ function ProtectedRoutes() {
             />
           }
         />
+        <Route
+          path="/vehicle-services/:id"
+          element={
+            <PermissionRoute
+              permission="vehicles.view"
+              element={<VehicleServiceView />}
+            />
+          }
+        />
+        <Route
+          path="/vehicle-services/view"
+          element={
+            <PermissionRoute
+              permission="vehicles.view"
+              element={<VehicleServiceView />}
+            />
+          }
+        />
         {/* <Route path="/route-distances" element={<RouteDistances />} /> */}
         <Route path="/inspections" element={<Inspections />} />
+        <Route path="/fuel-report" element={<PermissionRoute permission="odometer-logs.view" element={<FuelReport />} />} />
+        <Route path="/fuel-management" element={<PermissionRoute permission="odometer-logs.view" element={<FuelManagement />} />} />
         <Route
           path="/odometer-reports"
           element={
