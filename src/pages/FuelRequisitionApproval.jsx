@@ -168,6 +168,9 @@ const normalizeRequisition = (entry) => {
     requestedByName:
       entry.requestedBy?.name || entry.requestedByName || "Unknown",
     requestedByEmail: entry.requestedBy?.email || entry.requestedByEmail || "",
+    requestDate:
+      entry.requestDate || entry.request_date ||
+      (entry.createdAt || entry.created_at || "").slice(0, 10),
     createdAt: entry.createdAt || entry.created_at || "",
     itinerary: parseTransportItinerary(entry),
   };
@@ -432,7 +435,7 @@ export default function FuelRequisitionApproval() {
               {item.requestedByEmail || "-"}
             </div>
             <div className="text-xs text-slate-400">
-              Created: {formatDateTime(item.createdAt)}
+              Record Date: {item.requestDate || "-"}
             </div>
           </div>
         </div>

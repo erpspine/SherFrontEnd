@@ -76,6 +76,12 @@ export const menuGroups = [
         permission: "job-cards.view",
       },
       {
+        path: "/departure-arrival-report",
+        icon: Calendar,
+        label: "Departure & Arrival Report",
+        permission: "job-cards.view",
+      },
+      {
         path: "/safari-allocations",
         icon: Car,
         label: "Safari Allocations",

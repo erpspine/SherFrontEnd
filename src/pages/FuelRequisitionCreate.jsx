@@ -181,6 +181,7 @@ export default function FuelRequisitionCreate() {
   const [errorMessage, setErrorMessage] = useState("");
   const [form, setForm] = useState({
     leadId: "",
+    requestDate: new Date().toISOString().slice(0, 10),
     baseRatePerKm: "",
     reason: "",
   });
@@ -472,6 +473,11 @@ export default function FuelRequisitionCreate() {
       return;
     }
 
+    if (!form.requestDate) {
+      setErrorMessage("Please select the fuel record date.");
+      return;
+    }
+
     if (!Number.isFinite(baseRatePerKm) || baseRatePerKm <= 0) {
       setErrorMessage("Please enter base fuel rate per KM greater than 0.");
       return;
@@ -503,6 +509,7 @@ export default function FuelRequisitionCreate() {
         method: "POST",
         body: {
           leadId: Number(form.leadId),
+          requestDate: form.requestDate,
           litres: Number(totalFuelLitres.toFixed(2)),
           baseRatePerKm,
           reason: form.reason.trim(),
@@ -623,6 +630,25 @@ export default function FuelRequisitionCreate() {
                   </option>
                 ))}
               </select>
+            </label>
+
+            <label className="block">
+              <span className="mb-1.5 block text-sm font-semibold text-slate-700">
+                Record Date
+              </span>
+              <input
+                type="date"
+                required
+                value={form.requestDate}
+                onChange={(event) =>
+                  setField("requestDate", event.target.value)
+                }
+                disabled={isSaving}
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-sher-gold focus:ring-4 focus:ring-sher-gold/20"
+              />
+              <span className="mt-1 block text-xs text-slate-500">
+                Select the date this fuel record belongs to, including past dates.
+              </span>
             </label>
 
             <label className="block">

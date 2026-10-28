@@ -9,6 +9,10 @@ const DELETE_ALLOWED_EMAILS = new Set([
     "tanveer@sher.co.tz",
     "arif@sher.co.tz",
 ]);
+const JOB_CARD_STATUS_ALLOWED_EMAILS = new Set([
+    "arif@sher.co.tz",
+    "tanveer@sher.co.tz",
+]);
 export const getAuthRoles = () => {
     for (const storage of storageList) {
         const raw = storage.getItem(ROLES_KEY);
@@ -30,6 +34,11 @@ export const getAuthPermissions = () => {
 export const canDelete = () => {
     const email = String(getAuthUser()?.email || "").trim().toLowerCase();
     return DELETE_ALLOWED_EMAILS.has(email);
+};
+
+export const canManageJobCardStatus = () => {
+    const email = String(getAuthUser()?.email || "").trim().toLowerCase();
+    return JOB_CARD_STATUS_ALLOWED_EMAILS.has(email);
 };
 
 export const hasPermission = (permission) => {

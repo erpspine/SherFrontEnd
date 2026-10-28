@@ -98,6 +98,9 @@ const normalizeRequisition = (entry) => {
     requestedByName:
       entry.requestedBy?.name || entry.requestedByName || "Unknown",
     requestedByEmail: entry.requestedBy?.email || entry.requestedByEmail || "",
+    requestDate:
+      entry.requestDate || entry.request_date ||
+      (entry.createdAt || entry.created_at || "").slice(0, 10),
     createdAt: entry.createdAt || entry.created_at || "",
   };
 };
@@ -418,6 +421,7 @@ export default function FuelRequisitions() {
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Note</th>
                 <th className="px-4 py-3">Requested By</th>
+                <th className="px-4 py-3">Record Date</th>
                 <th className="px-4 py-3">Created</th>
                 <th className="px-4 py-3">Details</th>
               </tr>
@@ -426,7 +430,7 @@ export default function FuelRequisitions() {
               {isLoading ? (
                 <tr>
                   <td
-                    colSpan={8}
+                    colSpan={9}
                     className="px-4 py-10 text-center text-slate-500"
                   >
                     Loading fuel requisitions...
@@ -435,7 +439,7 @@ export default function FuelRequisitions() {
               ) : filtered.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={8}
+                    colSpan={9}
                     className="px-4 py-10 text-center text-slate-500"
                   >
                     No fuel requisitions found.
@@ -538,6 +542,9 @@ export default function FuelRequisitions() {
                         <div className="text-slate-500">
                           {item.requestedByEmail || "-"}
                         </div>
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {item.requestDate || "-"}
                       </td>
                       <td className="px-4 py-3 text-slate-600">
                         {formatDateTime(item.createdAt)}

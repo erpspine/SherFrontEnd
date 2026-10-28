@@ -2,6 +2,34 @@
 @tailwind components;
 @tailwind utilities;
 
+.job-route-waypoint-icon {
+  display: grid;
+  place-items: center;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: #d97706;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.45);
+}
+
+.job-route-waypoint-icon span {
+  color: #fff;
+  font: 700 12px/1 system-ui, sans-serif;
+}
+
+.job-route-search-results {
+  background-color: #fff;
+}
+
+.job-route-search-result {
+  background-color: #fff;
+  color: #1e293b !important;
+}
+
+.job-route-search-result:hover {
+  background-color: #f1f5f9;
+  color: #0f172a !important;
+}
+
 * {
   margin: 0;
   padding: 0;

@@ -5,9 +5,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Select from "react-select";
 import Swal from "sweetalert2";
 import {
+  ArrowUpRight,
+  CalendarDays,
   Download,
   Loader2,
   FileSpreadsheet,
+  Fuel,
+  Gauge,
   Pencil,
   Printer,
   Search,
@@ -41,6 +45,10 @@ const vehicleLabel = (v) =>
   v?.plate_no || "—";
 const allocationKey = (allocation) =>
   `${allocation?.allocation_type || "safari"}:${allocation?.id}`;
+const allocationGroupKey = (allocation) =>
+  allocation?.allocation_type === "long_term"
+    ? allocationKey(allocation)
+    : `safari:${allocation?.lead_id || allocation?.lead?.id || allocation?.id}`;
 const entryKey = (entry) =>
   entry.lease_allocation_id
     ? `long_term:${entry.lease_allocation_id}`
@@ -60,6 +68,7 @@ export default function FuelManagement() {
     entries: [],
     profiles: [],
   });
+  const [selectedSafari, setSelectedSafari] = useState("");
   const [selected, setSelected] = useState("");
   const [form, setForm] = useState(empty);
   const [search, setSearch] = useState("");
@@ -86,31 +95,89 @@ export default function FuelManagement() {
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, []);
-  const safariOptions = useMemo(
+  const availableAllocations = useMemo(
     () =>
-      data.allocations.filter((a) => allocationKey(a) === selected || !data.entries.some(e => entryKey(e) === allocationKey(a) && isTripComplete(e))).map((a) => ({
-        value: allocationKey(a),
-        label:
-          a.allocation_type === "long_term"
-            ? `Long term #${a.id} · ${a.group_name || a.lease_contract?.group_name || a.lease_contract?.client_name || "Lease"} · ${vehicleLabel(a.vehicle)} · ${a.driver?.name || "Unassigned"}`
-            : `Safari #${a.id} · ${a.lead?.group_name || "Safari"} · ${a.lead?.booking_ref || "No booking reference"} · ${vehicleLabel(a.vehicle)} · ${a.driver?.name || "Unassigned"}`,
-      })),
+      data.allocations.filter(
+        (allocation) =>
+          allocationKey(allocation) === selected ||
+          !data.entries.some(
+            (entry) =>
+              entryKey(entry) === allocationKey(allocation) &&
+              isTripComplete(entry),
+          ),
+      ),
     [data.allocations, data.entries, selected],
+  );
+  const safariOptions = useMemo(() => {
+    const groups = new Map();
+    for (const allocation of availableAllocations) {
+      const value = allocationGroupKey(allocation);
+      const current = groups.get(value);
+      const vehicleCount = (current?.vehicleCount || 0) + 1;
+      groups.set(value, {
+        value,
+        vehicleCount,
+        allocation,
+      });
+    }
+
+    return Array.from(groups.values()).map(({ value, vehicleCount, allocation }) => ({
+      value,
+      label:
+        allocation.allocation_type === "long_term"
+          ? `Long term #${allocation.id} · ${allocation.group_name || allocation.lease_contract?.group_name || allocation.lease_contract?.client_name || "Lease"}`
+          : `Safari · ${allocation.lead?.group_name || "Safari"} · ${allocation.lead?.booking_ref || "No booking reference"}${vehicleCount > 1 ? ` · ${vehicleCount} vehicles` : ""}`,
+    }));
+  }, [availableAllocations]);
+  const safariVehicleOptions = useMemo(
+    () =>
+      availableAllocations
+        .filter(
+          (allocation) => allocationGroupKey(allocation) === selectedSafari,
+        )
+        .map((allocation) => ({
+          value: allocationKey(allocation),
+          label: `${vehicleLabel(allocation.vehicle)} · ${allocation.driver?.name || "Unassigned driver"}`,
+        })),
+    [availableAllocations, selectedSafari],
   );
   const allocation = data.allocations.find(
     (a) => allocationKey(a) === selected,
   );
   const existing = data.entries.find((e) => entryKey(e) === selected);
   function selectSafari(id) {
-    setSelected(id);
     setMessage("");
     const a = data.allocations.find((item) => allocationKey(item) === id);
     const entry = data.entries.find((item) => entryKey(item) === id);
+    setSelectedSafari(a ? allocationGroupKey(a) : "");
+    setSelected(id);
     setForm(
       entry
         ? Object.fromEntries(fields.map(([key]) => [key, entry[key] ?? ""]))
         : { ...empty, ...previousTripDefaults(data.entries, a) },
     );
+  }
+  function selectSafariGroup(groupId) {
+    setSelectedSafari(groupId);
+    setSelected("");
+    setForm({ ...empty });
+    setMessage("");
+
+    const matches = availableAllocations.filter(
+      (item) => allocationGroupKey(item) === groupId,
+    );
+    if (matches.length === 1) {
+      selectSafari(allocationKey(matches[0]));
+    }
+  }
+  function selectSafariVehicle(allocationId) {
+    if (allocationId) {
+      selectSafari(allocationId);
+      return;
+    }
+    setSelected("");
+    setForm({ ...empty });
+    setMessage("");
   }
   async function save(event) {
     event.preventDefault();
@@ -135,6 +202,7 @@ export default function FuelManagement() {
             : payload.message,
         );
       setSelected("");
+      setSelectedSafari("");
       setForm({ ...empty });
       setMessage("Fuel entry saved.");
       try {
@@ -365,6 +433,7 @@ export default function FuelManagement() {
     setMessage("Fuel entry deleted.");
     if (selected === entryKey(entry)) {
       setSelected("");
+      setSelectedSafari("");
       setForm(empty);
     }
     try {
@@ -388,16 +457,24 @@ export default function FuelManagement() {
   );
   const distance = completed.reduce((sum, e) => sum + Number(e.km_done), 0);
   return (
-    <div className="p-6 space-y-6">
+    <div className="min-h-full space-y-6 bg-slate-50/70 p-4 sm:p-6">
       {saving && <div className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center" role="status" aria-live="polite"><div className="bg-white rounded-xl p-6 flex items-center gap-3"><Loader2 className="w-6 h-6 animate-spin text-blue-600" />Saving and refreshing fuel records…</div></div>}
-      <div>
-        <Link to="/fuel-report" className="float-right text-blue-600">
-          Fuel Consumption Report
-        </Link>
-        <h1 className="text-2xl font-bold text-gray-900">Fuel Management</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          Safari fuel entries and calculated fuel averages
-        </p>
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-950 via-slate-900 to-sher-teal px-5 py-6 text-white shadow-xl sm:px-8 sm:py-8">
+        <div className="absolute -right-12 -top-16 h-48 w-48 rounded-full bg-sher-gold/20 blur-2xl" />
+        <div className="relative flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-sher-gold">
+              <Fuel className="h-3.5 w-3.5" /> Fleet operations
+            </div>
+            <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">Fuel Management</h1>
+            <p className="mt-2 max-w-xl !text-white text-sm sm:text-base">
+              Capture refills, track consumption, and keep every safari’s fuel story in one place.
+            </p>
+          </div>
+          <Link to="/fuel-report" className="inline-flex w-fit items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-slate-900 shadow-lg transition hover:-translate-y-0.5 hover:bg-sher-gold">
+            View consumption report <ArrowUpRight className="h-4 w-4" />
+          </Link>
+        </div>
       </div>
       {error && (
         <div role="alert" className="p-3 bg-red-50 text-red-700 rounded-lg">
@@ -416,20 +493,20 @@ export default function FuelManagement() {
         <p role="status" className="flex items-center gap-2"><Loader2 className="w-5 h-5 animate-spin" />Loading fuel records…</p>
       ) : (
         <>
-          <div className="bg-white border rounded-xl p-4 space-y-4 print:hidden">
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-4 print:hidden sm:p-5">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <h2 className="font-semibold text-gray-900">
+                  <h2 className="font-semibold text-slate-900">
                   Filter safari fuel
                 </h2>
-                <p className="text-sm text-gray-500">
+                  <p className="text-sm text-slate-500">
                   Filter the list by search, vehicle, driver, or date.
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
-                  className="inline-flex items-center gap-2 border rounded-lg px-3 py-2 text-sm"
+                  className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-sher-teal hover:bg-slate-50"
                   onClick={exportCsv}
                   title="Export filtered rows as CSV"
                 >
@@ -437,7 +514,7 @@ export default function FuelManagement() {
                 </button>
                 <button
                   type="button"
-                  className="inline-flex items-center gap-2 border rounded-lg px-3 py-2 text-sm"
+                  className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-sher-teal hover:bg-slate-50"
                   onClick={exportExcel}
                   title="Export filtered rows for Excel"
                 >
@@ -445,7 +522,7 @@ export default function FuelManagement() {
                 </button>
                 <button
                   type="button"
-                  className="inline-flex items-center gap-2 border rounded-lg px-3 py-2 text-sm"
+                  className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-sher-teal hover:bg-slate-50"
                   onClick={exportPdf}
                   title="Print filtered rows or save as PDF"
                 >
@@ -457,13 +534,13 @@ export default function FuelManagement() {
               <input
                 aria-label="Search fuel records"
                 placeholder="Search booking, vehicle or driver"
-                className="border rounded-lg p-2 flex-1"
+                className="min-w-[220px] flex-1 rounded-xl border border-slate-200 bg-slate-50/50 p-2.5 outline-none transition focus:border-sher-teal focus:ring-4 focus:ring-sher-teal/10"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
               <select
                 aria-label="Filter by vehicle"
-                className="border rounded-lg p-2"
+                className="rounded-xl border border-slate-200 bg-white p-2.5 outline-none focus:border-sher-teal"
                 value={vehicleId}
                 onChange={(e) => setVehicleId(e.target.value)}
               >
@@ -476,7 +553,7 @@ export default function FuelManagement() {
               </select>
               <select
                 aria-label="Filter by driver"
-                className="border rounded-lg p-2"
+                className="rounded-xl border border-slate-200 bg-white p-2.5 outline-none focus:border-sher-teal"
                 value={driverId}
                 onChange={(e) => setDriverId(e.target.value)}
               >
@@ -492,7 +569,7 @@ export default function FuelManagement() {
                 <ReportDateInput
                   aria-label="Filter from date"
                   type="date"
-                  className="border rounded-lg p-2 text-gray-900"
+                  className="rounded-xl border border-slate-200 p-2.5 text-slate-900 outline-none focus:border-sher-teal"
                   value={dateFrom}
                   onChange={(e) => setDateFrom(e.target.value)}
                 />
@@ -502,21 +579,21 @@ export default function FuelManagement() {
                 <ReportDateInput
                   aria-label="Filter to date"
                   type="date"
-                  className="border rounded-lg p-2 text-gray-900"
+                  className="rounded-xl border border-slate-200 p-2.5 text-slate-900 outline-none focus:border-sher-teal"
                   value={dateTo}
                   onChange={(e) => setDateTo(e.target.value)}
                 />
               </label>
               <button
                 type="button"
-                className="border rounded-lg px-3 py-2 text-gray-700"
+                className="rounded-xl border border-slate-200 px-3 py-2.5 font-medium text-slate-700 transition hover:bg-slate-50"
                 onClick={clearFilters}
               >
                 Clear filters
               </button>
             </div>
           </div>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             {[
               ["Safaris", rows.length],
               [
@@ -529,19 +606,28 @@ export default function FuelManagement() {
                 consumed ? fmt(distance / consumed) : "—",
               ],
             ].map(([label, value]) => (
-              <div key={label} className="bg-white border rounded-xl p-5">
-                <p className="text-sm text-gray-500">{label}</p>
-                <p className="text-2xl font-semibold mt-2">{value}</p>
+              <div key={label} className="group rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md sm:p-5">
+                <div className="mb-3 flex items-center justify-between">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
+                  <Gauge className="h-4 w-4 text-sher-teal transition group-hover:text-sher-gold" />
+                </div>
+                <p className="text-2xl font-bold tracking-tight text-slate-900">{value}</p>
               </div>
             ))}
           </div>
           <form
             onSubmit={save}
-            className="bg-white border rounded-xl p-5 space-y-4 print:hidden"
+            className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4 print:hidden sm:p-6"
           >
-            <h2 className="font-semibold text-lg">
+            <div className="flex items-start gap-3">
+              <div className="rounded-xl bg-sher-teal/10 p-2 text-sher-teal"><CalendarDays className="h-5 w-5" /></div>
+              <div>
+                <h2 className="font-semibold text-lg text-slate-900">
               {existing ? "Edit safari fuel entry" : "Record safari fuel"}
-            </h2>
+                </h2>
+                <p className="mt-1 text-sm text-slate-500">Enter the refill and odometer readings for a safari or lease allocation.</p>
+              </div>
+            </div>
             <div className="text-sm">
               <label htmlFor="fuel-safari" className="block mb-1">
                 Safari
@@ -551,10 +637,13 @@ export default function FuelManagement() {
                 name="safari_allocation_id"
                 options={safariOptions}
                 value={
-                  safariOptions.find((option) => option.value === selected) ||
-                  null
+                  safariOptions.find(
+                    (option) => option.value === selectedSafari,
+                  ) || null
                 }
-                onChange={(option) => selectSafari(option?.value || "")}
+                onChange={(option) =>
+                  selectSafariGroup(option?.value || "")
+                }
                 isDisabled={saving}
                 isSearchable
                 isClearable
@@ -572,9 +661,44 @@ export default function FuelManagement() {
                 }}
               />
             </div>
+            {selectedSafari && safariVehicleOptions.length > 1 && (
+              <div className="text-sm">
+                <label htmlFor="fuel-vehicle" className="block mb-1">
+                  Vehicle
+                </label>
+                <Select
+                  inputId="fuel-vehicle"
+                  name="vehicle_allocation_id"
+                  options={safariVehicleOptions}
+                  value={
+                    safariVehicleOptions.find(
+                      (option) => option.value === selected,
+                    ) || null
+                  }
+                  onChange={(option) =>
+                    selectSafariVehicle(option?.value || "")
+                  }
+                  isDisabled={saving}
+                  isSearchable
+                  isClearable
+                  required
+                  placeholder="Select the vehicle for this safari…"
+                  noOptionsMessage={() => "No available vehicles"}
+                  classNamePrefix="safari-vehicle-select"
+                  styles={{
+                    control: (base) => ({
+                      ...base,
+                      minHeight: 42,
+                      borderRadius: 8,
+                    }),
+                    menu: (base) => ({ ...base, zIndex: 20 }),
+                  }}
+                />
+              </div>
+            )}
             {allocation && (
               <>
-                <div className="grid md:grid-cols-3 gap-3 bg-gray-50 p-3 rounded-lg text-sm">
+                <div className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm md:grid-cols-3">
                   <p>
                     {allocation.allocation_type === "long_term"
                       ? "Lease"
@@ -647,10 +771,10 @@ export default function FuelManagement() {
               </>
             )}
           </form>
-          <div className="bg-white border rounded-xl overflow-hidden print:border-0">
-            <div className="p-4 flex items-center justify-between gap-3">
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm print:border-0">
+            <div className="flex items-center justify-between gap-3 border-b border-slate-100 p-4 sm:p-5">
               <div>
-                <h2 className="font-semibold">Safari fuel and averages</h2>
+                <h2 className="font-semibold text-slate-900">Safari fuel and averages</h2>
                 <div className="mt-3 flex flex-wrap gap-3" aria-label="Filter units by completion status">
                   <label className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition ${completedOnly ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-slate-200 bg-white text-slate-700"}`}>
                     <input className="h-4 w-4 accent-emerald-600" type="checkbox" checked={completedOnly} onChange={e => setCompletedOnly(e.target.checked)} />

@@ -26,6 +26,7 @@ import Select from "react-select";
 
 const roleOptions = ["Admin", "Operations", "Finance", "Driver", "Viewer"];
 const statusOptions = ["Active", "Inactive", "Blacklisted"];
+const contractTypeOptions = ["Long Term", "Short Term", "Freelance"];
 const languageOptions = [
   { value: "English", label: "English" },
   { value: "French", label: "French" },
@@ -63,6 +64,9 @@ const createFormState = () => ({
   driving_started_at: "",
   driver_license: "",
   tour_guide_license: "",
+  contract_type: "",
+  contract_start_date: "",
+  contract_end_date: "",
   blacklist_reason: "",
   status: "Active",
   receive_notifications: false,
@@ -153,6 +157,9 @@ const normalizeUser = (user) => ({
   driving_started_at: user.driving_started_at || user.drivingStartedAt || "",
   driver_license: user.driver_license || user.driverLicense || "",
   tour_guide_license: user.tour_guide_license || user.tourGuideLicense || "",
+  contract_type: user.contract_type || user.contractType || "",
+  contract_start_date: user.contract_start_date || user.contractStartDate || "",
+  contract_end_date: user.contract_end_date || user.contractEndDate || "",
   blacklist_reason: user.blacklist_reason || user.blacklistReason || "",
   status_reason:
     user.status_reason ||
@@ -273,11 +280,15 @@ const hasDriverProfileData = (user) =>
   Boolean(user.driving_started_at) ||
   Boolean(user.work_experience) ||
   Boolean(user.driver_license) ||
-  Boolean(user.tour_guide_license);
+  Boolean(user.tour_guide_license) ||
+  Boolean(user.contract_type);
 
 const getDriverProfileText = (user) =>
   [
     `Driver name: ${user.name || "-"}`,
+    `Contract type: ${user.contract_type || "-"}`,
+    `Contract from: ${user.contract_start_date || "-"}`,
+    `Contract to: ${user.contract_end_date || "-"}`,
     `Phone: ${user.phone || "-"}`,
     `Vehicle: ${assignedVehicleLabel(user)}`,
     `Language: ${Array.isArray(user.languages_spoken_list) && user.languages_spoken_list.length > 0 ? user.languages_spoken_list.join(", ") : "-"}`,
@@ -380,14 +391,14 @@ export default function Users() {
   });
 
   const exportExcel = () => {
-    const headers = ["Name", "Email", "Phone", "Role", "Vehicle", "Languages", "Experience", "Driver Licence", "Guide Licence", "Status", "Status reason", "Notifications", "Last Login"];
+    const headers = ["Name", "Email", "Phone", "Role", "Contract Type", "Vehicle", "Languages", "Experience", "Driver Licence", "Guide Licence", "Status", "Status reason", "Notifications", "Last Login"];
     const escapeCell = (value) => {
       let text = String(value ?? "");
       if (/^[\s]*[=+@-]/.test(text)) text = "'" + text;
       return text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
     };
     const rows = filteredUsers.map(user => [user.name, user.email, user.phone, user.role,
-      assignedVehicleLabel(user), user.languages_spoken_list.join(", "), formatExperienceLabel(user),
+      user.contract_type, assignedVehicleLabel(user), user.languages_spoken_list.join(", "), formatExperienceLabel(user),
       user.driver_license, user.tour_guide_license, user.status, user.status_reason,
       user.receive_notifications ? "Enabled" : "Disabled", user.lastLogin]);
     const table = `<table><thead><tr>${headers.map(label => `<th>${label}</th>`).join("")}</tr></thead><tbody>${rows.map(row => `<tr>${row.map(value => `<td style='mso-number-format:"\\@"'>${escapeCell(value)}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
@@ -434,6 +445,9 @@ export default function Users() {
         driving_started_at: selectedUser.driving_started_at || "",
         driver_license: selectedUser.driver_license || "",
         tour_guide_license: selectedUser.tour_guide_license || "",
+        contract_type: selectedUser.contract_type || "",
+        contract_start_date: selectedUser.contract_start_date || "",
+        contract_end_date: selectedUser.contract_end_date || "",
         blacklist_reason:
           selectedUser.status_reason || selectedUser.blacklist_reason || "",
         status: selectedUser.status,
@@ -485,6 +499,33 @@ export default function Users() {
         await Swal.fire({
           title: "Driver Details Required",
           text: "Please enter at least one language and driving start date for a Driver.",
+          icon: "warning",
+          background: "#0f172a",
+          color: "#e2e8f0",
+        });
+        return;
+      }
+
+      if (!contractTypeOptions.includes(form.contract_type)) {
+        setErrorMessage("Please select a contract type for this Driver.");
+        await Swal.fire({
+          title: "Contract Type Required",
+          text: "Please select Long Term, Short Term, or Freelance for this Driver.",
+          icon: "warning",
+          background: "#0f172a",
+          color: "#e2e8f0",
+        });
+        return;
+      }
+
+      if (
+        form.contract_type === "Short Term" &&
+        (!form.contract_start_date || !form.contract_end_date)
+      ) {
+        setErrorMessage("Please enter the Short Term contract From and To dates.");
+        await Swal.fire({
+          title: "Contract Dates Required",
+          text: "Short Term drivers must have Contract From and Contract To dates.",
           icon: "warning",
           background: "#0f172a",
           color: "#e2e8f0",
@@ -548,6 +589,16 @@ export default function Users() {
         tour_guide_license:
           form.role === "Driver"
             ? String(form.tour_guide_license || "").trim() || null
+            : null,
+        contract_type:
+          form.role === "Driver" ? form.contract_type || null : null,
+        contract_start_date:
+          form.role === "Driver" && form.contract_type === "Short Term"
+            ? form.contract_start_date || null
+            : null,
+        contract_end_date:
+          form.role === "Driver" && form.contract_type === "Short Term"
+            ? form.contract_end_date || null
             : null,
         blacklist_reason:
           form.status === "Inactive" ||
@@ -973,6 +1024,7 @@ export default function Users() {
                   "Email",
                   "Phone",
                   "Role",
+                  "Contract Type",
                   "Vehicle",
                   "Languages",
                   "Experience",
@@ -1088,6 +1140,15 @@ export default function Users() {
                                 Experience: {formatExperienceLabel(user)}
                               </div>
                             )}
+                            {user.contract_type && (
+                              <div>Contract: {user.contract_type}</div>
+                            )}
+                            {user.contract_type === "Short Term" &&
+                              (user.contract_start_date || user.contract_end_date) && (
+                                <div>
+                                  Contract dates: {user.contract_start_date || "-"} to {user.contract_end_date || "-"}
+                                </div>
+                              )}
                           </div>
                         )}
                       </div>
@@ -1106,6 +1167,13 @@ export default function Users() {
                       <Shield className="w-3 h-3" />
                       {user.role}
                     </span>
+                  </td>
+                  <td className="py-4 px-6 text-sm text-slate-600">
+                    {user.role === "Driver" ? (
+                      user.contract_type || <span className="text-slate-400">—</span>
+                    ) : (
+                      <span className="text-slate-400">—</span>
+                    )}
                   </td>
                   <td className="py-4 px-6 text-sm text-slate-600 min-w-[180px]">
                     {assignedVehicleLabel(user)}
@@ -1327,6 +1395,12 @@ export default function Users() {
                         nextRole === "Driver" ? form.driver_license : "",
                       tour_guide_license:
                         nextRole === "Driver" ? form.tour_guide_license : "",
+                      contract_type:
+                        nextRole === "Driver" ? form.contract_type : "",
+                      contract_start_date:
+                        nextRole === "Driver" ? form.contract_start_date : "",
+                      contract_end_date:
+                        nextRole === "Driver" ? form.contract_end_date : "",
                       status:
                         shouldClearBlacklist && form.status === "Blacklisted"
                           ? "Active"
@@ -1407,6 +1481,58 @@ export default function Users() {
                       className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-amber-500"
                     />
                   </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-300 mb-2">
+                      Contract Type
+                    </label>
+                    <select
+                      value={form.contract_type}
+                      onChange={(e) =>
+                        setForm({ ...form, contract_type: e.target.value })
+                      }
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-amber-500"
+                    >
+                      <option value="">Select contract type</option>
+                      {contractTypeOptions.map((contractType) => (
+                        <option key={contractType} value={contractType}>
+                          {contractType}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {form.contract_type === "Short Term" && (
+                    <>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-300 mb-2">
+                          Contract From
+                        </label>
+                        <input
+                          type="date"
+                          value={form.contract_start_date}
+                          onChange={(e) =>
+                            setForm({ ...form, contract_start_date: e.target.value })
+                          }
+                          className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-amber-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-300 mb-2">
+                          Contract To
+                        </label>
+                        <input
+                          type="date"
+                          min={form.contract_start_date || undefined}
+                          value={form.contract_end_date}
+                          onChange={(e) =>
+                            setForm({ ...form, contract_end_date: e.target.value })
+                          }
+                          className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-amber-500"
+                        />
+                      </div>
+                    </>
+                  )}
 
                   <div>
                     <label className="block text-sm font-medium text-slate-300 mb-2">

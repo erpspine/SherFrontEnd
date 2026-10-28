@@ -83,6 +83,9 @@ const normalizeContract = (contract) => {
     startDate: contract.startDate || contract.start_date || "",
     endDate: contract.endDate || contract.end_date || "",
     leaseType: contract.leaseType || contract.lease_type || "",
+    isParentCompany: Boolean(
+      contract.isParentCompany ?? contract.is_parent_company,
+    ),
     monthlyRate: contract.monthlyRate ?? contract.monthly_rate ?? "",
     status: contract.status || "Active",
   };
@@ -222,6 +225,7 @@ export default function LeaseCalendar() {
     const monthEndKey = formatDateStr(calendarDates[calendarDates.length - 1]);
 
     contracts.forEach((contract) => {
+      if (contract.isParentCompany) return;
       if (String(contract.status).toLowerCase() === "cancelled") return;
       const cStart = formatDateStr(contract.startDate);
       const cEnd = formatDateStr(contract.endDate);
@@ -240,6 +244,7 @@ export default function LeaseCalendar() {
   const allLeasedVehicleIds = useMemo(() => {
     const set = new Set();
     contracts.forEach((c) => {
+      if (c.isParentCompany) return;
       if (String(c.status).toLowerCase() === "cancelled") return;
       c.vehicleIds.forEach((vid) => set.add(Number(vid)));
     });
@@ -365,7 +370,7 @@ export default function LeaseCalendar() {
   }
 
   const activeCount = contracts.filter(
-    (c) => String(c.status).toLowerCase() === "active",
+    (c) => !c.isParentCompany && String(c.status).toLowerCase() === "active",
   ).length;
 
   return (

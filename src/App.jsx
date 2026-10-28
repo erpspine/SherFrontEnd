@@ -1,7 +1,7 @@
 import PerDiems from "./pages/PerDiems";
 import FuelReport from "./pages/FuelReport";
 import FuelManagement from "./pages/FuelManagement";
-﻿import {
+import {
   BrowserRouter as Router,
   Routes,
   Route,
@@ -13,6 +13,7 @@ import Vehicles from "./pages/Vehicles";
 import SubcontractVehicles from "./pages/SubcontractVehicles";
 import Clients from "./pages/Clients";
 import JobCards from "./pages/JobCards";
+import DepartureArrivalReport from "./pages/DepartureArrivalReport";
 import SafariAllocations from "./pages/SafariAllocations";
 import Quotations from "./pages/Quotations";
 import Parks from "./pages/Parks";
@@ -44,6 +45,7 @@ import OdometerReportView from "./pages/OdometerReportView";
 import LongTermLeasing from "./pages/LongTermLeasing";
 import LeaseCalendar from "./pages/LeaseCalendar";
 import LeaseAllocations from "./pages/LeaseAllocations";
+import LeaseAllocationView from "./pages/LeaseAllocationView";
 import LeaseProformaInvoices from "./pages/LeaseProformaInvoices";
 import InventoryStore from "./pages/InventoryStore";
 import AuditLog from "./pages/AuditLog";
@@ -100,11 +102,21 @@ function ProtectedRoutes() {
         />
         <Route
           path="/performance-incident-management/new"
-          element={<PermissionRoute permission="vehicles.update" element={<PerformanceIncidentManagement />} />}
+          element={
+            <PermissionRoute
+              permission="vehicles.update"
+              element={<PerformanceIncidentManagement />}
+            />
+          }
         />
         <Route
           path="/performance-incident-management/view"
-          element={<PermissionRoute permission="vehicles.view" element={<PerformanceIncidentManagement />} />}
+          element={
+            <PermissionRoute
+              permission="vehicles.view"
+              element={<PerformanceIncidentManagement />}
+            />
+          }
         />
         <Route
           path="/performance-incident-management"
@@ -201,6 +213,15 @@ function ProtectedRoutes() {
           }
         />
         <Route
+          path="/lease-allocations/:id"
+          element={
+            <PermissionRoute
+              permission="vehicles.view"
+              element={<LeaseAllocationView />}
+            />
+          }
+        />
+        <Route
           path="/lease-proforma-invoices"
           element={
             <PermissionRoute
@@ -226,7 +247,21 @@ function ProtectedRoutes() {
         />
         <Route
           path="/per-diems"
-          element={<PermissionRoute permission="job-cards.view" element={<PerDiems />} />}
+          element={
+            <PermissionRoute
+              permission="job-cards.view"
+              element={<PerDiems />}
+            />
+          }
+        />
+        <Route
+          path="/job-cards/:jobCardId"
+          element={
+            <PermissionRoute
+              permission="job-cards.view"
+              element={<JobCards />}
+            />
+          }
         />
         <Route
           path="/job-cards"
@@ -234,6 +269,15 @@ function ProtectedRoutes() {
             <PermissionRoute
               permission="job-cards.view"
               element={<JobCards />}
+            />
+          }
+        />
+        <Route
+          path="/departure-arrival-report"
+          element={
+            <PermissionRoute
+              permission="job-cards.view"
+              element={<DepartureArrivalReport />}
             />
           }
         />
@@ -294,7 +338,12 @@ function ProtectedRoutes() {
             />
           }
         />
-        <Route path="/audit-log" element={<PermissionRoute permission="users.view" element={<AuditLog />} />} />
+        <Route
+          path="/audit-log"
+          element={
+            <PermissionRoute permission="users.view" element={<AuditLog />} />
+          }
+        />
         <Route
           path="/users"
           element={
@@ -347,8 +396,24 @@ function ProtectedRoutes() {
         />
         {/* <Route path="/route-distances" element={<RouteDistances />} /> */}
         <Route path="/inspections" element={<Inspections />} />
-        <Route path="/fuel-report" element={<PermissionRoute permission="odometer-logs.view" element={<FuelReport />} />} />
-        <Route path="/fuel-management" element={<PermissionRoute permission="odometer-logs.view" element={<FuelManagement />} />} />
+        <Route
+          path="/fuel-report"
+          element={
+            <PermissionRoute
+              permission="odometer-logs.view"
+              element={<FuelReport />}
+            />
+          }
+        />
+        <Route
+          path="/fuel-management"
+          element={
+            <PermissionRoute
+              permission="odometer-logs.view"
+              element={<FuelManagement />}
+            />
+          }
+        />
         <Route
           path="/odometer-reports"
           element={

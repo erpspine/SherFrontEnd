@@ -1,7 +1,8 @@
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
+  ArrowLeft,
   Calendar,
   ClipboardList,
   Download,
@@ -18,30 +19,35 @@ import {
   X,
 } from "lucide-react";
 import { apiFetch } from "../utils/api";
-import { canDelete } from "../utils/auth";
+import { canDelete, canManageJobCardStatus } from "../utils/auth";
 import Swal from "sweetalert2";
 import Select from "react-select";
+import JobCardRouteMap from "../components/JobCardRouteMap";
 
 const allocationSelectStyles = {
   control: (base) => ({
     ...base,
-    backgroundColor: "#1e293b",
-    borderColor: "#334155",
+    backgroundColor: "#f8fafc",
+    borderColor: "#cbd5e1",
     borderRadius: 8,
     minHeight: 42,
   }),
-  singleValue: (base) => ({ ...base, color: "#fff" }),
-  input: (base) => ({ ...base, color: "#fff" }),
-  placeholder: (base) => ({ ...base, color: "#94a3b8" }),
-  menu: (base) => ({ ...base, backgroundColor: "#1e293b" }),
+  singleValue: (base) => ({ ...base, color: "#0f172a" }),
+  input: (base) => ({ ...base, color: "#0f172a" }),
+  placeholder: (base) => ({ ...base, color: "#64748b" }),
+  menu: (base) => ({
+    ...base,
+    backgroundColor: "#ffffff",
+    border: "1px solid #e2e8f0",
+  }),
   option: (base, state) => ({
     ...base,
-    color: "#fff",
+    color: "#0f172a",
     backgroundColor: state.isSelected
-      ? "#475569"
+      ? "#fde68a"
       : state.isFocused
-        ? "#334155"
-        : "transparent",
+        ? "#fef3c7"
+        : "#ffffff",
     overflowWrap: "anywhere",
   }),
   menuPortal: (base) => ({ ...base, zIndex: 9999 }),
@@ -157,6 +163,7 @@ const normalizeUser = (user) => ({
   id: Number(user.id || 0),
   name: user.name || "",
   role: user.role || "",
+  contractType: user.contract_type || user.contractType || "",
   status:
     typeof user.status === "string"
       ? user.status
@@ -326,6 +333,25 @@ const calculateApproxFuelUsed = (fuelGaugeOut, fuelGaugeIn) => {
   return Math.max(0, out - inn);
 };
 
+const FUEL_DISTANCE_PER_LITRE = 6.5;
+
+const calculateEstimatedDistance = (routeDistanceKm, additionalDistanceKm) => {
+  const route = Number(routeDistanceKm);
+  const additional = Number(additionalDistanceKm);
+  const total =
+    (Number.isFinite(route) ? route : 0) +
+    (Number.isFinite(additional) ? additional : 0);
+  return total > 0 ? total : null;
+};
+
+const calculateFuelAllowance = (routeDistanceKm, additionalDistanceKm) => {
+  const total = calculateEstimatedDistance(
+    routeDistanceKm,
+    additionalDistanceKm,
+  );
+  return total == null ? null : total / FUEL_DISTANCE_PER_LITRE;
+};
+
 const getNumberOfDaysBetween = (startDate, endDate) => {
   if (!startDate || !endDate) return 1;
 
@@ -441,6 +467,13 @@ const normalizeJobCard = (jobCard) => {
     numberOfDays: Number(jobCard.number_of_days || jobCard.numberOfDays || 1),
     routeSummary: jobCard.route_summary || jobCard.routeSummary || "",
     routeItinerary: jobCard.route_itinerary || jobCard.routeItinerary || [],
+    routePoints: jobCard.route_points || jobCard.routePoints || [],
+    routeDistanceKm:
+      jobCard.route_distance_km ?? jobCard.routeDistanceKm ?? null,
+    additionalDistanceKm:
+      jobCard.additional_distance_km ?? jobCard.additionalDistanceKm ?? null,
+    additionalDistanceNote:
+      jobCard.additional_distance_note ?? jobCard.additionalDistanceNote ?? "",
     pickupLocation: jobCard.pickup_location || jobCard.pickupLocation || "",
     dropoffLocation: jobCard.dropoff_location || jobCard.dropoffLocation || "",
     reason: jobCard.reason || "",
@@ -473,6 +506,8 @@ const normalizeJobCard = (jobCard) => {
       jobCard.driver_details || jobCard.driverDetails || jobCard.driver || "",
     driverAllowance:
       jobCard.driver_allowance ?? jobCard.driverAllowance ?? null,
+    driverAllowances:
+      jobCard.driver_allowances || jobCard.driverAllowances || {},
     additionalDetails:
       jobCard.additional_details || jobCard.additionalDetails || "",
     status: normalizeStatusValue(
@@ -503,6 +538,35 @@ const normalizeJobCard = (jobCard) => {
   };
 };
 
+const dateKey = (value) => {
+  const parsed = parseDateValue(value);
+  if (!parsed) return "";
+
+  const year = parsed.getFullYear();
+  const month = String(parsed.getMonth() + 1).padStart(2, "0");
+  const day = String(parsed.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const getItineraryDateRange = (card) => {
+  const itineraryDates = (Array.isArray(card.routeItinerary)
+    ? card.routeItinerary
+    : []
+  )
+    .map((item) => {
+      if (typeof item === "string") return dateKey(item);
+      return dateKey(item?.date || item?.dayDate || item?.dayTitle);
+    })
+    .filter(Boolean)
+    .sort();
+
+  return {
+    start: itineraryDates[0] || dateKey(card.safariStartDate),
+    end:
+      itineraryDates[itineraryDates.length - 1] || dateKey(card.safariEndDate),
+  };
+};
+
 const createEmptyForm = () => ({
   leadId: "",
   vehicleId: "",
@@ -517,6 +581,10 @@ const createEmptyForm = () => ({
   pickupLocation: "",
   dropoffLocation: "",
   routeSummary: "",
+  routePoints: [],
+  routeDistanceKm: null,
+  additionalDistanceKm: "",
+  additionalDistanceNote: "",
   routeItineraryLines: [createItineraryLine()],
   additionalDetails: "",
   bookingReferenceNo: "",
@@ -535,6 +603,7 @@ const createEmptyForm = () => ({
   approximateFuelUsed: "",
   driverDetails: "",
   driverAllowance: "",
+  driverAllowances: {},
 });
 
 const buildFormFromLead = (lead) => ({
@@ -558,6 +627,10 @@ const buildFormFromLead = (lead) => ({
   pickupLocation: "",
   dropoffLocation: "",
   routeSummary: lead.routeParks || "",
+  routePoints: [],
+  routeDistanceKm: null,
+  additionalDistanceKm: "",
+  additionalDistanceNote: "",
   routeItineraryLines: [createItineraryLine()],
   additionalDetails: lead.specialRequirements || "",
   bookingReferenceNo: lead.bookingRef || "",
@@ -576,6 +649,7 @@ const buildFormFromLead = (lead) => ({
   approximateFuelUsed: "",
   driverDetails: "",
   driverAllowance: "",
+  driverAllowances: {},
 });
 
 const buildFormFromJobCard = (jobCard) => ({
@@ -592,6 +666,13 @@ const buildFormFromJobCard = (jobCard) => ({
   pickupLocation: jobCard.pickupLocation || "",
   dropoffLocation: jobCard.dropoffLocation || "",
   routeSummary: jobCard.routeSummary || "",
+  routePoints: Array.isArray(jobCard.routePoints) ? jobCard.routePoints : [],
+  routeDistanceKm: jobCard.routeDistanceKm ?? null,
+  additionalDistanceKm:
+    jobCard.additionalDistanceKm != null
+      ? String(jobCard.additionalDistanceKm)
+      : "",
+  additionalDistanceNote: jobCard.additionalDistanceNote || "",
   routeItineraryLines: normalizeItineraryLines(jobCard.routeItinerary),
   additionalDetails: jobCard.additionalDetails || "",
   bookingReferenceNo: jobCard.bookingReferenceNo || "",
@@ -613,6 +694,10 @@ const buildFormFromJobCard = (jobCard) => ({
     jobCard.driverAllowance != null && jobCard.driverAllowance !== ""
       ? String(jobCard.driverAllowance)
       : "",
+  driverAllowances:
+    jobCard.driverAllowances && typeof jobCard.driverAllowances === "object"
+      ? jobCard.driverAllowances
+      : {},
 });
 
 export default function JobCards() {
@@ -628,6 +713,8 @@ export default function JobCards() {
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [filterFromDate, setFilterFromDate] = useState("");
   const [filterToDate, setFilterToDate] = useState("");
+  const [reportFromDate, setReportFromDate] = useState("");
+  const [reportToDate, setReportToDate] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState("create");
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
@@ -643,6 +730,28 @@ export default function JobCards() {
   const [generatingPerDiemId, setGeneratingPerDiemId] = useState(null);
   const [downloadingJobCardId, setDownloadingJobCardId] = useState(null);
   const [errorMessage, setErrorMessage] = useState("");
+  const [searchParams] = useSearchParams();
+  const jobCardId = searchParams.get("view");
+  const formModeParam = searchParams.get("form");
+  const requestedCloseJobCardId = searchParams.get("id");
+  const isJobCardFormPage = ["create", "edit", "close"].includes(formModeParam);
+
+  const loadJobCardDetails = async (id) => {
+    setErrorMessage("");
+    try {
+      const response = await apiFetch(`/job-cards/${id}`);
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(
+          payload?.message || "Unable to fetch job card details.",
+        );
+      }
+      setSelectedJobCard(normalizeJobCard(extractSingle(payload, "jobCard")));
+      setIsViewModalOpen(true);
+    } catch (error) {
+      setErrorMessage(error.message || "Unable to open job card details.");
+    }
+  };
 
   const loadData = async () => {
     setIsLoading(true);
@@ -731,12 +840,29 @@ export default function JobCards() {
       setUsers(extractList(usersPayload, "users").map(normalizeUser));
       setSafariAllocations(
         extractList(safariAllocationsPayload, "safariAllocations").map((a) => ({
-          leadId: Number(a.leadId ?? a.lead_id ?? 0),
-          vehicleId: Number(a.vehicleId ?? a.vehicle_id ?? 0),
-          driverId: Number(a.driverId ?? a.driver_id ?? 0),
-          driverName: a.driver?.name || a.driverName || "",
-          vehicleNo: a.vehicle?.vehicle_no || a.vehicle?.vehicleNo || "",
-          plateNo: a.vehicle?.plate_no || a.vehicle?.plateNo || "",
+          leadId: Number(a.leadId ?? a.lead_id ?? a.lead?.id ?? 0),
+          vehicleId: Number(a.vehicleId ?? a.vehicle_id ?? a.vehicle?.id ?? 0),
+          driverId: Number(a.driverId ?? a.driver_id ?? a.driver?.id ?? 0),
+          driverName: a.driver?.name || a.driver_name || a.driverName || "",
+          driverContractType:
+            a.driver?.contract_type ||
+            a.driver?.contractType ||
+            a.driver_contract_type ||
+            a.driverContractType ||
+            "",
+          vehicle: a.vehicle || null,
+          vehicleNo:
+            a.vehicle?.vehicle_no ||
+            a.vehicle?.vehicleNo ||
+            a.vehicle_no ||
+            a.vehicleNo ||
+            "",
+          plateNo:
+            a.vehicle?.plate_no ||
+            a.vehicle?.plateNo ||
+            a.plate_no ||
+            a.plateNo ||
+            "",
         })),
       );
       setLeaseContracts(
@@ -790,6 +916,59 @@ export default function JobCards() {
   useEffect(() => {
     loadData();
   }, []);
+
+  useEffect(() => {
+    if (jobCardId) loadJobCardDetails(jobCardId);
+  }, [jobCardId]);
+
+  useEffect(() => {
+    if (formModeParam !== "close") return;
+    if (!canManageJobCardStatus()) {
+      setErrorMessage("You are not authorized to close job cards.");
+      navigate("/job-cards/");
+      return;
+    }
+    if (!requestedCloseJobCardId || editingId) return;
+    let isCurrent = true;
+    const loadJobCardForClosing = async () => {
+      try {
+        const response = await apiFetch(
+          `/job-cards/${requestedCloseJobCardId}`,
+        );
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(payload?.message || "Unable to fetch job card.");
+        }
+        if (!isCurrent) return;
+        const jobCard = normalizeJobCard(extractSingle(payload, "jobCard"));
+        setModalMode("close");
+        setEditingId(jobCard.id);
+        setForm(buildFormFromJobCard(jobCard));
+        setIsModalOpen(true);
+      } catch (error) {
+        if (isCurrent)
+          setErrorMessage(error.message || "Unable to open job card.");
+      }
+    };
+    loadJobCardForClosing();
+    return () => {
+      isCurrent = false;
+    };
+  }, [formModeParam, requestedCloseJobCardId, editingId, navigate]);
+
+  useEffect(() => {
+    if (isJobCardFormPage) {
+      setIsModalOpen(true);
+      return;
+    }
+
+    // The sidebar links back to /job-cards without the form query. Close any
+    // open form when that happens instead of leaving the old create modal up.
+    if (!jobCardId) {
+      setIsModalOpen(false);
+      setEditingId(null);
+    }
+  }, [isJobCardFormPage, jobCardId]);
 
   const eligibleLeads = useMemo(
     () =>
@@ -892,7 +1071,7 @@ export default function JobCards() {
   const selectedLeadAllocations = useMemo(() => {
     if (!form.leadId) return [];
 
-    return safariAllocations
+    const allocations = safariAllocations
       .filter((allocation) => String(allocation.leadId) === String(form.leadId))
       .map((allocation) => {
         const vehicle = vehicles.find(
@@ -903,6 +1082,8 @@ export default function JobCards() {
         );
         const vehicleName =
           allocation.vehicleNo ||
+          allocation.vehicle?.vehicle_no ||
+          allocation.vehicle?.vehicleNo ||
           vehicle?.label ||
           (vehicle
             ? `${vehicle.label}`
@@ -915,9 +1096,49 @@ export default function JobCards() {
             driverFromUser?.name ||
             vehicle?.assignedDriverName ||
             "Unassigned",
+          driverContractType:
+            allocation.driverContractType || driverFromUser?.contractType || "",
         };
       });
+
+    return Array.from(
+      new Map(
+        allocations.map((allocation) => [
+          `${allocation.vehicleName}|${allocation.driverName}`.toLowerCase(),
+          allocation,
+        ]),
+      ).values(),
+    );
   }, [form.leadId, safariAllocations, vehicles, users]);
+
+  const allowanceContractTypes = useMemo(() => {
+    if (!isSafariJobType(form.type)) return [];
+    return Array.from(
+      new Set(
+        selectedLeadAllocations.map(
+          (item) => item.driverContractType || "Unspecified",
+        ),
+      ),
+    );
+  }, [form.type, selectedLeadAllocations]);
+
+  const setContractAllowance = (contractType, value) => {
+    setForm((current) => {
+      const driverAllowances = {
+        ...(current.driverAllowances || {}),
+        [contractType]: value,
+      };
+      const total = Object.values(driverAllowances).reduce((sum, amount) => {
+        const number = Number(amount);
+        return Number.isFinite(number) ? sum + number : sum;
+      }, 0);
+      return {
+        ...current,
+        driverAllowances,
+        driverAllowance: total > 0 ? String(total) : "",
+      };
+    });
+  };
 
   const getJobCardVehicleCount = (card) => {
     if (!card) return 0;
@@ -1029,6 +1250,76 @@ export default function JobCards() {
     };
   }, [filteredCards, safariAllocations]);
 
+  const departureArrivalReport = useMemo(() => {
+    const eventsByDate = new Map();
+    const safariCards = jobCards.filter((card) => isSafariJobType(card.type));
+
+    safariCards.forEach((card) => {
+      const { start, end } = getItineraryDateRange(card);
+      if (!start && !end) return;
+
+      const vehicleCount = getJobCardVehicleCount(card);
+      if (start) {
+        const event = eventsByDate.get(start) || {
+          date: start,
+          departures: 0,
+          arrivals: 0,
+        };
+        event.departures += vehicleCount;
+        eventsByDate.set(start, event);
+      }
+      if (end) {
+        const event = eventsByDate.get(end) || {
+          date: end,
+          departures: 0,
+          arrivals: 0,
+        };
+        event.arrivals += vehicleCount;
+        eventsByDate.set(end, event);
+      }
+    });
+
+    const eventRows = Array.from(eventsByDate.values()).sort((a, b) =>
+      a.date.localeCompare(b.date),
+    );
+    if (eventRows.length === 0 && (!reportFromDate || !reportToDate)) return [];
+
+    const start = parseDateValue(reportFromDate || eventRows[0]?.date);
+    const end = parseDateValue(
+      reportToDate || eventRows[eventRows.length - 1]?.date,
+    );
+    if (!start || !end || start > end) return [];
+
+    const rows = [];
+    const cursor = new Date(start);
+    cursor.setHours(0, 0, 0, 0);
+    const endTime = new Date(end);
+    endTime.setHours(0, 0, 0, 0);
+    while (cursor <= endTime) {
+      const key = dateKey(cursor);
+      const event = eventsByDate.get(key);
+      rows.push({
+        date: key,
+        departures: event?.departures || 0,
+        arrivals: event?.arrivals || 0,
+      });
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    return rows;
+  }, [jobCards, safariAllocations, reportFromDate, reportToDate]);
+
+  const departureArrivalTotals = useMemo(
+    () =>
+      departureArrivalReport.reduce(
+        (totals, row) => ({
+          departures: totals.departures + row.departures,
+          arrivals: totals.arrivals + row.arrivals,
+        }),
+        { departures: 0, arrivals: 0 },
+      ),
+    [departureArrivalReport],
+  );
+
   const setField = (field, value) =>
     setForm((prev) => ({ ...prev, [field]: value }));
 
@@ -1063,6 +1354,7 @@ export default function JobCards() {
     setEditingId(null);
     setForm(createEmptyForm());
     setIsModalOpen(true);
+    navigate("/job-cards/?form=create");
   };
 
   const openClose = (jobCard) => {
@@ -1070,6 +1362,7 @@ export default function JobCards() {
     setEditingId(jobCard.id);
     setForm(buildFormFromJobCard(jobCard));
     setIsModalOpen(true);
+    navigate(`/job-cards/?form=close&id=${encodeURIComponent(jobCard.id)}`);
   };
 
   const onSelectLead = (leadIdValue) => {
@@ -1294,6 +1587,7 @@ export default function JobCards() {
       setEditingId(selected.id);
       setForm(buildFormFromJobCard(selected));
       setIsModalOpen(true);
+      navigate(`/job-cards/?form=edit&id=${encodeURIComponent(selected.id)}`);
     } catch (error) {
       setErrorMessage(error.message || "Unable to open job card details.");
       await Swal.fire({
@@ -1307,29 +1601,7 @@ export default function JobCards() {
   };
 
   const openView = async (jobCard) => {
-    setErrorMessage("");
-    try {
-      const response = await apiFetch(`/job-cards/${jobCard.id}`);
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(
-          payload?.message || "Unable to fetch job card details.",
-        );
-      }
-
-      const selected = normalizeJobCard(extractSingle(payload, "jobCard"));
-      setSelectedJobCard(selected);
-      setIsViewModalOpen(true);
-    } catch (error) {
-      setErrorMessage(error.message || "Unable to open job card details.");
-      await Swal.fire({
-        title: "Load Failed",
-        text: error.message || "Unable to open job card details.",
-        icon: "error",
-        background: "#0f172a",
-        color: "#e2e8f0",
-      });
-    }
+    navigate(`/job-cards/?view=${encodeURIComponent(jobCard.id)}`);
   };
 
   const detailValue = (value) => {
@@ -1344,6 +1616,7 @@ export default function JobCards() {
   const closeViewModal = () => {
     setIsViewModalOpen(false);
     setSelectedJobCard(null);
+    if (jobCardId) navigate("/job-cards");
   };
 
   const routeItineraryLines = useMemo(() => {
@@ -1456,6 +1729,25 @@ export default function JobCards() {
 
     return allowance * selectedJobCardVehicleCount;
   }, [selectedJobCard, selectedJobCardVehicleCount]);
+
+  const selectedJobCardAllowanceBreakdown = useMemo(() => {
+    if (!selectedJobCard) return [];
+    const allowances = selectedJobCard.driverAllowances || {};
+    const drivers = Array.isArray(selectedJobCard.driverProfiles)
+      ? selectedJobCard.driverProfiles
+      : [];
+    const counts = drivers.reduce((result, driver) => {
+      const type = driver.contractType || "Unspecified";
+      result[type] = (result[type] || 0) + 1;
+      return result;
+    }, {});
+
+    return Object.entries(allowances).map(([contractType, amount]) => ({
+      contractType,
+      amount: Number(amount),
+      driverCount: counts[contractType] || 0,
+    }));
+  }, [selectedJobCard]);
 
   const getRouteSummaryPreview = (value, limit = 90) => {
     const normalized = String(value || "").trim();
@@ -1650,6 +1942,51 @@ export default function JobCards() {
     }
   };
 
+  const handleReopen = async (jobCard) => {
+    const confirmation = await Swal.fire({
+      title: "Reopen job card?",
+      text: `Reopen ${jobCard.jobCardNo || "this job card"}?`,
+      icon: "question",
+      showCancelButton: true,
+      confirmButtonText: "Yes, reopen",
+      cancelButtonText: "Cancel",
+      background: "#0f172a",
+      color: "#e2e8f0",
+      confirmButtonColor: "#059669",
+    });
+    if (!confirmation.isConfirmed) return;
+
+    try {
+      const response = await apiFetch(`/job-cards/${jobCard.id}/status`, {
+        method: "PATCH",
+        body: { status: "Open" },
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.message || "Unable to reopen job card.");
+      }
+      const reopened = normalizeJobCard(extractSingle(payload, "jobCard"));
+      setJobCards((current) =>
+        current.map((card) =>
+          card.id === jobCard.id ? { ...card, ...reopened } : card,
+        ),
+      );
+      await Swal.fire({
+        title: "Reopened",
+        text: "Job card reopened successfully.",
+        icon: "success",
+        timer: 1500,
+        showConfirmButton: false,
+      });
+    } catch (error) {
+      await Swal.fire({
+        title: "Unable to Reopen",
+        text: error.message || "Unable to reopen job card.",
+        icon: "error",
+      });
+    }
+  };
+
   const handleSave = async () => {
     if (isSafariType && !form.leadId) {
       setErrorMessage("Please select a PI-issued lead.");
@@ -1661,6 +1998,31 @@ export default function JobCards() {
         color: "#e2e8f0",
       });
       return;
+    }
+
+    if (isSafariType && form.leadId) {
+      const duplicateSafariCard = jobCards.find(
+        (card) =>
+          isSafariJobType(card.type) &&
+          String(card.leadId || "") === String(form.leadId) &&
+          String(card.id) !== String(editingId || ""),
+      );
+
+      if (duplicateSafariCard) {
+        const duplicateNumber =
+          duplicateSafariCard.jobCardNo || `#${duplicateSafariCard.id}`;
+        setErrorMessage(
+          `A Safari job card already exists for this lead (${duplicateNumber}). Update the existing job card instead.`,
+        );
+        await Swal.fire({
+          title: "Duplicate Safari Job Card",
+          text: `This lead already has job card ${duplicateNumber}.`,
+          icon: "warning",
+          background: "#0f172a",
+          color: "#e2e8f0",
+        });
+        return;
+      }
     }
 
     if (isLeaseType && !form.leaseAllocationId) {
@@ -1697,15 +2059,11 @@ export default function JobCards() {
       }
     }
 
-    const shouldAutoCloseOnUpdate =
-      Boolean(editingId) && hasCapturedSafariDateRange(form);
     const selectedStatus = isCreateMode
       ? "Open"
       : isCloseMode
         ? "Closed"
-        : shouldAutoCloseOnUpdate
-          ? "Closed"
-          : form.status || derivedStatus;
+        : form.status || derivedStatus;
     const calculatedNumberOfDays =
       isSafariType && hasCapturedSafariDateRange(form)
         ? getNumberOfDaysBetween(form.safariStartDate, form.safariEndDate)
@@ -1718,21 +2076,6 @@ export default function JobCards() {
       await Swal.fire({
         title: "Missing Mileage Out",
         text: "Please capture Odometer Out when the vehicle is going out.",
-        icon: "warning",
-        background: "#0f172a",
-        color: "#e2e8f0",
-      });
-      return;
-    }
-
-    if (
-      requiresVehicleRunSection &&
-      String(form.routeSummary || "").trim() === ""
-    ) {
-      setErrorMessage("Please enter destination / route for this movement.");
-      await Swal.fire({
-        title: "Missing Destination",
-        text: "Please capture where the vehicle is going.",
         icon: "warning",
         background: "#0f172a",
         color: "#e2e8f0",
@@ -1809,7 +2152,7 @@ export default function JobCards() {
             leaseAllocationId: isLeaseType
               ? Number(form.leaseAllocationId)
               : null,
-            status: selectedStatus,
+            ...(isSafariType || isLeaseType ? {} : { status: selectedStatus }),
             type: form.type || "Safari",
             safariStartDate: form.safariStartDate || null,
             safari_start_date: form.safariStartDate || null,
@@ -1818,6 +2161,19 @@ export default function JobCards() {
             pickupLocation: isSafariType ? form.pickupLocation || null : null,
             dropoffLocation: isSafariType ? form.dropoffLocation || null : null,
             routeSummary: form.routeSummary || null,
+            routePoints: Array.isArray(form.routePoints)
+              ? form.routePoints
+              : [],
+            routeDistanceKm:
+              form.routeDistanceKm == null || form.routeDistanceKm === ""
+                ? null
+                : Number(form.routeDistanceKm),
+            additionalDistanceKm:
+              form.additionalDistanceKm == null ||
+              form.additionalDistanceKm === ""
+                ? null
+                : Number(form.additionalDistanceKm),
+            additionalDistanceNote: form.additionalDistanceNote || null,
             routeItinerary:
               isSafariType || isLeaseType
                 ? itineraryLinesToPayload(form.routeItineraryLines)
@@ -1855,17 +2211,31 @@ export default function JobCards() {
                   ? null
                   : Number(form.driverAllowance)
                 : null,
+            driverAllowances:
+              isSafariType &&
+              Object.keys(form.driverAllowances || {}).length > 0
+                ? form.driverAllowances
+                : null,
           };
 
-      const response = editingId
-        ? await apiFetch(`/job-cards/${editingId}`, {
-            method: "PUT",
-            body: payload,
+      const response = isCloseMode
+        ? await apiFetch(`/job-cards/${editingId}/status`, {
+            method: "PATCH",
+            body: {
+              status: "Closed",
+              safariEndDate: form.safariEndDate,
+              timeIn: form.timeIn,
+            },
           })
-        : await apiFetch("/job-cards", {
-            method: "POST",
-            body: payload,
-          });
+        : editingId
+          ? await apiFetch(`/job-cards/${editingId}`, {
+              method: "PUT",
+              body: payload,
+            })
+          : await apiFetch("/job-cards", {
+              method: "POST",
+              body: payload,
+            });
 
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
@@ -1899,6 +2269,7 @@ export default function JobCards() {
       setIsModalOpen(false);
       setEditingId(null);
       setForm(createEmptyForm());
+      if (isJobCardFormPage) navigate("/job-cards/");
 
       await Swal.fire({
         title: isCloseMode ? "Closed" : editingId ? "Updated" : "Created",
@@ -1929,463 +2300,665 @@ export default function JobCards() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Job Cards</h1>
-          <p className="text-slate-500 mt-1">
-            Two flows: Safari job cards for itinerary movement, and Operations
-            job cards for test drive/service/viewing with odometer tracking.
-          </p>
-        </div>
-        <button
-          onClick={openCreate}
-          className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-amber-400 to-amber-600 text-white rounded-xl font-medium text-sm hover:opacity-90 transition-opacity shadow-lg shadow-amber-500/25"
-        >
-          <Plus className="w-4 h-4" />
-          New Job Card
-        </button>
-      </div>
-
-      {errorMessage && !isModalOpen && (
-        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 flex items-start gap-2">
-          <AlertCircle className="w-4 h-4 mt-0.5" />
-          <span>{errorMessage}</span>
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Total Job Cards
-          </p>
-          <p className="text-2xl font-bold text-slate-900 mt-1">
-            {stats.totalCards}
-          </p>
-        </div>
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">
-            Safari / Operations
-          </p>
-          <p className="text-2xl font-bold text-amber-700 mt-1 flex items-baseline gap-2">
-            <span>{stats.safariCards}</span>
-            <span className="text-sm font-medium text-amber-600">/</span>
-            <span>{stats.operationsCards}</span>
-          </p>
-          <p className="text-xs text-amber-700/80 mt-1">
-            Safari cards / Operations cards
-          </p>
-        </div>
-        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
-            Filtered Allowance Total
-          </p>
-          <p className="text-2xl font-bold text-emerald-700 mt-1">
-            {stats.allowanceTotal.toLocaleString(undefined, {
-              maximumFractionDigits: 2,
-            })}
-          </p>
-          <p className="text-xs text-emerald-700/80 mt-1">
-            Updates automatically with search and filters
-          </p>
-        </div>
-      </div>
-
-      <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-200 px-4 py-3">
-          <div className="flex flex-wrap items-center gap-2 mb-3">
-            {[
-              { key: "all", label: "All" },
-              { key: "safari", label: "Safari" },
-              { key: "lease", label: "Long Term Lease" },
-              { key: "others", label: "Others" },
-            ].map((tab) => (
-              <button
-                key={tab.key}
-                type="button"
-                onClick={() => setCategoryFilter(tab.key)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
-                  categoryFilter === tab.key
-                    ? "bg-amber-500 border-amber-500 text-white"
-                    : "bg-white border-slate-200 text-slate-600 hover:border-amber-300 hover:text-amber-700"
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
+      <div
+        className={
+          jobCardId || isJobCardFormPage ? "hidden" : "flex flex-col"
+        }
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900">Job Cards</h1>
           </div>
-          <div className="flex items-center gap-3 focus-within:border-amber-400 transition-colors">
-            <Search className="w-4 h-4 text-slate-400 shrink-0" />
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(event) => setSearchTerm(event.target.value)}
-              placeholder="Search by booking ref, group name, company, type, route, reg no"
-              className="w-full bg-transparent text-sm text-slate-900 placeholder-slate-400 outline-none"
-            />
+          <button
+            onClick={openCreate}
+            className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-amber-400 to-amber-600 text-white rounded-xl font-medium text-sm hover:opacity-90 transition-opacity shadow-lg shadow-amber-500/25"
+          >
+            <Plus className="w-4 h-4" />
+            New Job Card
+          </button>
+        </div>
+
+        {errorMessage && !isModalOpen && (
+          <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 mt-0.5" />
+            <span>{errorMessage}</span>
           </div>
+        )}
 
-          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <div>
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                From Date
-              </label>
-              <input
-                type="date"
-                value={filterFromDate}
-                onChange={(event) => setFilterFromDate(event.target.value)}
-                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none [color-scheme:light] focus:border-amber-500"
-              />
-            </div>
-
-            <div>
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                To Date
-              </label>
-              <input
-                type="date"
-                value={filterToDate}
-                min={filterFromDate || undefined}
-                onChange={(event) => setFilterToDate(event.target.value)}
-                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none [color-scheme:light] focus:border-amber-500"
-              />
-            </div>
-
-            <div className="flex items-end">
-              <button
-                type="button"
-                onClick={() => {
-                  setFilterFromDate("");
-                  setFilterToDate("");
-                }}
-                className="w-full rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-700 transition hover:bg-amber-100"
-              >
-                Clear Date Filter
-              </button>
-            </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Total Job Cards
+            </p>
+            <p className="text-2xl font-bold text-slate-900 mt-1">
+              {stats.totalCards}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">
+              Safari / Operations
+            </p>
+            <p className="text-2xl font-bold text-amber-700 mt-1 flex items-baseline gap-2">
+              <span>{stats.safariCards}</span>
+              <span className="text-sm font-medium text-amber-600">/</span>
+              <span>{stats.operationsCards}</span>
+            </p>
+            <p className="text-xs text-amber-700/80 mt-1">
+              Safari cards / Operations cards
+            </p>
+          </div>
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+              Filtered Allowance Total
+            </p>
+            <p className="text-2xl font-bold text-emerald-700 mt-1">
+              {stats.allowanceTotal.toLocaleString(undefined, {
+                maximumFractionDigits: 2,
+              })}
+            </p>
+            <p className="text-xs text-emerald-700/80 mt-1">
+              Updates automatically with search and filters
+            </p>
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-slate-200">
-                <th className="text-left py-3 px-3 text-xs font-semibold text-slate-600 uppercase">
-                  Actions
-                </th>
-                <th className="text-left py-3 px-3 text-xs font-semibold text-slate-600 uppercase">
-                  Type
-                </th>
-                <th className="text-left py-3 px-3 text-xs font-semibold text-slate-600 uppercase">
-                  Job Card No
-                </th>
-                <th className="text-left py-3 px-3 text-xs font-semibold text-slate-600 uppercase">
-                  Status
-                </th>
-                <th className="text-left py-3 px-3 text-xs font-semibold text-slate-600 uppercase">
-                  Booking Ref
-                </th>
-                <th className="text-left py-3 px-3 text-xs font-semibold text-slate-600 uppercase">
-                  Group Name
-                </th>
-                <th className="text-left py-3 px-3 text-xs font-semibold text-slate-600 uppercase">
-                  Client / Contact
-                </th>
-                <th className="text-left py-3 px-3 text-xs font-semibold text-slate-600 uppercase">
-                  Dates
-                </th>
-                <th className="text-left py-3 px-3 text-xs font-semibold text-slate-600 uppercase">
-                  Itinerary / Destination
-                </th>
-                <th className="text-right py-3 px-3 text-xs font-semibold text-slate-600 uppercase whitespace-nowrap">
-                  Total Allowance
-                </th>
-                <th className="text-left py-3 px-3 text-xs font-semibold text-slate-600 uppercase">
-                  Created At
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {isLoading ? (
-                <tr>
-                  <td
-                    colSpan={11}
-                    className="py-8 text-center text-slate-400 text-sm"
-                  >
-                    Loading job cards...
-                  </td>
+        <section className="hidden">
+          <div className="border-b border-slate-200 px-4 py-3">
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="text-base font-bold text-slate-900">
+                  Daily Departures &amp; Arrivals
+                </h2>
+                <p className="text-xs text-slate-500">
+                  Safari vehicles are counted on the first and last day of their itinerary.
+                </p>
+              </div>
+              <div className="flex gap-4 text-sm font-semibold">
+                <span className="text-amber-700">
+                  Departures: {departureArrivalTotals.departures}
+                </span>
+                <span className="text-emerald-700">
+                  Arrivals: {departureArrivalTotals.arrivals}
+                </span>
+              </div>
+            </div>
+
+            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Report From
+                </label>
+                <input
+                  type="date"
+                  value={reportFromDate}
+                  onChange={(event) => setReportFromDate(event.target.value)}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none [color-scheme:light] focus:border-amber-500"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Report To
+                </label>
+                <input
+                  type="date"
+                  value={reportToDate}
+                  min={reportFromDate || undefined}
+                  onChange={(event) => setReportToDate(event.target.value)}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none [color-scheme:light] focus:border-amber-500"
+                />
+              </div>
+              <div className="flex items-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setReportFromDate("");
+                    setReportToDate("");
+                  }}
+                  className="w-full rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-700 transition hover:bg-amber-100"
+                >
+                  Clear Report Filter
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-slate-200">
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+                    Date
+                  </th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-amber-700">
+                    Departures
+                  </th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                    Arrivals
+                  </th>
                 </tr>
-              ) : filteredCards.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={11}
-                    className="py-8 text-center text-slate-400 text-sm"
-                  >
-                    No job cards found. Create one from a PI-issued lead.
-                  </td>
-                </tr>
-              ) : (
-                filteredCards.map((card) => (
-                  <tr
-                    key={card.id}
-                    className="border-b border-slate-200 hover:bg-amber-50/70 transition-colors"
-                  >
-                    <td className="py-3 px-3">
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => handleDownloadPdf(card)}
-                          disabled={downloadingJobCardId === card.id}
-                          className="p-2 text-slate-500 hover:text-blue-600 hover:bg-slate-100 rounded-lg transition-colors"
-                          title={
-                            downloadingJobCardId === card.id
-                              ? "Downloading..."
-                              : "Download PDF"
-                          }
-                        >
-                          {downloadingJobCardId === card.id ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                          ) : (
-                            <Download className="w-4 h-4" />
-                          )}
-                        </button>
-                        {(() => {
-                          const perDiemNeedsRegeneration =
-                            card.perDiemCount > 0 &&
-                            card.updatedAt &&
-                            card.perDiemUpdatedAt &&
-                            new Date(card.updatedAt).getTime() >
-                              new Date(card.perDiemUpdatedAt).getTime();
-                          const allDriversGenerated =
-                            card.assignedDriverCount > 0
-                              ? card.perDiemCount >= card.assignedDriverCount
-                              : card.perDiemCount > 0;
-                          const perDiemGenerated =
-                            allDriversGenerated && !perDiemNeedsRegeneration;
-                          return (
-                            <button
-                              onClick={() => handleGeneratePerDiem(card)}
-                              disabled={
-                                generatingPerDiemId !== null || perDiemGenerated
-                              }
-                              className={`px-2.5 py-1.5 text-xs font-medium rounded-lg disabled:opacity-50 ${
-                                perDiemGenerated
-                                  ? "text-emerald-700 border border-emerald-200 bg-emerald-50"
-                                  : "text-amber-800 border border-amber-200 bg-amber-50 hover:bg-amber-100"
-                              }`}
-                              title="Per Diem"
-                            >
-                              {generatingPerDiemId === card.id
-                                ? "Loading..."
-                                : perDiemNeedsRegeneration
-                                  ? "Regenerate"
-                                  : perDiemGenerated
-                                    ? "Generated"
-                                    : "Per Diem"}
-                            </button>
-                          );
-                        })()}
-                        <button
-                          onClick={() => openView(card)}
-                          className="p-2 text-slate-500 hover:text-cyan-600 hover:bg-slate-100 rounded-lg transition-colors"
-                          title="View"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => openEdit(card)}
-                          className="p-2 text-slate-500 hover:text-amber-600 hover:bg-slate-100 rounded-lg transition-colors"
-                          title="Edit"
-                        >
-                          <Edit className="w-4 h-4" />
-                        </button>
-                        {(card.status || "Open") !== "Closed" && (
-                          <button
-                            onClick={() => openClose(card)}
-                            className="px-2.5 py-1.5 text-xs font-medium text-emerald-700 border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors"
-                            title="Close Job Card"
-                          >
-                            Close
-                          </button>
-                        )}
-                        {canDelete() && (
-                          <button
-                            onClick={() => handleDelete(card.id)}
-                            className="p-2 text-slate-500 hover:text-red-600 hover:bg-slate-100 rounded-lg transition-colors"
-                            title="Delete"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                    <td className="py-3 px-3 text-sm text-slate-700 whitespace-nowrap">
-                      <span
-                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border ${
-                          isSafariJobType(card.type)
-                            ? "text-cyan-700 border-cyan-200 bg-cyan-50"
-                            : isLeaseJobType(card.type)
-                              ? "text-emerald-700 border-emerald-200 bg-emerald-50"
-                              : "text-violet-700 border-violet-200 bg-violet-50"
-                        }`}
-                      >
-                        {isSafariJobType(card.type)
-                          ? "Safari Job Card"
-                          : isLeaseJobType(card.type)
-                            ? "Long Term Lease"
-                            : card.type || "Operations"}
-                      </span>
-                    </td>
-                    <td className="py-3 px-3 min-w-[160px]">
-                      <div className="flex items-center gap-2 text-slate-900 text-sm font-semibold">
-                        <ClipboardList className="w-4 h-4 text-amber-500" />
-                        {card.jobCardNo}
-                      </div>
-                    </td>
-                    <td className="py-3 px-3 text-sm whitespace-nowrap">
-                      <span
-                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border ${
-                          (card.status || "Open") === "Closed"
-                            ? "text-emerald-700 border-emerald-200 bg-emerald-50"
-                            : "text-amber-700 border-amber-200 bg-amber-50"
-                        }`}
-                      >
-                        {card.status || "Open"}
-                      </span>
-                    </td>
-                    <td className="py-3 px-3 text-sm text-slate-700 font-medium">
-                      {card.bookingReferenceNo}
-                    </td>
-                    <td className="py-3 px-3 text-sm text-slate-700 font-medium">
-                      {card.groupName ||
-                        leadById.get(String(card.leadId || ""))?.groupName ||
-                        "-"}
-                    </td>
-                    <td className="py-3 px-3 min-w-[220px]">
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2 text-slate-900 text-sm font-semibold">
-                          <User className="w-4 h-4 text-amber-500" />
-                          {card.tourOperatorClientName}
-                        </div>
-                        {(String(card.vehiclePlateNo || "").trim() !== "" ||
-                          String(card.vehicleNo || "").trim() !== "") && (
-                          <div className="text-xs text-slate-600">
-                            Reg No: {card.vehiclePlateNo || card.vehicleNo}
-                          </div>
-                        )}
-                      </div>
-                    </td>
-                    <td className="py-3 px-3 text-sm text-slate-800 min-w-[170px]">
-                      <div className="flex items-start gap-2">
-                        <Calendar className="w-4 h-4 text-slate-500 mt-0.5" />
-                        <div>
-                          <div className="font-medium">
-                            Itinerary Start: {formatDate(card.safariStartDate)}
-                          </div>
-                          <div className="text-xs text-slate-600">
-                            Itinerary End: {formatDate(card.safariEndDate)}
-                          </div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="py-3 px-3 text-sm text-slate-700">
-                      <div className="flex items-start gap-2">
-                        <MapPin className="w-4 h-4 text-slate-500 mt-0.5" />
-                        <div className="space-y-1">
-                          <p className="text-slate-700 leading-relaxed break-words">
-                            {expandedRouteSummaryByCard[card.id]
-                              ? card.routeSummary || "-"
-                              : getRouteSummaryPreview(card.routeSummary)}
-                          </p>
-                          {String(card.routeSummary || "").trim().length >
-                            90 && (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setExpandedRouteSummaryByCard((prev) => ({
-                                  ...prev,
-                                  [card.id]: !prev[card.id],
-                                }))
-                              }
-                              className="text-xs font-medium text-amber-700 hover:text-amber-800"
-                            >
-                              {expandedRouteSummaryByCard[card.id]
-                                ? "Show less"
-                                : "Show more"}
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="py-3 px-3 text-sm text-right text-slate-800 whitespace-nowrap">
-                      {(isSafariJobType(card.type) ||
-                        isLeaseJobType(card.type)) &&
-                      card.driverAllowance != null &&
-                      card.driverAllowance !== ""
-                        ? (
-                            Number(card.driverAllowance) *
-                            getJobCardVehicleCount(card)
-                          ).toLocaleString(undefined, {
-                            maximumFractionDigits: 2,
-                          })
-                        : "-"}
-                    </td>
-                    <td className="py-3 px-3 text-sm text-slate-700">
-                      {formatDateTime(card.createdAt)}
+              </thead>
+              <tbody>
+                {departureArrivalReport.length === 0 ? (
+                  <tr>
+                    <td colSpan={3} className="px-4 py-5 text-center text-sm text-slate-400">
+                      No dated safari itineraries found for this period.
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-            <tfoot>
-              <tr className="border-t-2 border-slate-300 bg-slate-50">
-                <td
-                  colSpan={9}
-                  className="py-3 px-3 text-sm font-semibold text-slate-700 text-right"
+                ) : (
+                  departureArrivalReport.map((row) => (
+                    <tr key={row.date} className="border-b border-slate-100 last:border-0">
+                      <td className="px-4 py-3 text-sm font-medium text-slate-700">
+                        {formatDate(row.date)}
+                      </td>
+                      <td className="px-4 py-3 text-right text-sm font-semibold text-amber-700">
+                        {row.departures}
+                      </td>
+                      <td className="px-4 py-3 text-right text-sm font-semibold text-emerald-700">
+                        {row.arrivals}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-200 px-4 py-3">
+            <div className="flex flex-wrap items-center gap-2 mb-3">
+              {[
+                { key: "all", label: "All" },
+                { key: "safari", label: "Safari" },
+                { key: "lease", label: "Long Term Lease" },
+                { key: "others", label: "Others" },
+              ].map((tab) => (
+                <button
+                  key={tab.key}
+                  type="button"
+                  onClick={() => setCategoryFilter(tab.key)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+                    categoryFilter === tab.key
+                      ? "bg-amber-500 border-amber-500 text-white"
+                      : "bg-white border-slate-200 text-slate-600 hover:border-amber-300 hover:text-amber-700"
+                  }`}
                 >
-                  Filtered Allowance Total
-                </td>
-                <td className="py-3 px-3 text-sm font-bold text-right text-emerald-700 whitespace-nowrap">
-                  {stats.allowanceTotal.toLocaleString(undefined, {
-                    maximumFractionDigits: 2,
-                  })}
-                </td>
-                <td className="py-3 px-3" />
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-      </section>
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-3 focus-within:border-amber-400 transition-colors">
+              <Search className="w-4 h-4 text-slate-400 shrink-0" />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
+                placeholder="Search by booking ref, group name, company, type, route, reg no"
+                className="w-full bg-transparent text-sm text-slate-900 placeholder-slate-400 outline-none"
+              />
+            </div>
+
+            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  From Date
+                </label>
+                <input
+                  type="date"
+                  value={filterFromDate}
+                  onChange={(event) => setFilterFromDate(event.target.value)}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none [color-scheme:light] focus:border-amber-500"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  To Date
+                </label>
+                <input
+                  type="date"
+                  value={filterToDate}
+                  min={filterFromDate || undefined}
+                  onChange={(event) => setFilterToDate(event.target.value)}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none [color-scheme:light] focus:border-amber-500"
+                />
+              </div>
+
+              <div className="flex items-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFilterFromDate("");
+                    setFilterToDate("");
+                  }}
+                  className="w-full rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-700 transition hover:bg-amber-100"
+                >
+                  Clear Date Filter
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-slate-200">
+                  <th className="text-left py-3 px-3 text-xs font-semibold text-slate-600 uppercase">
+                    Actions
+                  </th>
+                  <th className="text-left py-3 px-3 text-xs font-semibold text-slate-600 uppercase">
+                    Type
+                  </th>
+                  <th className="text-left py-3 px-3 text-xs font-semibold text-slate-600 uppercase">
+                    Job Card No
+                  </th>
+                  <th className="text-left py-3 px-3 text-xs font-semibold text-slate-600 uppercase">
+                    Status
+                  </th>
+                  <th className="text-left py-3 px-3 text-xs font-semibold text-slate-600 uppercase">
+                    Booking Ref
+                  </th>
+                  <th className="text-left py-3 px-3 text-xs font-semibold text-slate-600 uppercase">
+                    Group Name
+                  </th>
+                  <th className="text-left py-3 px-3 text-xs font-semibold text-slate-600 uppercase">
+                    Client / Contact
+                  </th>
+                  <th className="text-left py-3 px-3 text-xs font-semibold text-slate-600 uppercase">
+                    Dates
+                  </th>
+                  <th className="text-left py-3 px-3 text-xs font-semibold text-slate-600 uppercase">
+                    Itinerary / Destination
+                  </th>
+                  <th className="text-right py-3 px-3 text-xs font-semibold text-slate-600 uppercase whitespace-nowrap">
+                    Total Allowance
+                  </th>
+                  <th className="text-left py-3 px-3 text-xs font-semibold text-slate-600 uppercase">
+                    Created At
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {isLoading ? (
+                  <tr>
+                    <td
+                      colSpan={11}
+                      className="py-8 text-center text-slate-400 text-sm"
+                    >
+                      Loading job cards...
+                    </td>
+                  </tr>
+                ) : filteredCards.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={11}
+                      className="py-8 text-center text-slate-400 text-sm"
+                    >
+                      No job cards found. Create one from a PI-issued lead.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredCards.map((card) => (
+                    <tr
+                      key={card.id}
+                      className="border-b border-slate-200 hover:bg-amber-50/70 transition-colors"
+                    >
+                      <td className="py-3 px-3">
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleDownloadPdf(card)}
+                            disabled={downloadingJobCardId === card.id}
+                            className="p-2 text-slate-500 hover:text-blue-600 hover:bg-slate-100 rounded-lg transition-colors"
+                            title={
+                              downloadingJobCardId === card.id
+                                ? "Downloading..."
+                                : "Download PDF"
+                            }
+                          >
+                            {downloadingJobCardId === card.id ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Download className="w-4 h-4" />
+                            )}
+                          </button>
+                          {(() => {
+                            const perDiemNeedsRegeneration =
+                              card.perDiemCount > 0 &&
+                              card.updatedAt &&
+                              card.perDiemUpdatedAt &&
+                              new Date(card.updatedAt).getTime() >
+                                new Date(card.perDiemUpdatedAt).getTime();
+                            const allDriversGenerated =
+                              card.assignedDriverCount > 0
+                                ? card.perDiemCount >= card.assignedDriverCount
+                                : card.perDiemCount > 0;
+                            const perDiemGenerated =
+                              allDriversGenerated && !perDiemNeedsRegeneration;
+                            return (
+                              <button
+                                onClick={() => handleGeneratePerDiem(card)}
+                                disabled={
+                                  generatingPerDiemId !== null ||
+                                  perDiemGenerated
+                                }
+                                className={`px-2.5 py-1.5 text-xs font-medium rounded-lg disabled:opacity-50 ${
+                                  perDiemGenerated
+                                    ? "text-emerald-700 border border-emerald-200 bg-emerald-50"
+                                    : "text-amber-800 border border-amber-200 bg-amber-50 hover:bg-amber-100"
+                                }`}
+                                title="Per Diem"
+                              >
+                                {generatingPerDiemId === card.id
+                                  ? "Loading..."
+                                  : perDiemNeedsRegeneration
+                                    ? "Regenerate"
+                                    : perDiemGenerated
+                                      ? "Generated"
+                                      : "Per Diem"}
+                              </button>
+                            );
+                          })()}
+                          <button
+                            onClick={() => openView(card)}
+                            className="p-2 text-slate-500 hover:text-cyan-600 hover:bg-slate-100 rounded-lg transition-colors"
+                            title="View"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                          {!(
+                            (isSafariJobType(card.type) ||
+                              isLeaseJobType(card.type)) &&
+                            (card.status || "Open") === "Closed"
+                          ) && (
+                            <button
+                              onClick={() => openEdit(card)}
+                              className="p-2 text-slate-500 hover:text-amber-600 hover:bg-slate-100 rounded-lg transition-colors"
+                              title="Edit"
+                            >
+                              <Edit className="w-4 h-4" />
+                            </button>
+                          )}
+                          {canManageJobCardStatus() &&
+                            (isSafariJobType(card.type) ||
+                              isLeaseJobType(card.type)) &&
+                            ((card.status || "Open") === "Closed" ? (
+                              <button
+                                onClick={() => handleReopen(card)}
+                                className="px-2.5 py-1.5 text-xs font-medium text-amber-700 border border-amber-200 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors"
+                                title="Reopen Job Card"
+                              >
+                                Open
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => openClose(card)}
+                                className="px-2.5 py-1.5 text-xs font-medium text-emerald-700 border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors"
+                                title="Close Job Card"
+                              >
+                                Close
+                              </button>
+                            ))}
+                          {canDelete() && (
+                            <button
+                              onClick={() => handleDelete(card.id)}
+                              className="p-2 text-slate-500 hover:text-red-600 hover:bg-slate-100 rounded-lg transition-colors"
+                              title="Delete"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-3 px-3 text-sm text-slate-700 whitespace-nowrap">
+                        <span
+                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border ${
+                            isSafariJobType(card.type)
+                              ? "text-cyan-700 border-cyan-200 bg-cyan-50"
+                              : isLeaseJobType(card.type)
+                                ? "text-emerald-700 border-emerald-200 bg-emerald-50"
+                                : "text-violet-700 border-violet-200 bg-violet-50"
+                          }`}
+                        >
+                          {isSafariJobType(card.type)
+                            ? "Safari Job Card"
+                            : isLeaseJobType(card.type)
+                              ? "Long Term Lease"
+                              : card.type || "Operations"}
+                        </span>
+                      </td>
+                      <td className="py-3 px-3 min-w-[160px]">
+                        <div className="flex items-center gap-2 text-slate-900 text-sm font-semibold">
+                          <ClipboardList className="w-4 h-4 text-amber-500" />
+                          {card.jobCardNo}
+                        </div>
+                      </td>
+                      <td className="py-3 px-3 text-sm whitespace-nowrap">
+                        <span
+                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border ${
+                            (card.status || "Open") === "Closed"
+                              ? "text-emerald-700 border-emerald-200 bg-emerald-50"
+                              : "text-amber-700 border-amber-200 bg-amber-50"
+                          }`}
+                        >
+                          {card.status || "Open"}
+                        </span>
+                      </td>
+                      <td className="py-3 px-3 text-sm text-slate-700 font-medium">
+                        {card.bookingReferenceNo}
+                      </td>
+                      <td className="py-3 px-3 text-sm text-slate-700 font-medium">
+                        {card.groupName ||
+                          leadById.get(String(card.leadId || ""))?.groupName ||
+                          "-"}
+                      </td>
+                      <td className="py-3 px-3 min-w-[220px]">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2 text-slate-900 text-sm font-semibold">
+                            <User className="w-4 h-4 text-amber-500" />
+                            {card.tourOperatorClientName}
+                          </div>
+                          {(String(card.vehiclePlateNo || "").trim() !== "" ||
+                            String(card.vehicleNo || "").trim() !== "") && (
+                            <div className="text-xs text-slate-600">
+                              Reg No: {card.vehiclePlateNo || card.vehicleNo}
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-3 px-3 text-sm text-slate-800 min-w-[170px]">
+                        <div className="flex items-start gap-2">
+                          <Calendar className="w-4 h-4 text-slate-500 mt-0.5" />
+                          <div>
+                            <div className="font-medium">
+                              Itinerary Start:{" "}
+                              {formatDate(card.safariStartDate)}
+                            </div>
+                            <div className="text-xs text-slate-600">
+                              Itinerary End: {formatDate(card.safariEndDate)}
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-3 px-3 text-sm text-slate-700">
+                        <div className="flex items-start gap-2">
+                          <MapPin className="w-4 h-4 text-slate-500 mt-0.5" />
+                          <div className="space-y-1">
+                            <p className="text-slate-700 leading-relaxed break-words">
+                              {expandedRouteSummaryByCard[card.id]
+                                ? card.routeSummary || "-"
+                                : getRouteSummaryPreview(card.routeSummary)}
+                            </p>
+                            {String(card.routeSummary || "").trim().length >
+                              90 && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setExpandedRouteSummaryByCard((prev) => ({
+                                    ...prev,
+                                    [card.id]: !prev[card.id],
+                                  }))
+                                }
+                                className="text-xs font-medium text-amber-700 hover:text-amber-800"
+                              >
+                                {expandedRouteSummaryByCard[card.id]
+                                  ? "Show less"
+                                  : "Show more"}
+                              </button>
+                            )}
+                            {calculateEstimatedDistance(
+                              card.routeDistanceKm,
+                              card.additionalDistanceKm,
+                            ) != null && (
+                              <p className="text-xs font-semibold text-amber-700">
+                                Estimated total:{" "}
+                                {calculateEstimatedDistance(
+                                  card.routeDistanceKm,
+                                  card.additionalDistanceKm,
+                                ).toLocaleString(undefined, {
+                                  maximumFractionDigits: 1,
+                                })}{" "}
+                                km
+                                <span className="ml-1 font-normal">
+                                  · fuel{" "}
+                                  {calculateFuelAllowance(
+                                    card.routeDistanceKm,
+                                    card.additionalDistanceKm,
+                                  ).toLocaleString(undefined, {
+                                    maximumFractionDigits: 2,
+                                  })}{" "}
+                                  L
+                                </span>
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-3 px-3 text-sm text-right text-slate-800 whitespace-nowrap">
+                        {(isSafariJobType(card.type) ||
+                          isLeaseJobType(card.type)) &&
+                        card.driverAllowance != null &&
+                        card.driverAllowance !== ""
+                          ? (
+                              Number(card.driverAllowance) *
+                              getJobCardVehicleCount(card)
+                            ).toLocaleString(undefined, {
+                              maximumFractionDigits: 2,
+                            })
+                          : "-"}
+                      </td>
+                      <td className="py-3 px-3 text-sm text-slate-700">
+                        {formatDateTime(card.createdAt)}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-slate-300 bg-slate-50">
+                  <td
+                    colSpan={9}
+                    className="py-3 px-3 text-sm font-semibold text-slate-700 text-right"
+                  >
+                    Filtered Allowance Total
+                  </td>
+                  <td className="py-3 px-3 text-sm font-bold text-right text-emerald-700 whitespace-nowrap">
+                    {stats.allowanceTotal.toLocaleString(undefined, {
+                      maximumFractionDigits: 2,
+                    })}
+                  </td>
+                  <td className="py-3 px-3" />
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </section>
+      </div>
 
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div
-            className="absolute inset-0 bg-black/60"
-            onClick={() => {
-              if (isSaving) return;
-              setIsModalOpen(false);
-            }}
-          />
+        <div
+          className={
+            isJobCardFormPage
+              ? "min-h-screen rounded-3xl bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 p-3 md:p-6"
+              : "fixed inset-0 z-50 flex items-center justify-center p-4"
+          }
+        >
+          {!isJobCardFormPage && (
+            <div
+              className="absolute inset-0 bg-black/60"
+              onClick={() => {
+                if (isSaving) return;
+                setIsModalOpen(false);
+              }}
+            />
+          )}
 
-          <div className="relative w-full max-w-4xl max-h-[90vh] overflow-y-auto bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800">
-              <h2 className="text-lg font-semibold text-white">
-                {isCloseMode
-                  ? "Close Job Card"
-                  : editingId
-                    ? "Edit Job Card"
-                    : "Create Job Card"}
-              </h2>
+          <div
+            className={
+              isJobCardFormPage
+                ? "relative w-full max-w-7xl mx-auto overflow-hidden bg-white border border-slate-200 rounded-3xl shadow-2xl shadow-slate-900/15"
+                : "relative w-full max-w-4xl max-h-[90vh] overflow-y-auto bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl"
+            }
+          >
+            {isJobCardFormPage && (
+              <div className="h-1.5 bg-gradient-to-r from-amber-400 via-cyan-400 to-emerald-400" />
+            )}
+            <div
+              className={
+                isJobCardFormPage
+                  ? "flex flex-col gap-4 md:flex-row md:items-center md:justify-between px-5 py-6 md:px-8 border-b border-slate-200 bg-white"
+                  : "flex items-center justify-between px-6 py-4 border-b border-slate-800"
+              }
+            >
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-300">
+                  {isCloseMode ? "Finalise Trip" : "Job Card Workspace"}
+                </p>
+                <h2
+                  className={
+                    isJobCardFormPage
+                      ? "text-2xl md:text-3xl font-bold text-slate-900 mt-1"
+                      : "text-lg font-semibold text-white"
+                  }
+                >
+                  {isCloseMode
+                    ? "Close Job Card"
+                    : editingId
+                      ? "Edit Job Card"
+                      : "Create Job Card"}
+                </h2>
+                {isJobCardFormPage && (
+                  <p className="text-sm text-slate-600 mt-2">
+                    Capture the booking, movement, driver, and allowance details
+                    in one clear flow.
+                  </p>
+                )}
+              </div>
               <button
                 onClick={() => {
                   if (isSaving) return;
                   setIsModalOpen(false);
+                  if (isJobCardFormPage) navigate("/job-cards/");
                 }}
-                className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg"
+                className={
+                  isJobCardFormPage
+                    ? "inline-flex items-center justify-center gap-2 self-start md:self-auto px-3 py-2 text-sm font-medium text-slate-700 hover:text-slate-900 hover:bg-slate-100 border border-slate-300 rounded-xl"
+                    : "p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg"
+                }
               >
-                <X className="w-4 h-4" />
+                {isJobCardFormPage ? (
+                  <ArrowLeft className="w-4 h-4" />
+                ) : (
+                  <X className="w-4 h-4" />
+                )}
+                {isJobCardFormPage && "Back to Job Cards"}
               </button>
             </div>
 
-            <div className="p-6 space-y-5">
+            <div
+              className={
+                isJobCardFormPage ? "p-5 md:p-8 space-y-6" : "p-6 space-y-5"
+              }
+            >
               {errorMessage && (
                 <div className="bg-red-500/10 border border-red-500/30 text-red-300 rounded-xl px-4 py-3 text-sm">
                   {errorMessage}
@@ -2454,7 +3027,11 @@ export default function JobCards() {
                       className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
                     >
                       {JOB_CARD_TYPES.map((typeOption) => (
-                        <option key={typeOption} value={typeOption}>
+                        <option
+                          className="bg-slate-800 text-white"
+                          key={typeOption}
+                          value={typeOption}
+                        >
                           {typeOption}
                         </option>
                       ))}
@@ -2623,6 +3200,10 @@ export default function JobCards() {
                         ]
                           .filter(Boolean)
                           .join(" / ");
+                        const driver = users.find(
+                          (user) =>
+                            Number(user.id) === Number(allocation.driverId),
+                        );
                         return (
                           <div className="space-y-2 text-sm text-white">
                             <div className="flex flex-wrap items-center gap-x-3">
@@ -2639,6 +3220,11 @@ export default function JobCards() {
                               </span>
                               <span className="font-semibold text-white">
                                 {allocation.driverName || "-"}
+                                {driver?.contract_type && (
+                                  <span className="ml-2 text-xs font-normal text-amber-200">
+                                    ({driver.contract_type})
+                                  </span>
+                                )}
                               </span>
                             </div>
                             <div className="flex flex-wrap items-center gap-x-3">
@@ -2659,27 +3245,35 @@ export default function JobCards() {
 
                 {isSafariType && !isCloseMode && (
                   <div className="md:col-span-2">
-                    <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                       Vehicles Allocated To This Safari
                     </label>
-                    <div className="rounded-xl border border-slate-700 bg-slate-800/40 px-3 py-3 space-y-2">
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 space-y-2 shadow-sm">
                       {selectedLeadAllocations.length === 0 ? (
-                        <p className="text-xs text-slate-400">
+                        <p className="text-xs text-slate-600">
                           No allocations found for this safari lead yet.
                         </p>
                       ) : (
                         selectedLeadAllocations.map((item, index) => (
                           <div
                             key={`${item.vehicleName}-${item.driverName}-${index}`}
-                            className="flex items-start justify-between gap-3 border border-slate-700/60 bg-slate-900/40 rounded-lg px-3 py-2"
+                            className="flex items-start justify-between gap-3 border border-slate-200 bg-white rounded-lg px-3 py-2 shadow-sm"
                           >
-                            <div className="text-sm text-slate-200">
-                              <span className="font-semibold">
+                            <div className="text-sm text-slate-900">
+                              <span className="font-semibold text-slate-900">
                                 {item.vehicleName}
                               </span>
                             </div>
-                            <div className="text-xs text-slate-300">
-                              Driver: {item.driverName}
+                            <div className="text-xs font-medium text-slate-700">
+                              Driver:{" "}
+                              <span className="text-slate-900">
+                                {item.driverName}
+                              </span>
+                              {item.driverContractType && (
+                                <span className="text-amber-700">
+                                  {` · Contract: ${item.driverContractType}`}
+                                </span>
+                              )}
                             </div>
                           </div>
                         ))
@@ -2688,30 +3282,77 @@ export default function JobCards() {
                   </div>
                 )}
 
-                {(isSafariType || isLeaseType) && !isCloseMode && (
-                  <div>
-                    <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                      Driver Allowance{" "}
-                      <span className="text-slate-500">(optional)</span>
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      inputMode="decimal"
-                      value={form.driverAllowance ?? ""}
-                      onChange={(event) =>
-                        setField("driverAllowance", event.target.value)
-                      }
-                      placeholder="e.g. 50000"
-                      className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
-                    />
-                    <p className="text-xs text-slate-500 mt-1">
-                      Auto-calculated as the sum of Allowance/day across all
-                      itinerary line items. You may override this value.
-                    </p>
-                  </div>
-                )}
+                {isSafariType &&
+                  !isCloseMode &&
+                  allowanceContractTypes.length > 1 && (
+                    <div className="md:col-span-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 space-y-3">
+                      <div>
+                        <label className="block text-xs font-semibold uppercase tracking-wide text-amber-300">
+                          Driver Allowance by Contract Type
+                        </label>
+                        <p className="text-xs text-amber-200/70 mt-1">
+                          Enter the allowance per day for each contract type.
+                        </p>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {allowanceContractTypes.map((contractType) => (
+                          <div key={contractType}>
+                            <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                              {contractType}
+                            </label>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              inputMode="decimal"
+                              value={
+                                form.driverAllowances?.[contractType] ?? ""
+                              }
+                              onChange={(event) =>
+                                setContractAllowance(
+                                  contractType,
+                                  event.target.value,
+                                )
+                              }
+                              placeholder="e.g. 50000"
+                              className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-xs text-amber-200/80">
+                        Combined allowance:{" "}
+                        {Number(form.driverAllowance || 0).toLocaleString()}
+                      </p>
+                    </div>
+                  )}
+
+                {(isSafariType || isLeaseType) &&
+                  !isCloseMode &&
+                  (!isSafariType || allowanceContractTypes.length <= 1) && (
+                    <div>
+                      <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                        Driver Allowance{" "}
+                        <span className="text-slate-500">(optional)</span>
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        inputMode="decimal"
+                        value={form.driverAllowance ?? ""}
+                        onChange={(event) =>
+                          setField("driverAllowance", event.target.value)
+                        }
+                        placeholder="e.g. 50000"
+                        className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
+                      />
+                      <p className="text-xs text-slate-500 mt-1">
+                        Auto-calculated as the sum of Allowance/day across all
+                        itinerary line items. You may override this value.
+                      </p>
+                    </div>
+                  )}
 
                 {isSafariType &&
                   !isCloseMode &&
@@ -2797,6 +3438,19 @@ export default function JobCards() {
                       Closed
                     </div>
                   </div>
+                ) : isSafariType || isLeaseType ? (
+                  <div>
+                    <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                      Status
+                    </label>
+                    <div className="w-full rounded-lg border border-slate-700 bg-slate-800/40 px-3 py-2.5 text-sm font-medium text-slate-200">
+                      {form.status || "Open"}
+                    </div>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Only authorized users can open or close Safari and Lease
+                      job cards.
+                    </p>
+                  </div>
                 ) : (
                   <div>
                     <label className="block text-xs font-medium text-slate-300 mb-1.5">
@@ -2859,6 +3513,10 @@ export default function JobCards() {
                       {driverOptions.map((driverName) => (
                         <option key={driverName} value={driverName}>
                           {driverName}
+                          {activeUsers.find((user) => user.name === driverName)
+                            ?.contract_type
+                            ? ` (${activeUsers.find((user) => user.name === driverName).contract_type})`
+                            : ""}
                         </option>
                       ))}
                     </select>
@@ -3151,7 +3809,8 @@ export default function JobCards() {
               {!isCloseMode && (
                 <div>
                   <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                    {routeSummaryLabel}
+                    {routeSummaryLabel}{" "}
+                    <span className="text-slate-500">(optional)</span>
                   </label>
                   <textarea
                     rows={2}
@@ -3162,6 +3821,79 @@ export default function JobCards() {
                     placeholder={routeSummaryPlaceholder}
                     className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
                   />
+                </div>
+              )}
+
+              {!isCloseMode && (
+                <JobCardRouteMap
+                  routePoints={form.routePoints}
+                  routeDistanceKm={form.routeDistanceKm}
+                  onRouteChange={(routePoints, routeDistanceKm) =>
+                    setForm((current) => ({
+                      ...current,
+                      routePoints,
+                      routeDistanceKm,
+                    }))
+                  }
+                />
+              )}
+
+              {!isCloseMode && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                      Additional Distance (KM){" "}
+                      <span className="text-slate-500">(optional)</span>
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.1"
+                      inputMode="decimal"
+                      value={form.additionalDistanceKm ?? ""}
+                      onChange={(event) =>
+                        setField("additionalDistanceKm", event.target.value)
+                      }
+                      placeholder="e.g. 50"
+                      className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                      Additional Distance Note{" "}
+                      <span className="text-slate-500">(optional)</span>
+                    </label>
+                    <input
+                      value={form.additionalDistanceNote ?? ""}
+                      onChange={(event) =>
+                        setField("additionalDistanceNote", event.target.value)
+                      }
+                      placeholder="e.g. Game drive"
+                      className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
+                    />
+                  </div>
+                  <div className="md:col-span-2 rounded-lg border-2 border-amber-300 bg-amber-300 px-3 py-2.5 text-sm font-semibold text-slate-950 shadow-lg shadow-amber-950/30">
+                    Total estimated distance:{" "}
+                    {calculateEstimatedDistance(
+                      form.routeDistanceKm,
+                      form.additionalDistanceKm,
+                    )?.toLocaleString(undefined, {
+                      maximumFractionDigits: 1,
+                    }) || "-"}{" "}
+                    km
+                    <span className="mx-2 text-amber-700">·</span>
+                    Fuel allowance:{" "}
+                    {calculateFuelAllowance(
+                      form.routeDistanceKm,
+                      form.additionalDistanceKm,
+                    )?.toLocaleString(undefined, {
+                      maximumFractionDigits: 2,
+                    }) || "-"}{" "}
+                    litres
+                    <span className="ml-1 text-slate-700">
+                      (total km ÷ 6.5)
+                    </span>
+                  </div>
                 </div>
               )}
 
@@ -3263,6 +3995,7 @@ export default function JobCards() {
                 onClick={() => {
                   if (isSaving) return;
                   setIsModalOpen(false);
+                  if (isJobCardFormPage) navigate("/job-cards/");
                 }}
                 className="px-4 py-2.5 bg-slate-800 text-slate-300 rounded-lg text-sm hover:bg-slate-700 transition-colors"
               >
@@ -3286,14 +4019,15 @@ export default function JobCards() {
         </div>
       )}
 
-      {isViewModalOpen && selectedJobCard && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div
-            className="absolute inset-0 bg-black/60"
-            onClick={closeViewModal}
-          />
+      {jobCardId && !selectedJobCard && (
+        <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-slate-500">
+          Loading job card details...
+        </div>
+      )}
 
-          <div className="relative w-full max-w-5xl max-h-[90vh] overflow-y-auto bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl">
+      {jobCardId && selectedJobCard && (
+        <div className="min-h-screen pb-6">
+          <div className="relative w-full overflow-y-auto bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl">
             <div className="h-1 bg-gradient-to-r from-amber-400 via-cyan-400 to-emerald-400" />
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 sticky top-0 bg-slate-900">
               <h2 className="text-lg font-semibold text-white">
@@ -3351,6 +4085,7 @@ export default function JobCards() {
                       ["Languages", driver.languages],
                       ["Driver Licence", driver.driverLicense],
                       ["Tour Guide Licence", driver.guideLicense],
+                      ["Contract Type", driver.contractType],
                     ].map(([label, value]) => (
                       <p key={label} className="text-slate-300">
                         {label}:{" "}
@@ -3439,6 +4174,51 @@ export default function JobCards() {
                       {detailValue(selectedJobCard.routeSummary)}
                     </span>
                   </p>
+                  <p className="text-slate-300">
+                    Estimated Route Distance:{" "}
+                    <span className="text-white">
+                      {selectedJobCard.routeDistanceKm != null
+                        ? `${Number(selectedJobCard.routeDistanceKm).toLocaleString()} km`
+                        : "-"}
+                    </span>
+                  </p>
+                  <p className="text-slate-300">
+                    Additional Distance:{" "}
+                    <span className="text-white">
+                      {selectedJobCard.additionalDistanceKm != null
+                        ? `${Number(selectedJobCard.additionalDistanceKm).toLocaleString()} km`
+                        : "-"}
+                      {selectedJobCard.additionalDistanceNote
+                        ? ` (${selectedJobCard.additionalDistanceNote})`
+                        : ""}
+                    </span>
+                  </p>
+                  <p className="text-slate-300">
+                    Total Estimated Distance / Fuel Allowance:{" "}
+                    <span className="text-white">
+                      {(() => {
+                        const total = calculateEstimatedDistance(
+                          selectedJobCard.routeDistanceKm,
+                          selectedJobCard.additionalDistanceKm,
+                        );
+                        const fuel = calculateFuelAllowance(
+                          selectedJobCard.routeDistanceKm,
+                          selectedJobCard.additionalDistanceKm,
+                        );
+                        return total == null
+                          ? "-"
+                          : `${total.toLocaleString(undefined, { maximumFractionDigits: 1 })} km / ${fuel.toLocaleString(undefined, { maximumFractionDigits: 2 })} litres`;
+                      })()}
+                    </span>
+                  </p>
+                  {Array.isArray(selectedJobCard.routePoints) &&
+                    selectedJobCard.routePoints.length > 0 && (
+                      <JobCardRouteMap
+                        routePoints={selectedJobCard.routePoints}
+                        routeDistanceKm={selectedJobCard.routeDistanceKm}
+                        readOnly
+                      />
+                    )}
                   <div className="space-y-2">
                     <p className="text-slate-300">Route Itinerary:</p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -3563,6 +4343,28 @@ export default function JobCards() {
                             : "-"}
                         </span>
                       </p>
+                      {selectedJobCardAllowanceBreakdown.length > 0 && (
+                        <div className="space-y-1 pt-1">
+                          <p className="text-slate-300">
+                            Allowance by Contract Type:
+                          </p>
+                          {selectedJobCardAllowanceBreakdown.map((item) => (
+                            <p
+                              key={item.contractType}
+                              className="pl-3 text-sm text-slate-400"
+                            >
+                              {item.contractType}:{" "}
+                              {Number.isFinite(item.amount)
+                                ? item.amount.toLocaleString()
+                                : "-"}{" "}
+                              per day
+                              {item.driverCount > 0
+                                ? ` × ${item.driverCount} driver${item.driverCount === 1 ? "" : "s"}`
+                                : ""}
+                            </p>
+                          ))}
+                        </div>
+                      )}
                       <p className="text-slate-300">
                         Total Allowance (All Cars):{" "}
                         <span className="text-white">

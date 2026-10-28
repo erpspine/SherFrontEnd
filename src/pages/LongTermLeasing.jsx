@@ -16,6 +16,8 @@ import { apiFetch } from "../utils/api";
 
 const ONE_MONTH_DAYS = 30;
 const ONE_YEAR_DAYS = 365;
+const INITIAL_VISIBLE_VEHICLES = 5;
+const VEHICLES_PER_LOAD = 5;
 
 const extractContracts = (payload) => {
   if (Array.isArray(payload)) return payload;
@@ -36,6 +38,11 @@ const normalizeContract = (contract) => {
     id: contract.id,
     vehicleIds,
     clientName: contract.clientName || contract.client_name || "",
+    isParentCompany: Boolean(
+      contract.isParentCompany ?? contract.is_parent_company,
+    ),
+    parentClientName:
+      contract.parentClientName || contract.parent_client_name || "",
     groupName: contract.groupName || contract.group_name || "",
     startDate: contract.startDate || contract.start_date || "",
     endDate: contract.endDate || contract.end_date || "",
@@ -92,6 +99,8 @@ const toInputDate = (value) => {
 const createContractForm = () => ({
   vehicleIds: [],
   clientName: "",
+  parentClientName: "",
+  isParentCompany: false,
   groupName: "",
   startDate: "",
   endDate: "",
@@ -197,6 +206,9 @@ export default function LongTermLeasing() {
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
+  const [parentFilter, setParentFilter] = useState("");
+  const [childFilter, setChildFilter] = useState("");
+  const [vehicleVisibleCounts, setVehicleVisibleCounts] = useState({});
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(createContractForm());
@@ -242,7 +254,12 @@ export default function LongTermLeasing() {
   const activeVehicleLeaseSet = useMemo(() => {
     const ids = new Set();
     contracts
-      .filter((item) => item.status === "Active" && item.id !== editingId)
+      .filter(
+        (item) =>
+          item.status === "Active" &&
+          item.id !== editingId &&
+          !item.isParentCompany,
+      )
       .forEach((item) => {
         if (Array.isArray(item.vehicleIds)) {
           item.vehicleIds.forEach((id) => ids.add(String(id)));
@@ -270,9 +287,10 @@ export default function LongTermLeasing() {
         return {
           ...contract,
           durationDays,
-          leaseType:
-            contract.leaseType ||
-            getLeaseType(contract.startDate, contract.endDate),
+          leaseType: contract.isParentCompany
+            ? "Parent Company"
+            : contract.leaseType ||
+              getLeaseType(contract.startDate, contract.endDate),
           contractVehicles,
         };
       })
@@ -291,14 +309,24 @@ export default function LongTermLeasing() {
 
   const filteredContracts = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
-    if (!query) return leaseContracts;
+    const filtered = leaseContracts.filter((contract) => {
+      const isSelectedParent =
+        !parentFilter ||
+        contract.clientName === parentFilter ||
+        contract.parentClientName === parentFilter;
+      if (!isSelectedParent) return false;
 
-    return leaseContracts.filter((contract) => {
+      const isSelectedChild =
+        !childFilter || contract.clientName === childFilter;
+      if (!isSelectedChild) return false;
+      if (!query) return true;
+
       const vehicleText = (contract.contractVehicles || [])
         .map((v) => `${v.vehicleNo} ${v.plateNo} ${v.make} ${v.model}`)
         .join(" ");
       return [
         contract.clientName,
+        contract.parentClientName,
         contract.groupName,
         contract.leaseType,
         vehicleText,
@@ -307,7 +335,61 @@ export default function LongTermLeasing() {
         .toLowerCase()
         .includes(query);
     });
-  }, [leaseContracts, searchTerm]);
+    return filtered.sort((a, b) => {
+      const parentA = a.parentClientName || a.clientName;
+      const parentB = b.parentClientName || b.clientName;
+      const parentOrder = parentA.localeCompare(parentB);
+      if (parentOrder !== 0) return parentOrder;
+      const parentFirst =
+        Number(Boolean(a.parentClientName)) -
+        Number(Boolean(b.parentClientName));
+      if (parentFirst !== 0) return parentFirst;
+      const childOrder = a.clientName.localeCompare(b.clientName);
+      return childOrder || Number(b.id || 0) - Number(a.id || 0);
+    });
+  }, [leaseContracts, searchTerm, parentFilter, childFilter]);
+
+  const parentContracts = useMemo(
+    () =>
+      [
+        ...new Set(
+          leaseContracts
+            .filter((contract) => contract.isParentCompany)
+            .map((contract) => contract.clientName)
+            .filter(Boolean),
+        ),
+      ].sort((a, b) => a.localeCompare(b)),
+    [leaseContracts],
+  );
+
+  const childFilterOptions = useMemo(() => {
+    const candidates = parentFilter
+      ? leaseContracts.filter(
+          (contract) =>
+            contract.clientName === parentFilter ||
+            contract.parentClientName === parentFilter,
+        )
+      : leaseContracts;
+    return [
+      ...new Map(
+        candidates.map((contract) => [contract.clientName, contract]),
+      ).values(),
+    ].sort((a, b) => {
+      if (a.clientName === parentFilter) return -1;
+      if (b.clientName === parentFilter) return 1;
+      return a.clientName.localeCompare(b.clientName);
+    });
+  }, [leaseContracts, parentFilter]);
+
+  const childClientNames = useMemo(
+    () =>
+      new Set(
+        leaseContracts
+          .map((contract) => contract.parentClientName)
+          .filter(Boolean),
+      ),
+    [leaseContracts],
+  );
 
   const availableVehicles = useMemo(
     () =>
@@ -401,6 +483,8 @@ export default function LongTermLeasing() {
         ? contract.vehicleIds.map(Number)
         : [],
       clientName: contract.clientName || "",
+      parentClientName: contract.parentClientName || "",
+      isParentCompany: contract.isParentCompany,
       startDate: toInputDate(contract.startDate) || "",
       endDate: toInputDate(contract.endDate) || "",
       monthlyRate:
@@ -415,6 +499,17 @@ export default function LongTermLeasing() {
   };
 
   const handleDeleteContract = async (contract) => {
+    if (contract.isParentCompany && childClientNames.has(contract.clientName)) {
+      await Swal.fire({
+        title: "Parent has child contracts",
+        text: "Move or remove its child lease contracts before deleting this parent company.",
+        icon: "warning",
+        background: "#0f172a",
+        color: "#e2e8f0",
+      });
+      return;
+    }
+
     const result = await Swal.fire({
       title: "Delete Lease Contract?",
       text: `This will remove the contract for ${contract.clientName || "this client"} and release its vehicles. This cannot be undone.`,
@@ -467,15 +562,25 @@ export default function LongTermLeasing() {
   };
 
   const handleSaveContract = async () => {
-    if (!form.clientName || !form.startDate || !form.endDate) {
+    if (!form.clientName.trim()) {
+      setErrorMessage("Please enter a company name.");
+      return;
+    }
+
+    if (
+      !form.isParentCompany &&
+      (!form.startDate || !form.endDate || form.endDate < form.startDate)
+    ) {
       setErrorMessage(
-        "Please complete all required fields (client, start date, end date).",
+        "Valid start and end dates are required for lease contracts.",
       );
       return;
     }
 
-    const durationDays = calcDays(form.startDate, form.endDate);
-    if (durationDays === null) {
+    const durationDays = form.isParentCompany
+      ? null
+      : calcDays(form.startDate, form.endDate);
+    if (!form.isParentCompany && durationDays === null) {
       setErrorMessage("Lease start date and end date are required.");
       return;
     }
@@ -491,8 +596,12 @@ export default function LongTermLeasing() {
           body: {
             vehicleIds: form.vehicleIds.map(Number),
             clientName: form.clientName.trim(),
-            startDate: form.startDate,
-            endDate: form.endDate,
+            isParentCompany: Boolean(form.isParentCompany),
+            parentClientName: form.isParentCompany
+              ? null
+              : form.parentClientName || null,
+            startDate: form.isParentCompany ? null : form.startDate,
+            endDate: form.isParentCompany ? null : form.endDate,
             monthlyRate: form.monthlyRate ? Number(form.monthlyRate) : null,
             notes: form.notes || null,
           },
@@ -542,11 +651,13 @@ export default function LongTermLeasing() {
 
       await Swal.fire({
         title: isEdit ? "Contract Updated" : "Contract Created",
-        text: isEdit
-          ? "Lease contract updated successfully."
-          : savedContract.vehicleIds.length === 0
-            ? "Lease contract created without a vehicle. You can assign vehicles later via Edit."
-            : `${savedContract.vehicleIds.length} vehicle(s) assigned to lease and blocked from allocation.`,
+        text: savedContract.isParentCompany
+          ? `${savedContract.clientName} parent company saved. Add lease details under its child contracts.`
+          : isEdit
+            ? "Lease contract updated successfully."
+            : savedContract.vehicleIds.length === 0
+              ? "Lease contract created without a vehicle. You can assign vehicles later via Edit."
+              : `${savedContract.vehicleIds.length} vehicle(s) assigned to lease and blocked from allocation.`,
         icon: "success",
         timer: 1600,
         showConfirmButton: false,
@@ -575,13 +686,16 @@ export default function LongTermLeasing() {
           0,
         ) + legacyLeasedVehicles.length,
       contracts: leaseContracts.length,
-      dailyLease: leaseContracts.filter((c) => c.leaseType === "Daily Lease")
-        .length,
+      dailyLease: leaseContracts.filter(
+        (c) => !c.isParentCompany && c.leaseType === "Daily Lease",
+      ).length,
       shortTermLease: leaseContracts.filter(
-        (c) => c.leaseType === "Short-Term Lease",
+        (c) => !c.isParentCompany && c.leaseType === "Short-Term Lease",
       ).length,
       longTermLease:
-        leaseContracts.filter((c) => c.leaseType === "Long-Term Lease").length +
+        leaseContracts.filter(
+          (c) => !c.isParentCompany && c.leaseType === "Long-Term Lease",
+        ).length +
         legacyLeasedVehicles.filter(
           (vehicle) =>
             getLeaseType(vehicle.leaseStartDate, vehicle.leaseEndDate) ===
@@ -665,22 +779,60 @@ export default function LongTermLeasing() {
       </div>
 
       <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div className="flex items-center gap-3 border-b border-slate-200 px-4 py-3 focus-within:border-amber-400 transition-colors">
-          <Search className="w-4 h-4 text-slate-400 shrink-0" />
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(event) => setSearchTerm(event.target.value)}
-            placeholder="Search by client, vehicle or plate"
-            className="w-full bg-transparent text-sm text-slate-900 placeholder-slate-400 outline-none"
-          />
+        <div className="border-b border-slate-200 px-4 py-3">
+          <div className="flex items-center gap-3 focus-within:border-amber-400 transition-colors">
+            <Search className="w-4 h-4 text-slate-400 shrink-0" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              placeholder="Search by client, parent, vehicle or plate"
+              className="w-full bg-transparent text-sm text-slate-900 placeholder-slate-400 outline-none"
+            />
+          </div>
+          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Parent client
+              <select
+                value={parentFilter}
+                onChange={(event) => {
+                  setParentFilter(event.target.value);
+                  setChildFilter("");
+                }}
+                className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900 outline-none focus:border-amber-500"
+              >
+                <option value="">All parent clients</option>
+                {parentContracts.map((parentName) => (
+                  <option key={parentName} value={parentName}>
+                    {parentName}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Child / contract
+              <select
+                value={childFilter}
+                onChange={(event) => setChildFilter(event.target.value)}
+                className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900 outline-none focus:border-amber-500"
+              >
+                <option value="">All children and parent</option>
+                {childFilterOptions.map((contract) => (
+                  <option key={contract.clientName} value={contract.clientName}>
+                    {contract.clientName}
+                    {contract.parentClientName ? " (child)" : " (parent)"}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
         </div>
 
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-slate-200 text-sm">
             <thead className="table-head-gradient text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>
-                <th className="px-4 py-3">Vehicle</th>
+                <th className="px-4 py-3 whitespace-nowrap">Vehicle</th>
                 <th className="px-4 py-3">Client</th>
                 <th className="px-4 py-3">Group</th>
                 <th className="px-4 py-3">Lease Start</th>
@@ -697,7 +849,7 @@ export default function LongTermLeasing() {
               {isLoading ? (
                 <tr>
                   <td
-                    colSpan={10}
+                    colSpan={11}
                     className="py-8 text-center text-slate-400 text-sm"
                   >
                     Loading lease contracts...
@@ -706,7 +858,7 @@ export default function LongTermLeasing() {
               ) : filteredContracts.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={10}
+                    colSpan={11}
                     className="py-8 text-center text-slate-400 text-sm"
                   >
                     No lease contracts found.
@@ -718,29 +870,97 @@ export default function LongTermLeasing() {
                     key={contract.id}
                     className="hover:bg-slate-50 transition-colors"
                   >
-                    <td className="px-4 py-3 text-sm text-slate-700">
+                    <td className="px-4 py-3 text-sm text-slate-700 whitespace-nowrap">
                       {(contract.contractVehicles || []).length === 0 ? (
                         <span className="text-slate-500">-</span>
                       ) : (
-                        (contract.contractVehicles || []).map((v) => (
-                          <div
-                            key={v.id}
-                            className="flex items-center gap-1.5 mb-0.5"
-                          >
-                            <Car className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                            <span>{v.vehicleNo}</span>
-                            <span className="text-xs text-slate-500">
-                              ({v.plateNo})
-                            </span>
-                          </div>
-                        ))
+                        <>
+                          {(contract.contractVehicles || [])
+                            .slice(
+                              0,
+                              vehicleVisibleCounts[contract.id] ||
+                                INITIAL_VISIBLE_VEHICLES,
+                            )
+                            .map((v) => (
+                              <div
+                                key={v.id}
+                                className="flex items-center gap-1.5 mb-0.5"
+                              >
+                                <Car className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                <span>{v.plateNo || v.vehicleNo || "-"}</span>
+                              </div>
+                            ))}
+                          {(contract.contractVehicles || []).length >
+                            INITIAL_VISIBLE_VEHICLES && (
+                            <div className="mt-1 flex items-center gap-3">
+                              {(vehicleVisibleCounts[contract.id] ||
+                                INITIAL_VISIBLE_VEHICLES) <
+                              (contract.contractVehicles || []).length ? (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setVehicleVisibleCounts((previous) => ({
+                                      ...previous,
+                                      [contract.id]:
+                                        (previous[contract.id] ||
+                                          INITIAL_VISIBLE_VEHICLES) +
+                                        VEHICLES_PER_LOAD,
+                                    }))
+                                  }
+                                  className="text-xs font-medium text-amber-700 hover:text-amber-800"
+                                >
+                                  Show{" "}
+                                  {Math.min(
+                                    VEHICLES_PER_LOAD,
+                                    (contract.contractVehicles || []).length -
+                                      (vehicleVisibleCounts[contract.id] ||
+                                        INITIAL_VISIBLE_VEHICLES),
+                                  )}{" "}
+                                  more
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setVehicleVisibleCounts((previous) => ({
+                                      ...previous,
+                                      [contract.id]: INITIAL_VISIBLE_VEHICLES,
+                                    }))
+                                  }
+                                  className="text-xs font-medium text-slate-500 hover:text-slate-700"
+                                >
+                                  Show less
+                                </button>
+                              )}
+                              <span className="text-xs text-slate-400">
+                                {(contract.contractVehicles || []).length} total
+                              </span>
+                            </div>
+                          )}
+                        </>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-sm text-slate-700">
+                    <td
+                      className={`px-4 py-3 text-sm text-slate-700 ${
+                        contract.parentClientName
+                          ? "border-l-2 border-amber-300 pl-6"
+                          : ""
+                      }`}
+                    >
                       <div className="flex items-center gap-2">
                         <Users className="w-4 h-4 text-slate-400" />
                         {contract.clientName || "-"}
                       </div>
+                      {contract.parentClientName && (
+                        <p className="ml-6 mt-1 text-xs text-slate-500">
+                          Child of {contract.parentClientName}
+                        </p>
+                      )}
+                      {contract.isParentCompany && (
+                        <p className="ml-6 mt-1 text-xs font-medium text-amber-700">
+                          Parent client
+                        </p>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-sm text-slate-700">
                       {contract.groupName || (
@@ -759,9 +979,11 @@ export default function LongTermLeasing() {
                     <td className="px-4 py-3 text-sm text-slate-700">
                       <div className="flex items-center gap-2">
                         <Clock3 className="w-4 h-4 text-slate-400" />
-                        {contract.durationDays === null
-                          ? "Unknown"
-                          : `${contract.durationDays} days`}
+                        {contract.isParentCompany
+                          ? "-"
+                          : contract.durationDays === null
+                            ? "Unknown"
+                            : `${contract.durationDays} days`}
                       </div>
                     </td>
                     <td className="px-4 py-3 text-sm text-slate-700">
@@ -777,7 +999,9 @@ export default function LongTermLeasing() {
                             : "border-slate-200 bg-slate-50 text-slate-700"
                         }`}
                       >
-                        {contract.status || "-"}
+                        {contract.isParentCompany
+                          ? "Company"
+                          : contract.status || "-"}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-sm text-slate-700">
@@ -786,7 +1010,8 @@ export default function LongTermLeasing() {
                         : "-"}
                     </td>
                     <td className="px-4 py-3 text-sm text-slate-700">
-                      {Array.isArray(contract.documents) &&
+                      {!contract.isParentCompany &&
+                      Array.isArray(contract.documents) &&
                       contract.documents.length > 0 ? (
                         <div className="flex flex-wrap gap-1.5">
                           {contract.documents.map((doc) => (
@@ -816,8 +1041,17 @@ export default function LongTermLeasing() {
                         </button>
                         <button
                           onClick={() => handleDeleteContract(contract)}
-                          className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-rose-700 border border-rose-200 bg-rose-50 hover:bg-rose-100 rounded-lg transition-colors"
-                          title="Delete contract"
+                          disabled={
+                            contract.isParentCompany &&
+                            childClientNames.has(contract.clientName)
+                          }
+                          className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-rose-700 border border-rose-200 bg-rose-50 hover:bg-rose-100 rounded-lg transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+                          title={
+                            contract.isParentCompany &&
+                            childClientNames.has(contract.clientName)
+                              ? "Move or remove child contracts before deleting"
+                              : "Delete contract"
+                          }
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                           Delete
@@ -859,65 +1093,105 @@ export default function LongTermLeasing() {
 
             <div className="p-6 space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="md:col-span-2">
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                    Vehicles{" "}
-                    <span className="text-slate-500 font-normal">
-                      (optional — can be added later)
+                <div className="md:col-span-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
+                  <label className="flex cursor-pointer items-start gap-3 text-sm text-slate-200">
+                    <input
+                      type="checkbox"
+                      checked={form.isParentCompany}
+                      disabled={
+                        Boolean(editingId) &&
+                        childClientNames.has(form.clientName)
+                      }
+                      onChange={(event) => {
+                        const isParentCompany = event.target.checked;
+                        setForm((current) => ({
+                          ...current,
+                          isParentCompany,
+                          parentClientName: "",
+                          vehicleIds: isParentCompany ? [] : current.vehicleIds,
+                          groupName: isParentCompany ? "" : current.groupName,
+                          startDate: isParentCompany ? "" : current.startDate,
+                          endDate: isParentCompany ? "" : current.endDate,
+                          monthlyRate: isParentCompany
+                            ? ""
+                            : current.monthlyRate,
+                          notes: isParentCompany ? "" : current.notes,
+                          documents: isParentCompany ? [] : current.documents,
+                        }));
+                      }}
+                      className="mt-0.5 h-4 w-4 accent-amber-500 disabled:opacity-60"
+                    />
+                    <span>
+                      <span className="block font-semibold text-amber-200">
+                        Parent company only
+                      </span>
+                      <span className="mt-0.5 block text-xs text-slate-400">
+                        Creates a company grouping record with no vehicles,
+                        dates, contract rate, notes, or attachments.
+                      </span>
                     </span>
                   </label>
-                  <select
-                    value=""
-                    onChange={(event) => addVehicle(event.target.value)}
-                    className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50 mb-2"
-                  >
-                    <option value="">Add a vehicle...</option>
-                    {availableForModal.map((vehicle) => (
-                      <option key={vehicle.id} value={vehicle.id}>
-                        {vehicle.vehicleNo} ({vehicle.plateNo}) - {vehicle.make}{" "}
-                        {vehicle.model}
-                        {vehicle.driverName
-                          ? ` — Driver: ${vehicle.driverName}`
-                          : " — No driver assigned"}
-                      </option>
-                    ))}
-                  </select>
-                  {form.vehicleIds.length === 0 ? (
-                    <p className="text-xs text-slate-500 italic">
-                      No vehicles added yet. You can save the lease without a
-                      vehicle and assign one later.
-                    </p>
-                  ) : (
-                    <div className="flex flex-wrap gap-2">
-                      {form.vehicleIds.map((vId) => {
-                        const v = vehicles.find(
-                          (veh) => String(veh.id) === String(vId),
-                        );
-                        return (
-                          <span
-                            key={vId}
-                            className="inline-flex items-center gap-1.5 bg-slate-700 text-slate-200 text-xs rounded-lg px-3 py-1.5"
-                          >
-                            <Car className="w-3 h-3 text-amber-400" />
-                            {v ? `${v.vehicleNo} (${v.plateNo})` : `ID:${vId}`}
-                            {v?.driverName && (
-                              <span className="text-amber-300/90">
-                                · {v.driverName}
-                              </span>
-                            )}
-                            <button
-                              type="button"
-                              onClick={() => removeVehicle(vId)}
-                              className="ml-0.5 text-slate-400 hover:text-red-400 transition-colors"
-                            >
-                              <X className="w-3 h-3" />
-                            </button>
-                          </span>
-                        );
-                      })}
-                    </div>
-                  )}
                 </div>
+
+                {!form.isParentCompany && (
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                      Vehicles{" "}
+                      <span className="text-slate-500 font-normal">
+                        (optional — can be added later)
+                      </span>
+                    </label>
+                    <select
+                      value=""
+                      onChange={(event) => addVehicle(event.target.value)}
+                      className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50 mb-2"
+                    >
+                      <option value="">Add a vehicle...</option>
+                      {availableForModal.map((vehicle) => (
+                        <option key={vehicle.id} value={vehicle.id}>
+                          {vehicle.plateNo || vehicle.vehicleNo || "-"}
+                        </option>
+                      ))}
+                    </select>
+                    {form.vehicleIds.length === 0 ? (
+                      <p className="text-xs text-slate-500 italic">
+                        No vehicles added yet. You can save the lease without a
+                        vehicle and assign one later.
+                      </p>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        {form.vehicleIds.map((vId) => {
+                          const v = vehicles.find(
+                            (veh) => String(veh.id) === String(vId),
+                          );
+                          return (
+                            <span
+                              key={vId}
+                              className="inline-flex items-center gap-1.5 bg-slate-700 text-slate-200 text-xs rounded-lg px-3 py-1.5"
+                            >
+                              <Car className="w-3 h-3 text-amber-400" />
+                              {v
+                                ? v.plateNo || v.vehicleNo || "-"
+                                : `ID:${vId}`}
+                              {v?.driverName && (
+                                <span className="text-amber-300/90">
+                                  · {v.driverName}
+                                </span>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => removeVehicle(vId)}
+                                className="ml-0.5 text-slate-400 hover:text-red-400 transition-colors"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </span>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 <div>
                   <label className="block text-xs font-medium text-slate-300 mb-1.5">
@@ -933,122 +1207,166 @@ export default function LongTermLeasing() {
                   />
                 </div>
 
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                    Group Name
-                  </label>
-                  <input
-                    value={form.groupName}
-                    onChange={(event) =>
-                      setField("groupName", event.target.value)
-                    }
-                    placeholder="Optional - e.g., Tour Group, Family etc."
-                    className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
-                  />
-                </div>
+                {!form.isParentCompany && (
+                  <div>
+                    <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                      Parent Client{" "}
+                      <span className="font-normal text-slate-500">
+                        (optional)
+                      </span>
+                    </label>
+                    <select
+                      value={form.parentClientName}
+                      onChange={(event) =>
+                        setField("parentClientName", event.target.value)
+                      }
+                      className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
+                    >
+                      <option value="">No parent (top-level client)</option>
+                      {parentContracts
+                        .filter(
+                          (parentName) =>
+                            parentName.toLowerCase() !==
+                            form.clientName.trim().toLowerCase(),
+                        )
+                        .map((parentName) => (
+                          <option key={parentName} value={parentName}>
+                            {parentName}
+                          </option>
+                        ))}
+                    </select>
+                    <p className="mt-1 text-xs text-slate-400">
+                      Choose the parent grouping company for this lease child.
+                    </p>
+                  </div>
+                )}
 
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                    Start Date <span className="text-red-400">*</span>
-                  </label>
-                  <input
-                    type="date"
-                    value={toInputDate(form.startDate)}
-                    onChange={(event) =>
-                      setField("startDate", event.target.value)
-                    }
-                    className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                    End Date <span className="text-red-400">*</span>
-                  </label>
-                  <input
-                    type="date"
-                    value={toInputDate(form.endDate)}
-                    onChange={(event) =>
-                      setField("endDate", event.target.value)
-                    }
-                    className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                    Monthly Rate
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={form.monthlyRate}
-                    onChange={(event) =>
-                      setField("monthlyRate", event.target.value)
-                    }
-                    placeholder="Optional"
-                    className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
-                  />
-                </div>
-
-                <div className="md:col-span-2">
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                    Notes
-                  </label>
-                  <textarea
-                    rows={3}
-                    value={form.notes}
-                    onChange={(event) => setField("notes", event.target.value)}
-                    className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
-                  />
-                </div>
-
-                <div className="md:col-span-2">
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                    Lease Contracts / Documents
-                  </label>
-                  <input
-                    type="file"
-                    multiple
-                    accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
-                    onChange={handleContractDocuments}
-                    className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-200 outline-none file:mr-3 file:rounded-md file:border-0 file:bg-amber-500 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-white hover:file:bg-amber-600"
-                  />
-                  <p className="mt-1 text-xs text-slate-400">
-                    You can upload PDF, DOC, DOCX, JPG, or PNG files (max 5MB
-                    each).
-                  </p>
-                  {form.documents.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {form.documents.map((doc) => (
-                        <span
-                          key={doc.id}
-                          className="inline-flex items-center gap-1.5 rounded-lg bg-slate-700 px-2.5 py-1 text-xs text-slate-200"
-                        >
-                          {doc.name}
-                          <button
-                            type="button"
-                            onClick={() => removeContractDocument(doc.id)}
-                            className="text-slate-400 hover:text-red-400"
-                            title="Remove document"
-                          >
-                            <X className="h-3 w-3" />
-                          </button>
-                        </span>
-                      ))}
+                {!form.isParentCompany && (
+                  <>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                        Group Name
+                      </label>
+                      <input
+                        value={form.groupName}
+                        onChange={(event) =>
+                          setField("groupName", event.target.value)
+                        }
+                        placeholder="Optional - e.g., Tour Group, Family etc."
+                        className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
+                      />
                     </div>
-                  )}
-                </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                        Start Date <span className="text-red-400">*</span>
+                      </label>
+                      <input
+                        type="date"
+                        value={toInputDate(form.startDate)}
+                        onChange={(event) =>
+                          setField("startDate", event.target.value)
+                        }
+                        className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                        End Date <span className="text-red-400">*</span>
+                      </label>
+                      <input
+                        type="date"
+                        value={toInputDate(form.endDate)}
+                        onChange={(event) =>
+                          setField("endDate", event.target.value)
+                        }
+                        className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                        Monthly Rate
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={form.monthlyRate}
+                        onChange={(event) =>
+                          setField("monthlyRate", event.target.value)
+                        }
+                        placeholder="Optional"
+                        className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
+                      />
+                    </div>
+
+                    <div className="md:col-span-2">
+                      <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                        Notes
+                      </label>
+                      <textarea
+                        rows={3}
+                        value={form.notes}
+                        onChange={(event) =>
+                          setField("notes", event.target.value)
+                        }
+                        className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
+                      />
+                    </div>
+
+                    <div className="md:col-span-2">
+                      <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                        Lease Contracts / Documents
+                      </label>
+                      <input
+                        type="file"
+                        multiple
+                        accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
+                        onChange={handleContractDocuments}
+                        className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-200 outline-none file:mr-3 file:rounded-md file:border-0 file:bg-amber-500 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-white hover:file:bg-amber-600"
+                      />
+                      <p className="mt-1 text-xs text-slate-400">
+                        You can upload PDF, DOC, DOCX, JPG, or PNG files (max
+                        5MB each).
+                      </p>
+                      {form.documents.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {form.documents.map((doc) => (
+                            <span
+                              key={doc.id}
+                              className="inline-flex items-center gap-1.5 rounded-lg bg-slate-700 px-2.5 py-1 text-xs text-slate-200"
+                            >
+                              {doc.name}
+                              <button
+                                type="button"
+                                onClick={() => removeContractDocument(doc.id)}
+                                className="text-slate-400 hover:text-red-400"
+                                title="Remove document"
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
               </div>
 
-              <p className="text-xs text-amber-300">
-                Lease type is auto-classified by duration: Daily Lease (&lt; 1
-                month), Short-Term Lease (1 month to 1 year), and Long-Term
-                Lease (&gt; 1 year).
-              </p>
-              <p className="text-xs text-cyan-300">
-                Draft classification: <strong>{draftLeaseType}</strong>
-              </p>
+              {!form.isParentCompany && (
+                <>
+                  <p className="text-xs text-amber-300">
+                    Lease type is auto-classified by duration: Daily Lease (&lt;
+                    1 month), Short-Term Lease (1 month to 1 year), and
+                    Long-Term Lease (&gt; 1 year).
+                  </p>
+                  <p className="text-xs text-cyan-300">
+                    Draft classification: <strong>{draftLeaseType}</strong>
+                  </p>
+                </>
+              )}
             </div>
 
             <div className="px-6 py-4 border-t border-slate-800 flex justify-end gap-3">
