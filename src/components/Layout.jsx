@@ -1,8 +1,11 @@
 ﻿import { useEffect, useState } from "react";
 import Sidebar from "./Sidebar";
 import Header from "./Header";
+import { useSearchParams } from "react-router-dom";
 
 export default function Layout({ children }) {
+  const [searchParams] = useSearchParams();
+  const embeddedJobCard = searchParams.get("embed") === "1";
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     if (typeof window === "undefined") return false;
@@ -29,24 +32,24 @@ export default function Layout({ children }) {
 
   return (
     <div className="min-h-screen bg-transparent">
-      <Sidebar
+      {!embeddedJobCard && <Sidebar
         isOpen={sidebarOpen}
         isCollapsed={sidebarCollapsed}
         toggleSidebar={toggleSidebar}
         closeMobileSidebar={closeMobileSidebar}
-      />
+      />}
 
       <div
         className={`min-h-screen bg-[radial-gradient(circle_at_top_right,rgba(201,162,54,0.12),transparent_45%),linear-gradient(180deg,rgba(255,251,239,0.72),rgba(248,241,225,0.82))] transition-[margin] duration-300 ease-in-out ${
-          sidebarCollapsed ? "lg:ml-20" : "lg:ml-72"
+          embeddedJobCard ? "ml-0" : sidebarCollapsed ? "lg:ml-20" : "lg:ml-72"
         }`}
       >
-        <Header
+        {!embeddedJobCard && <Header
           toggleSidebar={toggleSidebar}
           isSidebarCollapsed={sidebarCollapsed}
-        />
+        />}
 
-        <main className="p-6 animate-fadeIn content-light">{children}</main>
+        <main className={`${embeddedJobCard ? "p-0" : "p-6"} animate-fadeIn content-light`}>{children}</main>
       </div>
     </div>
   );

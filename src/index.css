@@ -171,6 +171,41 @@ body {
   background-color: transparent !important;
 }
 
+/* Jobcard details: give each information card its own soft accent and keep
+   legacy light text readable against the newer light surfaces. */
+.content-light .jobcard-view .grid > .bg-white:nth-child(4n + 1) {
+  background: linear-gradient(135deg, #fff7e6, #ffffff) !important;
+  border-color: #f4d9a2 !important;
+}
+.content-light .jobcard-view .grid > .bg-white:nth-child(4n + 2) {
+  background: linear-gradient(135deg, #e9f7f4, #ffffff) !important;
+  border-color: #a9ddd2 !important;
+}
+.content-light .jobcard-view .grid > .bg-white:nth-child(4n + 3) {
+  background: linear-gradient(135deg, #edf3ff, #ffffff) !important;
+  border-color: #c7d7fb !important;
+}
+.content-light .jobcard-view .grid > .bg-white:nth-child(4n) {
+  background: linear-gradient(135deg, #fff0f2, #ffffff) !important;
+  border-color: #f6cbd3 !important;
+}
+.content-light .jobcard-view p > span[class~="text-white"],
+.content-light .jobcard-view .grid > p > span[class~="text-white"] {
+  color: #0f172a !important;
+  font-weight: 600;
+}
+.content-light .jobcard-view .grid > p[class~="text-slate-300"] {
+  color: #475569 !important;
+}
+.content-light .jobcard-view table thead,
+.content-light .jobcard-view table thead th {
+  background: #fff7e6 !important;
+  color: #334155 !important;
+}
+.content-light .jobcard-view table tbody td {
+  color: #1e293b !important;
+}
+
 /* Fix placeholder text — prevent it turning black on light backgrounds */
 .content-light ::placeholder,
 ::placeholder {

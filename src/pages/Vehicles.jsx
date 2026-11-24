@@ -393,7 +393,8 @@ export default function Vehicles({ ownershipType = "" }) {
         v.vehicleNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
         v.plateNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
         v.make.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        v.model.toLowerCase().includes(searchTerm.toLowerCase());
+        v.model.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        v.assignedDriverName.toLowerCase().includes(searchTerm.toLowerCase());
       const matchStatus =
         selectedStatus === "All" || v.status === selectedStatus;
       const isAssigned = Boolean(v.assignedDriverId);
@@ -764,7 +765,7 @@ export default function Vehicles({ ownershipType = "" }) {
             <Search className="w-5 h-5 text-slate-400 flex-shrink-0" />
             <input
               type="text"
-              placeholder="Search by car no, plate, make, model..."
+              placeholder="Search by car no, plate, make, model, or driver..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="bg-transparent border-none outline-none text-sm text-slate-900 placeholder-slate-400 w-full"

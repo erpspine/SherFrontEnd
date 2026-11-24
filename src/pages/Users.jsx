@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from "react";
+﻿import { useEffect, useRef, useState } from "react";
 import {
   Search,
   Plus,
@@ -17,6 +17,7 @@ import {
   Copy,
   Download,
   FileSpreadsheet,
+  MoreHorizontal,
   Send,
 } from "lucide-react";
 import { apiFetch } from "../utils/api";
@@ -204,6 +205,91 @@ const getExperienceYears = (drivingStartedAt) => {
   return (Date.now() - started.getTime()) / (1000 * 60 * 60 * 24 * 365.25);
 };
 
+function UserActionsMenu({
+  user,
+  onResetPassword,
+  onEdit,
+  onDelete,
+  onCopyDriverProfile,
+  onDownloadDriverProfile,
+  onEmailDriverProfile,
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    if (!isOpen) return undefined;
+
+    const handleOutsideClick = (event) => {
+      if (!menuRef.current?.contains(event.target)) setIsOpen(false);
+    };
+
+    document.addEventListener("mousedown", handleOutsideClick);
+    return () => document.removeEventListener("mousedown", handleOutsideClick);
+  }, [isOpen]);
+
+  const runAction = (action) => {
+    setIsOpen(false);
+    action();
+  };
+
+  const actionClass =
+    "flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50";
+
+  return (
+    <div ref={menuRef} className="relative inline-block text-left">
+      <button
+        type="button"
+        onClick={() => setIsOpen((open) => !open)}
+        aria-haspopup="menu"
+        aria-expanded={isOpen}
+        aria-label={`Actions for ${user.name}`}
+        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:border-amber-300 hover:bg-amber-50 hover:text-amber-700"
+      >
+        <MoreHorizontal className="h-4 w-4" />
+        Actions
+      </button>
+
+      {isOpen && (
+        <div
+          role="menu"
+          className="absolute left-0 top-full z-30 mt-1 w-56 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-xl"
+        >
+          <button type="button" role="menuitem" onClick={() => runAction(() => onResetPassword(user))} className={actionClass}>
+            <KeyRound className="h-4 w-4 text-amber-600" />
+            Reset password
+          </button>
+          <button type="button" role="menuitem" onClick={() => runAction(() => onEdit(user))} className={actionClass}>
+            <Edit className="h-4 w-4 text-amber-500" />
+            Edit user
+          </button>
+          <button type="button" role="menuitem" onClick={() => runAction(() => onDelete(user.id))} className={actionClass}>
+            <Trash2 className="h-4 w-4 text-red-500" />
+            Delete user
+          </button>
+          {user.role === "Driver" && (
+            <>
+              <div className="my-1 border-t border-slate-100" />
+              <button type="button" role="menuitem" onClick={() => runAction(() => onCopyDriverProfile(user))} className={actionClass}>
+                <Copy className="h-4 w-4 text-blue-600" />
+                Copy driver details
+              </button>
+              <button type="button" role="menuitem" onClick={() => runAction(() => onDownloadDriverProfile(user))} className={actionClass}>
+                <Download className="h-4 w-4 text-emerald-600" />
+                Download profile PDF
+              </button>
+              <button type="button" role="menuitem" onClick={() => runAction(() => onEmailDriverProfile(user))} className={actionClass}>
+                <Send className="h-4 w-4 text-purple-600" />
+                Email driver profile
+              </button>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const sanitizeLegacyExperience = (value) => {
   const text = String(value || "").trim();
   if (!text) return "";
@@ -348,6 +434,28 @@ export default function Users() {
     inactive: users.filter((u) => u.status === "Inactive").length,
     blacklisted: users.filter((u) => u.status === "Blacklisted").length,
   };
+
+  const driverUsers = users.filter((user) => user.role === "Driver");
+  const driverSummary = {
+    longTerm: driverUsers.filter((user) => user.contract_type === "Long Term").length,
+    freelance: driverUsers.filter((user) => user.contract_type === "Freelance").length,
+    shortTerm: driverUsers.filter((user) => user.contract_type === "Short Term").length,
+    withDriverLicense: driverUsers.filter((user) => Boolean(String(user.driver_license || "").trim())).length,
+    withoutDriverLicense: driverUsers.filter((user) => !String(user.driver_license || "").trim()).length,
+    withGuideLicense: driverUsers.filter((user) => Boolean(String(user.tour_guide_license || "").trim())).length,
+    withoutGuideLicense: driverUsers.filter((user) => !String(user.tour_guide_license || "").trim()).length,
+  };
+  const languageSummary = driverUsers.reduce((summary, user) => {
+    (user.languages_spoken_list || []).forEach((language) => {
+      const label = String(language).trim();
+      if (!label) return;
+      const key = label.toLowerCase();
+      const existing = summary.find((item) => item.key === key);
+      if (existing) existing.count += 1;
+      else summary.push({ key, label, count: 1 });
+    });
+    return summary;
+  }, []).sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
 
   const filteredUsers = users.filter((user) => {
     const q = searchTerm.toLowerCase();
@@ -949,6 +1057,56 @@ export default function Users() {
         </div>
       </div>
 
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">Driver Summary</h2>
+            <p className="text-sm text-slate-500">Contract, language, and licence coverage for drivers.</p>
+          </div>
+          <span className="text-sm font-medium text-slate-500">{driverUsers.length} driver{driverUsers.length === 1 ? "" : "s"}</span>
+        </div>
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          {[
+            ["Long Term", driverSummary.longTerm, "text-blue-600"],
+            ["Freelance", driverSummary.freelance, "text-purple-600"],
+            ["Short Term", driverSummary.shortTerm, "text-amber-600"],
+            ["With Driver Licence", driverSummary.withDriverLicense, "text-emerald-600"],
+            ["Without Driver Licence", driverSummary.withoutDriverLicense, "text-rose-600"],
+            ["With Guide Licence", driverSummary.withGuideLicense, "text-cyan-600"],
+          ].map(([label, count, color]) => (
+            <div key={label} className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+              <p className="text-xs font-medium text-slate-500">{label}</p>
+              <p className={`mt-1 text-xl font-bold ${color}`}>{count}</p>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-4 grid gap-4 lg:grid-cols-2">
+          <div className="rounded-xl border border-slate-100 p-4">
+            <h3 className="text-sm font-semibold text-slate-800">Guide Licence</h3>
+            <div className="mt-3 flex gap-2 text-sm">
+              <span className="rounded-lg bg-cyan-50 px-3 py-2 text-cyan-700">With: {driverSummary.withGuideLicense}</span>
+              <span className="rounded-lg bg-slate-100 px-3 py-2 text-slate-600">Without: {driverSummary.withoutGuideLicense}</span>
+            </div>
+          </div>
+          <div className="rounded-xl border border-slate-100 p-4">
+            <h3 className="text-sm font-semibold text-slate-800">Language Summary</h3>
+            {languageSummary.length > 0 ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {languageSummary.map(({ key, label, count }) => (
+                  <span key={key} className="rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-700">
+                    {label}: <strong>{count}</strong>
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-3 text-sm text-slate-400">No driver languages recorded.</p>
+            )}
+          </div>
+        </div>
+      </section>
+
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4">
         <div className="flex flex-col lg:flex-row gap-3">
           <div className="flex-1 flex items-center gap-3 bg-slate-50 rounded-xl px-4 py-2.5 border border-slate-200 focus-within:border-amber-500 transition-colors">
@@ -1021,8 +1179,7 @@ export default function Users() {
                 {[
                   "Actions",
                   "Name",
-                  "Email",
-                  "Phone",
+                  "Contact",
                   "Role",
                   "Contract Type",
                   "Vehicle",
@@ -1038,9 +1195,9 @@ export default function Users() {
                     key={header}
                     className={`text-left py-4 px-6 text-xs font-semibold text-slate-500 uppercase tracking-wide ${
                       header === "Actions"
-                        ? "w-[188px]"
-                        : header === "Phone"
-                          ? "min-w-[220px]"
+                        ? "w-[128px]"
+                        : header === "Contact"
+                          ? "min-w-[250px]"
                           : ""
                     }`}
                   >
@@ -1053,61 +1210,22 @@ export default function Users() {
               {filteredUsers.map((user, index) => (
                 <tr
                   key={user.id}
-                  className={`border-b border-slate-100 transition-colors ${
+                  className={`border-b border-slate-100 bg-gradient-to-r transition-colors ${
                     index % 2 === 0
-                      ? "hover:bg-amber-50/60"
-                      : "hover:bg-sky-50/60"
+                      ? "from-white via-amber-50/20 to-blue-50/30 hover:from-amber-50/70 hover:via-amber-50/50 hover:to-blue-50/70"
+                      : "from-slate-50/80 via-blue-50/20 to-purple-50/20 hover:from-sky-50/70 hover:via-blue-50/50 hover:to-purple-50/60"
                   }`}
                 >
-                  <td className="py-4 px-6 w-[188px]">
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => handleResetPassword(user)}
-                        className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
-                        title="Reset password and email new credentials"
-                      >
-                        <KeyRound className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => openEdit(user)}
-                        className="p-1.5 text-slate-400 hover:text-amber-500 hover:bg-amber-50 rounded-lg transition-colors"
-                        title="Edit user"
-                      >
-                        <Edit className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(user.id)}
-                        className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                        title="Delete user"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                      {user.role === "Driver" && (
-                        <>
-                          <button
-                            onClick={() => handleCopyDriverProfile(user)}
-                            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                            title="Copy driver details"
-                          >
-                            <Copy className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDownloadDriverProfile(user)}
-                            className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
-                            title="Download driver profile PDF"
-                          >
-                            <Download className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleEmailDriverProfile(user)}
-                            className="p-1.5 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
-                            title="Email driver profile to client"
-                          >
-                            <Send className="w-4 h-4" />
-                          </button>
-                        </>
-                      )}
-                    </div>
+                  <td className="py-4 px-6 w-[128px]">
+                    <UserActionsMenu
+                      user={user}
+                      onResetPassword={handleResetPassword}
+                      onEdit={openEdit}
+                      onDelete={handleDelete}
+                      onCopyDriverProfile={handleCopyDriverProfile}
+                      onDownloadDriverProfile={handleDownloadDriverProfile}
+                      onEmailDriverProfile={handleEmailDriverProfile}
+                    />
                   </td>
                   <td className="py-4 px-6">
                     <div className="flex items-center gap-3">
@@ -1154,11 +1272,15 @@ export default function Users() {
                       </div>
                     </div>
                   </td>
-                  <td className="py-4 px-6 text-sm text-slate-600">
-                    {user.email}
-                  </td>
-                  <td className="py-4 px-6 text-sm text-slate-600 min-w-[220px] whitespace-nowrap">
-                    {user.phone}
+                  <td className="py-4 px-6 min-w-[250px] text-sm text-slate-600">
+                    <div className="space-y-1">
+                      <div className="truncate font-medium text-blue-700" title={user.email}>
+                        {user.email || <span className="font-normal text-slate-400">No email</span>}
+                      </div>
+                      <div className="whitespace-nowrap text-xs font-medium text-amber-700">
+                        {user.phone || <span className="font-normal text-slate-400">No phone</span>}
+                      </div>
+                    </div>
                   </td>
                   <td className="py-4 px-6">
                     <span

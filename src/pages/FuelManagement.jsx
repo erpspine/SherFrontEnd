@@ -114,19 +114,22 @@ export default function FuelManagement() {
       const value = allocationGroupKey(allocation);
       const current = groups.get(value);
       const vehicleCount = (current?.vehicleCount || 0) + 1;
+      const drivers = current?.drivers || new Set();
+      drivers.add(allocation.driver?.name || "Unassigned driver");
       groups.set(value, {
         value,
         vehicleCount,
         allocation,
+        drivers,
       });
     }
 
-    return Array.from(groups.values()).map(({ value, vehicleCount, allocation }) => ({
+    return Array.from(groups.values()).map(({ value, vehicleCount, allocation, drivers }) => ({
       value,
       label:
         allocation.allocation_type === "long_term"
-          ? `Long term #${allocation.id} · ${allocation.group_name || allocation.lease_contract?.group_name || allocation.lease_contract?.client_name || "Lease"}`
-          : `Safari · ${allocation.lead?.group_name || "Safari"} · ${allocation.lead?.booking_ref || "No booking reference"}${vehicleCount > 1 ? ` · ${vehicleCount} vehicles` : ""}`,
+          ? `Long term #${allocation.id} · ${allocation.group_name || allocation.lease_contract?.group_name || allocation.lease_contract?.client_name || "Lease"} · ${Array.from(drivers).join(", ")}`
+          : `Safari · ${allocation.lead?.group_name || "Safari"} · ${allocation.lead?.booking_ref || "No booking reference"} · ${Array.from(drivers).join(", ")}${vehicleCount > 1 ? ` · ${vehicleCount} vehicles` : ""}`,
     }));
   }, [availableAllocations]);
   const safariVehicleOptions = useMemo(

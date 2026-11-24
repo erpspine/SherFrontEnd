@@ -43,12 +43,13 @@ export function buildFuelReport(entries, from, to, parameters) {
     row.km += Number(entry.km_done);
   }
   return [...groups.values()].map(({ drivers, missingDays, ...row }) => {
-    const expected = row.scoredTrips ? row.km / Number(parameters.average || 7) : null;
-    const excess = row.scoredTrips ? round(Math.max(0, row.litres - expected)) : null;
     const average = row.litres > 0 ? row.km / row.litres : null;
     const targetMap = parameters.monthlyTargets ?? parameters.targetAverages;
-    const targetValue = targetMap ? targetMap[row.month] : parameters.targetAverage
+    const targetValue = targetMap ? targetMap[row.month] : parameters.targetAverage;
     const targetAverage = targetValue == null ? (targetMap ? null : 6.5) : Number(targetValue);
+    const expectedAverage = targetValue == null ? Number(parameters.average || 7) : Number(targetValue);
+    const expected = row.scoredTrips ? row.km / expectedAverage : null;
+    const excess = row.scoredTrips ? round(Math.max(0, row.litres - expected)) : null;
     const status = average === null ? 'Pending' : targetAverage === null ? 'Target not set' : average < targetAverage ? 'Deduction' : average < 7 ? 'Warning' : 'Good';
     const price = parameters.monthlyPrices?.[row.month] ?? null;
     const deductionAmount = status === 'Target not set' ? null : status === 'Deduction' ? (price === null ? null : round(excess * Number(price))) : 0;

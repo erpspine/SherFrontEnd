@@ -1,18 +1,19 @@
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   ArrowLeft,
   Calendar,
   ClipboardList,
-  Download,
-  Eye,
-  Edit,
   Globe,
   Loader2,
   MapPin,
+  MoreHorizontal,
   Plus,
   Search,
+  Download,
+  Edit,
+  Eye,
   Trash2,
   User,
   Users,
@@ -413,6 +414,9 @@ const normalizeJobCard = (jobCard) => {
     perDiemCount: Number(
       jobCard.per_diem_vouchers_count ?? jobCard.perDiemCount ?? 0,
     ),
+    paidPerDiemCount: Number(
+      jobCard.paid_per_diem_vouchers_count ?? jobCard.paidPerDiemCount ?? 0,
+    ),
     assignedDriverCount: Number(
       jobCard.assigned_driver_count ?? jobCard.assignedDriverCount ?? 0,
     ),
@@ -537,6 +541,79 @@ const normalizeJobCard = (jobCard) => {
     createdAt: jobCard.created_at || jobCard.createdAt || "",
   };
 };
+
+const hasAllowanceRequest = (jobCard) =>
+  Number(jobCard?.driverAllowance || 0) > 0 ||
+  (Array.isArray(jobCard?.routeItinerary) &&
+    jobCard.routeItinerary.some(
+      (item) =>
+        Number(item?.allowancePerDay ?? item?.allowance_per_day ?? 0) > 0,
+    ));
+
+function JobCardActionsMenu({ card, onAction }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const menuRef = useRef(null);
+  const isClosed = (card.status || "Open") === "Closed";
+  const isManagedType = isSafariJobType(card.type) || isLeaseJobType(card.type);
+  const actionClass =
+    "flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50";
+
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    const handleOutsideClick = (event) => {
+      if (!menuRef.current?.contains(event.target)) setIsOpen(false);
+    };
+    document.addEventListener("mousedown", handleOutsideClick);
+    return () => document.removeEventListener("mousedown", handleOutsideClick);
+  }, [isOpen]);
+
+  const runAction = (action) => {
+    setIsOpen(false);
+    onAction(action);
+  };
+
+  return (
+    <div ref={menuRef} className="relative inline-block text-left">
+      <button
+        type="button"
+        onClick={() => setIsOpen((open) => !open)}
+        aria-haspopup="menu"
+        aria-expanded={isOpen}
+        aria-label={`Actions for ${card.jobCardNo}`}
+        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:border-amber-300 hover:bg-amber-50 hover:text-amber-700"
+      >
+        <MoreHorizontal className="h-4 w-4" />
+        Actions
+      </button>
+      {isOpen && (
+        <div role="menu" className="absolute left-0 top-full z-30 mt-1 w-56 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-xl">
+          <button type="button" role="menuitem" onClick={() => runAction("view")} className={actionClass}>
+            <Eye className="h-4 w-4 text-cyan-600" /> View jobcard
+          </button>
+          {!((isManagedType) && isClosed) && <button type="button" role="menuitem" onClick={() => runAction("edit")} className={actionClass}>
+            <Edit className="h-4 w-4 text-amber-500" /> Edit jobcard
+          </button>}
+          <button type="button" role="menuitem" onClick={() => runAction("download")} className={actionClass}>
+            <Download className="h-4 w-4 text-blue-600" /> Download PDF
+          </button>
+          {hasAllowanceRequest(card) && <button type="button" role="menuitem" onClick={() => runAction("schedule")} className={actionClass}>
+            <Calendar className="h-4 w-4 text-amber-600" /> Schedule allowance
+          </button>}
+          {canManageJobCardStatus() && isManagedType && <>
+            <div className="my-1 border-t border-slate-100" />
+            <button type="button" role="menuitem" onClick={() => runAction(isClosed ? "reopen" : "close")} className={actionClass}>
+              <ClipboardList className={`h-4 w-4 ${isClosed ? "text-amber-600" : "text-emerald-600"}`} />
+              {isClosed ? "Reopen jobcard" : "Close jobcard"}
+            </button>
+          </>}
+          {canDelete() && <button type="button" role="menuitem" onClick={() => runAction("delete")} className={actionClass}>
+            <Trash2 className="h-4 w-4 text-red-500" /> Delete jobcard
+          </button>}
+        </div>
+      )}
+    </div>
+  );
+}
 
 const dateKey = (value) => {
   const parsed = parseDateValue(value);
@@ -723,6 +800,8 @@ export default function JobCards() {
   );
   const [editingId, setEditingId] = useState(null);
   const [selectedJobCard, setSelectedJobCard] = useState(null);
+  const [selectedJobCardIds, setSelectedJobCardIds] = useState([]);
+  const [bulkScheduling, setBulkScheduling] = useState(false);
   const [form, setForm] = useState(createEmptyForm());
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -732,6 +811,7 @@ export default function JobCards() {
   const [errorMessage, setErrorMessage] = useState("");
   const [searchParams] = useSearchParams();
   const jobCardId = searchParams.get("view");
+  const embeddedView = searchParams.get("embed") === "1";
   const formModeParam = searchParams.get("form");
   const requestedCloseJobCardId = searchParams.get("id");
   const isJobCardFormPage = ["create", "edit", "close"].includes(formModeParam);
@@ -1147,11 +1227,27 @@ export default function JobCards() {
       return 1;
     }
 
-    const count = safariAllocations.filter(
+    const allocations = safariAllocations.filter(
       (allocation) => String(allocation.leadId) === String(card.leadId),
-    ).length;
+    );
 
-    return count > 0 ? count : 1;
+    // A safari can have more than one allocation row for the same vehicle
+    // (for example, duplicate rows created during allocation updates). The
+    // allowance is per vehicle, so count distinct vehicles rather than rows.
+    const vehicleKeys = new Set(
+      allocations
+        .map((allocation) => {
+          const vehicleId = Number(allocation.vehicleId || 0);
+          if (vehicleId > 0) return `id:${vehicleId}`;
+
+          const plateNo = String(allocation.plateNo || "").trim().toLowerCase();
+          const vehicleNo = String(allocation.vehicleNo || "").trim().toLowerCase();
+          return plateNo || vehicleNo ? `label:${plateNo}|${vehicleNo}` : null;
+        })
+        .filter(Boolean),
+    );
+
+    return vehicleKeys.size > 0 ? vehicleKeys.size : 1;
   };
 
   const filteredCards = useMemo(() => {
@@ -1173,9 +1269,6 @@ export default function JobCards() {
       const matchesSearch =
         !query ||
         String(card.jobCardNo || "")
-          .toLowerCase()
-          .includes(query) ||
-        String(card.bookingReferenceNo || "")
           .toLowerCase()
           .includes(query) ||
         String(card.tourOperatorClientName || "")
@@ -1229,6 +1322,8 @@ export default function JobCards() {
     filterToDate,
     categoryFilter,
   ]);
+
+  const statusCards = filteredCards;
 
   const stats = useMemo(() => {
     const safariCards = filteredCards.filter((card) =>
@@ -1827,12 +1922,10 @@ export default function JobCards() {
       const missingDrivers = drivers.filter(
         (driver) => !existingKeys.has(String(driver.key)),
       );
-      const canUpdateExisting =
-        jobCard.perDiemCount > 0 &&
-        jobCard.updatedAt &&
-        jobCard.perDiemUpdatedAt &&
-        new Date(jobCard.updatedAt).getTime() >
-          new Date(jobCard.perDiemUpdatedAt).getTime();
+      // Existing vouchers can be pushed again. The API updates the existing
+      // voucher and resets its approval only when the allowance snapshot has
+      // actually changed, so do not block the user based on list timestamps.
+      const canUpdateExisting = jobCard.perDiemCount > 0;
       const selectableDrivers = missingDrivers.length
         ? missingDrivers
         : canUpdateExisting
@@ -1841,7 +1934,7 @@ export default function JobCards() {
       if (!selectableDrivers.length) return;
 
       const selection = await Swal.fire({
-        title: missingDrivers.length ? "Generate Per Diem" : "Update Per Diem",
+        title: missingDrivers.length ? "Schedule Allowance" : "Update Allowance",
         input: "select",
         inputOptions: Object.fromEntries(
           selectableDrivers.map((driver) => [driver.key, driver.name]),
@@ -1849,39 +1942,24 @@ export default function JobCards() {
         inputPlaceholder: "Select driver",
         showCancelButton: true,
         confirmButtonText: missingDrivers.length
-          ? "Generate PDF"
-          : "Update PDF",
+          ? "Push for approval"
+          : "Update request",
         inputValidator: (value) =>
           !value ? "Please select a driver." : undefined,
       });
       if (!selection.isConfirmed) return;
 
-      const selectedDriver = selectableDrivers.find(
-        (driver) => driver.key === selection.value,
-      );
       const response = await apiFetch(`/job-cards/${jobCard.id}/per-diem`, {
         method: "POST",
-        body: { driverKey: selection.value },
+        body: { driverKey: selection.value, pushForApproval: true },
       });
       if (!response.ok) {
         const error = await response.json().catch(() => ({}));
         throw new Error(
           error.message ||
-            `Unable to generate per diem for ${selectedDriver?.name || "the selected driver"}.`,
+            "Unable to schedule the allowance request.",
         );
       }
-      const url = URL.createObjectURL(await response.blob());
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download =
-        response.headers
-          .get("Content-Disposition")
-          ?.match(/filename="?([^";]+)"?/)?.[1] ||
-        `per-diem-${jobCard.jobCardNo || jobCard.id}-${selectedDriver?.name || "driver"}.pdf`;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
 
       const nextCount = new Set([...existingKeys, String(selection.value)])
         .size;
@@ -1909,6 +1987,88 @@ export default function JobCards() {
     } finally {
       setGeneratingPerDiemId(null);
     }
+  };
+
+  const handleBulkScheduleAllowances = async (viewedCard = null) => {
+    const selectedCards = viewedCard
+      ? (hasAllowanceRequest(viewedCard) ? [viewedCard] : [])
+      : statusCards.filter(
+          (card) => selectedJobCardIds.includes(card.id) && hasAllowanceRequest(card),
+        );
+    if (!selectedCards.length) return;
+
+    const confirmation = await Swal.fire({
+      title: "Push allowances for approval?",
+      text: `This will push allowance requests for ${selectedCards.length} job card${selectedCards.length === 1 ? "" : "s"}. Existing requests will be updated when allowance details have changed.`,
+      icon: "question",
+      showCancelButton: true,
+      confirmButtonText: "Yes, push for approval",
+      cancelButtonText: "Cancel",
+      confirmButtonColor: "#d97706",
+      background: "#0f172a",
+      color: "#e2e8f0",
+    });
+    if (!confirmation.isConfirmed) return;
+
+    setBulkScheduling(true);
+    setErrorMessage("");
+    let scheduled = 0;
+    const failures = [];
+    try {
+      for (const card of selectedCards) {
+        try {
+          const detailsResponse = await apiFetch(`/job-cards/${card.id}`);
+          const detailsPayload = await detailsResponse.json().catch(() => ({}));
+          if (!detailsResponse.ok) {
+            throw new Error(detailsPayload?.message || "Unable to load job card.");
+          }
+          const drivers = (detailsPayload.jobCard?.driverProfiles || []).filter(
+            (driver) => driver.name?.trim(),
+          );
+          if (!drivers.length) throw new Error("No assigned driver");
+
+          for (const driver of drivers) {
+            const driverKey = driver.key || (driver.id ? String(driver.id) : "");
+            if (!driverKey) continue;
+            const response = await apiFetch(`/job-cards/${card.id}/per-diem`, {
+              method: "POST",
+              body: { driverKey, pushForApproval: true },
+            });
+            if (!response.ok) {
+              const payload = await response.json().catch(() => ({}));
+              throw new Error(payload?.message || "Unable to schedule allowance");
+            }
+            scheduled += 1;
+          }
+        } catch (error) {
+          failures.push(`${card.jobCardNo}: ${error.message}`);
+        }
+      }
+      if (!viewedCard) setSelectedJobCardIds([]);
+      await loadData();
+      await Swal.fire({
+        title: "Allowance scheduling complete",
+        text: `${scheduled} allowance request${scheduled === 1 ? "" : "s"} pushed for approval${failures.length ? `. ${failures.length} jobcard${failures.length === 1 ? "" : "s"} skipped.` : "."}`,
+        icon: failures.length ? "warning" : "success",
+        background: "#0f172a",
+        color: "#e2e8f0",
+      });
+      if (failures.length) setErrorMessage(failures.join("; "));
+    } catch (error) {
+      setErrorMessage(error.message || "Unable to schedule allowances.");
+    } finally {
+      setBulkScheduling(false);
+    }
+  };
+
+  const handleJobCardAction = (action, card) => {
+    if (action === "view") return openView(card);
+    if (action === "edit") return openEdit(card);
+    if (action === "download") return handleDownloadPdf(card);
+    if (action === "schedule") return handleGeneratePerDiem(card);
+    if (action === "close") return openClose(card);
+    if (action === "reopen") return handleReopen(card);
+    if (action === "delete") return handleDelete(card.id);
   };
 
   const handleDownloadPdf = async (jobCard) => {
@@ -2331,7 +2491,7 @@ export default function JobCards() {
               Total Job Cards
             </p>
             <p className="text-2xl font-bold text-slate-900 mt-1">
-              {stats.totalCards}
+                  {stats.totalCards}
             </p>
           </div>
           <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
@@ -2362,7 +2522,7 @@ export default function JobCards() {
           </div>
         </div>
 
-        <section className="hidden">
+        <section>
           <div className="border-b border-slate-200 px-4 py-3">
             <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
               <div>
@@ -2493,7 +2653,7 @@ export default function JobCards() {
                 type="text"
                 value={searchTerm}
                 onChange={(event) => setSearchTerm(event.target.value)}
-                placeholder="Search by booking ref, group name, company, type, route, reg no"
+                placeholder="Search by group name, company, type, route, reg no"
                 className="w-full bg-transparent text-sm text-slate-900 placeholder-slate-400 outline-none"
               />
             </div>
@@ -2537,12 +2697,77 @@ export default function JobCards() {
                 </button>
               </div>
             </div>
+
+            <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-slate-200 pt-3">
+              <label className="inline-flex items-center gap-2 text-sm font-medium text-slate-700">
+                <input
+                  type="checkbox"
+                  className="h-5 w-5 cursor-pointer rounded-md border-2 border-slate-300 bg-white text-amber-600 shadow-sm accent-amber-600 transition hover:border-amber-400 focus:ring-2 focus:ring-amber-400 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50"
+                  aria-label="Select all visible jobcards with allowance"
+                  checked={
+                    statusCards.filter((card) => hasAllowanceRequest(card)).length > 0 &&
+                    statusCards.filter((card) => hasAllowanceRequest(card)).every((card) =>
+                      selectedJobCardIds.includes(card.id),
+                    )
+                  }
+                  onChange={(event) =>
+                    setSelectedJobCardIds(
+                      event.target.checked
+                        ? statusCards.filter((card) => hasAllowanceRequest(card)).map((card) => card.id)
+                        : [],
+                    )
+                  }
+                />
+                Select allowance jobcards
+              </label>
+              <button
+                type="button"
+                onClick={() => handleBulkScheduleAllowances()}
+                disabled={bulkScheduling || selectedJobCardIds.length === 0}
+                className="rounded-lg bg-amber-500 px-3 py-2 text-xs font-semibold text-white transition hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {bulkScheduling ? "Pushing..." : "Schedule / Push for Approval"}
+              </button>
+              {selectedJobCardIds.length > 0 && (
+                <span className="text-xs text-slate-500">
+                  {selectedJobCardIds.length} selected
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-3 border-b border-slate-200 bg-slate-50/70 px-4 pt-4">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">All job cards</p>
+              <p className="mt-1 text-xs text-slate-500">Open and closed job cards are shown together</p>
+            </div>
           </div>
 
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-slate-200">
+                  <th className="py-3 px-3 text-xs font-semibold text-slate-600 uppercase">
+                    <span className="sr-only">Select</span>
+                    <input
+                      type="checkbox"
+                      className="h-5 w-5 cursor-pointer rounded-md border-2 border-slate-300 bg-white text-amber-600 shadow-sm accent-amber-600 transition hover:border-amber-400 focus:ring-2 focus:ring-amber-400 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50"
+                      aria-label="Select all visible jobcards with allowance"
+                      checked={
+                    statusCards.filter((card) => hasAllowanceRequest(card)).length > 0 &&
+                    statusCards.filter((card) => hasAllowanceRequest(card)).every((card) =>
+                          selectedJobCardIds.includes(card.id),
+                        )
+                      }
+                      onChange={(event) =>
+                        setSelectedJobCardIds(
+                          event.target.checked
+                          ? statusCards.filter((card) => hasAllowanceRequest(card)).map((card) => card.id)
+                            : [],
+                        )
+                      }
+                    />
+                  </th>
                   <th className="text-left py-3 px-3 text-xs font-semibold text-slate-600 uppercase">
                     Actions
                   </th>
@@ -2555,8 +2780,8 @@ export default function JobCards() {
                   <th className="text-left py-3 px-3 text-xs font-semibold text-slate-600 uppercase">
                     Status
                   </th>
-                  <th className="text-left py-3 px-3 text-xs font-semibold text-slate-600 uppercase">
-                    Booking Ref
+                  <th className="text-left py-3 px-3 text-xs font-semibold text-slate-600 uppercase whitespace-nowrap">
+                    Allowance Push
                   </th>
                   <th className="text-left py-3 px-3 text-xs font-semibold text-slate-600 uppercase">
                     Group Name
@@ -2566,9 +2791,6 @@ export default function JobCards() {
                   </th>
                   <th className="text-left py-3 px-3 text-xs font-semibold text-slate-600 uppercase">
                     Dates
-                  </th>
-                  <th className="text-left py-3 px-3 text-xs font-semibold text-slate-600 uppercase">
-                    Itinerary / Destination
                   </th>
                   <th className="text-right py-3 px-3 text-xs font-semibold text-slate-600 uppercase whitespace-nowrap">
                     Total Allowance
@@ -2582,132 +2804,48 @@ export default function JobCards() {
                 {isLoading ? (
                   <tr>
                     <td
-                      colSpan={11}
+                      colSpan={12}
                       className="py-8 text-center text-slate-400 text-sm"
                     >
                       Loading job cards...
                     </td>
                   </tr>
-                ) : filteredCards.length === 0 ? (
+                ) : statusCards.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={11}
+                      colSpan={12}
                       className="py-8 text-center text-slate-400 text-sm"
                     >
-                      No job cards found. Create one from a PI-issued lead.
+                      No job cards found for the current filters.
                     </td>
                   </tr>
                 ) : (
-                  filteredCards.map((card) => (
+                  statusCards.map((card) => (
                     <tr
                       key={card.id}
                       className="border-b border-slate-200 hover:bg-amber-50/70 transition-colors"
                     >
                       <td className="py-3 px-3">
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => handleDownloadPdf(card)}
-                            disabled={downloadingJobCardId === card.id}
-                            className="p-2 text-slate-500 hover:text-blue-600 hover:bg-slate-100 rounded-lg transition-colors"
-                            title={
-                              downloadingJobCardId === card.id
-                                ? "Downloading..."
-                                : "Download PDF"
-                            }
-                          >
-                            {downloadingJobCardId === card.id ? (
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                            ) : (
-                              <Download className="w-4 h-4" />
-                            )}
-                          </button>
-                          {(() => {
-                            const perDiemNeedsRegeneration =
-                              card.perDiemCount > 0 &&
-                              card.updatedAt &&
-                              card.perDiemUpdatedAt &&
-                              new Date(card.updatedAt).getTime() >
-                                new Date(card.perDiemUpdatedAt).getTime();
-                            const allDriversGenerated =
-                              card.assignedDriverCount > 0
-                                ? card.perDiemCount >= card.assignedDriverCount
-                                : card.perDiemCount > 0;
-                            const perDiemGenerated =
-                              allDriversGenerated && !perDiemNeedsRegeneration;
-                            return (
-                              <button
-                                onClick={() => handleGeneratePerDiem(card)}
-                                disabled={
-                                  generatingPerDiemId !== null ||
-                                  perDiemGenerated
-                                }
-                                className={`px-2.5 py-1.5 text-xs font-medium rounded-lg disabled:opacity-50 ${
-                                  perDiemGenerated
-                                    ? "text-emerald-700 border border-emerald-200 bg-emerald-50"
-                                    : "text-amber-800 border border-amber-200 bg-amber-50 hover:bg-amber-100"
-                                }`}
-                                title="Per Diem"
-                              >
-                                {generatingPerDiemId === card.id
-                                  ? "Loading..."
-                                  : perDiemNeedsRegeneration
-                                    ? "Regenerate"
-                                    : perDiemGenerated
-                                      ? "Generated"
-                                      : "Per Diem"}
-                              </button>
-                            );
-                          })()}
-                          <button
-                            onClick={() => openView(card)}
-                            className="p-2 text-slate-500 hover:text-cyan-600 hover:bg-slate-100 rounded-lg transition-colors"
-                            title="View"
-                          >
-                            <Eye className="w-4 h-4" />
-                          </button>
-                          {!(
-                            (isSafariJobType(card.type) ||
-                              isLeaseJobType(card.type)) &&
-                            (card.status || "Open") === "Closed"
-                          ) && (
-                            <button
-                              onClick={() => openEdit(card)}
-                              className="p-2 text-slate-500 hover:text-amber-600 hover:bg-slate-100 rounded-lg transition-colors"
-                              title="Edit"
-                            >
-                              <Edit className="w-4 h-4" />
-                            </button>
-                          )}
-                          {canManageJobCardStatus() &&
-                            (isSafariJobType(card.type) ||
-                              isLeaseJobType(card.type)) &&
-                            ((card.status || "Open") === "Closed" ? (
-                              <button
-                                onClick={() => handleReopen(card)}
-                                className="px-2.5 py-1.5 text-xs font-medium text-amber-700 border border-amber-200 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors"
-                                title="Reopen Job Card"
-                              >
-                                Open
-                              </button>
-                            ) : (
-                              <button
-                                onClick={() => openClose(card)}
-                                className="px-2.5 py-1.5 text-xs font-medium text-emerald-700 border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors"
-                                title="Close Job Card"
-                              >
-                                Close
-                              </button>
-                            ))}
-                          {canDelete() && (
-                            <button
-                              onClick={() => handleDelete(card.id)}
-                              className="p-2 text-slate-500 hover:text-red-600 hover:bg-slate-100 rounded-lg transition-colors"
-                              title="Delete"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          )}
-                        </div>
+                        <input
+                          type="checkbox"
+                          className="h-5 w-5 cursor-pointer rounded-md border-2 border-slate-300 bg-white text-amber-600 shadow-sm accent-amber-600 transition hover:border-amber-400 focus:ring-2 focus:ring-amber-400 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50"
+                          aria-label={`Select ${card.jobCardNo}`}
+                          disabled={!hasAllowanceRequest(card)}
+                          checked={selectedJobCardIds.includes(card.id)}
+                          onChange={(event) =>
+                            setSelectedJobCardIds((current) =>
+                              event.target.checked
+                                ? [...new Set([...current, card.id])]
+                                : current.filter((id) => id !== card.id),
+                            )
+                          }
+                        />
+                      </td>
+                      <td className="py-3 px-3">
+                        <JobCardActionsMenu
+                          card={card}
+                          onAction={(action) => handleJobCardAction(action, card)}
+                        />
                       </td>
                       <td className="py-3 px-3 text-sm text-slate-700 whitespace-nowrap">
                         <span
@@ -2743,8 +2881,8 @@ export default function JobCards() {
                           {card.status || "Open"}
                         </span>
                       </td>
-                      <td className="py-3 px-3 text-sm text-slate-700 font-medium">
-                        {card.bookingReferenceNo}
+                      <td className="py-3 px-3 text-sm whitespace-nowrap">
+                        {card.perDiemCount > 0 ? <span className={`inline-flex rounded-full border px-2 py-1 text-xs font-semibold ${card.paidPerDiemCount === card.perDiemCount ? "border-emerald-200 bg-emerald-50 text-emerald-800" : card.paidPerDiemCount > 0 ? "border-blue-200 bg-blue-50 text-blue-800" : "border-amber-200 bg-amber-50 text-amber-800"}`}>{card.paidPerDiemCount === card.perDiemCount ? "Per diem paid" : card.paidPerDiemCount > 0 ? "Partially paid" : "Pushed for approval"}</span> : hasAllowanceRequest(card) ? <span className="text-xs text-amber-700">Not pushed</span> : "—"}
                       </td>
                       <td className="py-3 px-3 text-sm text-slate-700 font-medium">
                         {card.groupName ||
@@ -2776,60 +2914,6 @@ export default function JobCards() {
                             <div className="text-xs text-slate-600">
                               Itinerary End: {formatDate(card.safariEndDate)}
                             </div>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="py-3 px-3 text-sm text-slate-700">
-                        <div className="flex items-start gap-2">
-                          <MapPin className="w-4 h-4 text-slate-500 mt-0.5" />
-                          <div className="space-y-1">
-                            <p className="text-slate-700 leading-relaxed break-words">
-                              {expandedRouteSummaryByCard[card.id]
-                                ? card.routeSummary || "-"
-                                : getRouteSummaryPreview(card.routeSummary)}
-                            </p>
-                            {String(card.routeSummary || "").trim().length >
-                              90 && (
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setExpandedRouteSummaryByCard((prev) => ({
-                                    ...prev,
-                                    [card.id]: !prev[card.id],
-                                  }))
-                                }
-                                className="text-xs font-medium text-amber-700 hover:text-amber-800"
-                              >
-                                {expandedRouteSummaryByCard[card.id]
-                                  ? "Show less"
-                                  : "Show more"}
-                              </button>
-                            )}
-                            {calculateEstimatedDistance(
-                              card.routeDistanceKm,
-                              card.additionalDistanceKm,
-                            ) != null && (
-                              <p className="text-xs font-semibold text-amber-700">
-                                Estimated total:{" "}
-                                {calculateEstimatedDistance(
-                                  card.routeDistanceKm,
-                                  card.additionalDistanceKm,
-                                ).toLocaleString(undefined, {
-                                  maximumFractionDigits: 1,
-                                })}{" "}
-                                km
-                                <span className="ml-1 font-normal">
-                                  · fuel{" "}
-                                  {calculateFuelAllowance(
-                                    card.routeDistanceKm,
-                                    card.additionalDistanceKm,
-                                  ).toLocaleString(undefined, {
-                                    maximumFractionDigits: 2,
-                                  })}{" "}
-                                  L
-                                </span>
-                              </p>
-                            )}
                           </div>
                         </div>
                       </td>
@@ -2980,14 +3064,6 @@ export default function JobCards() {
                         <span className="text-slate-400">Client:</span>{" "}
                         <span className="text-slate-200">
                           {form.tourOperatorClientName}
-                        </span>
-                      </div>
-                    )}
-                    {isSafariType && form.bookingReferenceNo && (
-                      <div>
-                        <span className="text-slate-400">Booking Ref:</span>{" "}
-                        <span className="text-slate-200">
-                          {form.bookingReferenceNo}
                         </span>
                       </div>
                     )}
@@ -3612,21 +3688,6 @@ export default function JobCards() {
                 {isSafariType && !isCloseMode && (
                   <div>
                     <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                      Booking Reference
-                    </label>
-                    <input
-                      value={form.bookingReferenceNo}
-                      onChange={(event) =>
-                        setField("bookingReferenceNo", event.target.value)
-                      }
-                      className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-amber-500/50"
-                    />
-                  </div>
-                )}
-
-                {isSafariType && !isCloseMode && (
-                  <div>
-                    <label className="block text-xs font-medium text-slate-300 mb-1.5">
                       Client Name
                     </label>
                     <input
@@ -4026,57 +4087,74 @@ export default function JobCards() {
       )}
 
       {jobCardId && selectedJobCard && (
-        <div className="min-h-screen pb-6">
-          <div className="relative w-full overflow-y-auto bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl">
+        <div className="jobcard-view min-h-screen pb-6">
+          <div className="relative w-full bg-white border border-slate-200 rounded-3xl shadow-xl">
             <div className="h-1 bg-gradient-to-r from-amber-400 via-cyan-400 to-emerald-400" />
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 sticky top-0 bg-slate-900">
-              <h2 className="text-lg font-semibold text-white">
-                Job Card Details - {detailValue(selectedJobCard.jobCardNo)}
-              </h2>
-              <button
+            <div className="flex items-center justify-between gap-4 px-6 py-5 border-b border-slate-200 sticky top-0 bg-white/95 backdrop-blur z-10">
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-amber-700">Jobcard overview</p>
+                <h2 className="mt-1 text-xl font-bold tracking-tight text-slate-900">
+                  {detailValue(selectedJobCard.jobCardNo)}
+                </h2>
+                <p className="mt-1 text-sm text-slate-500">{selectedJobCardGroupName} · {detailValue(selectedJobCard.type)}</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className={`rounded-full px-3 py-1.5 text-xs font-bold ${selectedJobCard.status === "Closed" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
+                  {detailValue(selectedJobCard.status)}
+                </span>
+                {!embeddedView && hasAllowanceRequest(selectedJobCard) && (
+                  <button
+                    type="button"
+                    onClick={() => handleBulkScheduleAllowances(selectedJobCard)}
+                    disabled={bulkScheduling}
+                    className="rounded-xl bg-amber-500 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {bulkScheduling ? "Pushing..." : "Push for review"}
+                  </button>
+                )}
+              {!embeddedView && <button
                 onClick={closeViewModal}
-                className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg"
+                className="p-2 text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-lg"
+                aria-label="Close job card details"
               >
                 <X className="w-4 h-4" />
-              </button>
+              </button>}
+              </div>
             </div>
 
-            <div className="p-6 space-y-6 text-sm">
+            <div className="p-4 sm:p-6 lg:p-8 space-y-7 text-sm">
+              {errorMessage && <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{errorMessage}</div>}
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div className="bg-slate-800/40 border border-slate-700/50 rounded-xl p-4">
-                  <p className="text-slate-400 text-xs uppercase">Type</p>
-                  <p className="text-white mt-1">
+                <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+                  <p className="text-slate-500 text-[11px] font-bold uppercase tracking-wider">Type</p>
+                  <p className="text-slate-900 mt-1 font-semibold">
                     {detailValue(selectedJobCard.type)}
                   </p>
                 </div>
-                <div className="bg-slate-800/40 border border-slate-700/50 rounded-xl p-4">
-                  <p className="text-slate-400 text-xs uppercase">Status</p>
-                  <p className="text-white mt-1">
+                <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+                  <p className="text-slate-500 text-[11px] font-bold uppercase tracking-wider">Status</p>
+                  <p className="text-slate-900 mt-1 font-semibold">
                     {detailValue(selectedJobCard.status)}
                   </p>
                 </div>
-                <div className="bg-slate-800/40 border border-slate-700/50 rounded-xl p-4">
-                  <p className="text-slate-400 text-xs uppercase">
-                    Booking Ref
-                  </p>
-                  <p className="text-white mt-1">
-                    {detailValue(selectedJobCard.bookingReferenceNo)}
-                  </p>
+                <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+                  <p className="text-slate-500 text-[11px] font-bold uppercase tracking-wider">Group Name</p>
+                  <p className="text-slate-900 mt-1 font-semibold">{selectedJobCardGroupName}</p>
                 </div>
-                <div className="bg-slate-800/40 border border-slate-700/50 rounded-xl p-4">
-                  <p className="text-slate-400 text-xs uppercase">Group Name</p>
-                  <p className="text-white mt-1">{selectedJobCardGroupName}</p>
+                <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+                  <p className="text-slate-500 text-[11px] font-bold uppercase tracking-wider">Travel dates</p>
+                  <p className="text-slate-900 mt-1 font-semibold">{formatDate(selectedJobCard.safariStartDate)} – {formatDate(selectedJobCard.safariEndDate)}</p>
                 </div>
               </div>
 
               <div className="space-y-3">
-                <h3 className="text-slate-300 font-semibold">
+                <h3 className="text-slate-900 text-base font-bold tracking-tight">
                   Driver/Guide Details
                 </h3>
                 {selectedJobCard.driverProfiles.map((driver, index) => (
                   <div
                     key={index}
-                    className="grid grid-cols-1 md:grid-cols-2 gap-2 bg-slate-800/30 border border-slate-700/50 rounded-xl p-4"
+                    className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-white border border-slate-200 rounded-2xl p-4 shadow-sm"
                   >
                     {[
                       ["Name", driver.name],
@@ -4097,8 +4175,8 @@ export default function JobCards() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="bg-slate-800/30 border border-slate-700/50 rounded-xl p-4 space-y-2">
-                  <p className="text-slate-300 font-semibold">Schedule</p>
+                <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-2 shadow-sm">
+                  <p className="text-slate-900 font-bold">Schedule</p>
                   <p className="text-slate-300">
                     Itinerary Start Date:{" "}
                     <span className="text-white">
@@ -4125,8 +4203,8 @@ export default function JobCards() {
                   </p>
                 </div>
 
-                <div className="bg-slate-800/30 border border-slate-700/50 rounded-xl p-4 space-y-2">
-                  <p className="text-slate-300 font-semibold">Client</p>
+                <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-2 shadow-sm">
+                  <p className="text-slate-900 font-bold">Client</p>
                   <p className="text-slate-300">
                     Client Name:{" "}
                     <span className="text-white">
@@ -4137,8 +4215,8 @@ export default function JobCards() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="bg-slate-800/30 border border-slate-700/50 rounded-xl p-4 space-y-2">
-                  <p className="text-slate-300 font-semibold">
+                <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-2 shadow-sm">
+                  <p className="text-slate-900 font-bold">
                     Travel and Route
                   </p>
                   {isSafariJobType(selectedJobCard.type) && (
@@ -4254,11 +4332,11 @@ export default function JobCards() {
                       </div>
                     </div>
                     {routeItineraryLines.length === 0 ? (
-                      <span className="text-white">-</span>
+                      <span className="text-slate-600">No itinerary recorded</span>
                     ) : (
-                      <div className="overflow-x-auto rounded-lg border border-slate-700/60">
-                        <table className="min-w-full text-xs md:text-sm">
-                          <thead className="bg-slate-800/80 text-slate-300">
+                      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+                        <table className="min-w-full text-sm text-slate-800">
+                          <thead className="bg-amber-50 text-slate-800">
                             <tr>
                               <th className="px-3 py-2 text-left font-semibold">
                                 Date
@@ -4275,15 +4353,15 @@ export default function JobCards() {
                             {routeItineraryLines.map((line, index) => (
                               <tr
                                 key={`view-itinerary-row-${index}`}
-                                className="border-t border-slate-700/60"
+                                className="border-t border-slate-200"
                               >
-                                <td className="px-3 py-2 text-white whitespace-nowrap">
+                                <td className="px-3 py-2 text-slate-800 whitespace-nowrap">
                                   {line.date || "-"}
                                 </td>
-                                <td className="px-3 py-2 text-white break-words">
+                                <td className="px-3 py-2 text-slate-800 break-words">
                                   {line.dayDescription || "-"}
                                 </td>
-                                <td className="px-3 py-2 text-white whitespace-nowrap">
+                                <td className="px-3 py-2 text-slate-800 whitespace-nowrap">
                                   {line.allowancePerDay !== "" &&
                                   line.allowancePerDay !== null &&
                                   line.allowancePerDay !== undefined
@@ -4305,8 +4383,8 @@ export default function JobCards() {
                   </p>
                 </div>
 
-                <div className="bg-slate-800/30 border border-slate-700/50 rounded-xl p-4 space-y-2">
-                  <p className="text-slate-300 font-semibold">
+                <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-2 shadow-sm">
+                  <p className="text-slate-900 font-bold">
                     Vehicle and Usage
                   </p>
                   <p className="text-slate-300">
@@ -4410,8 +4488,8 @@ export default function JobCards() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="bg-slate-800/30 border border-slate-700/50 rounded-xl p-4 space-y-2">
-                  <p className="text-slate-300 font-semibold">
+                <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-2 shadow-sm">
+                  <p className="text-slate-900 font-bold">
                     Job Card Details
                   </p>
                   <p className="text-slate-300">
@@ -4424,12 +4502,6 @@ export default function JobCards() {
                     Status:{" "}
                     <span className="text-white">
                       {detailValue(selectedJobCard.status)}
-                    </span>
-                  </p>
-                  <p className="text-slate-300">
-                    Booking Number:{" "}
-                    <span className="text-white">
-                      {detailValue(selectedJobCard.bookingReferenceNo)}
                     </span>
                   </p>
                   <p className="text-slate-300">
@@ -4494,8 +4566,8 @@ export default function JobCards() {
                   </p>
                 </div>
 
-                <div className="bg-slate-800/30 border border-slate-700/50 rounded-xl p-4 space-y-2">
-                  <p className="text-slate-300 font-semibold">System Info</p>
+                <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-2 shadow-sm">
+                  <p className="text-slate-900 font-bold">System Info</p>
                   <p className="text-slate-300">
                     Lead ID:{" "}
                     <span className="text-white">
@@ -4524,10 +4596,21 @@ export default function JobCards() {
               </div>
             </div>
 
-            <div className="px-6 py-4 border-t border-slate-800 flex justify-end">
+            <div className="sticky bottom-0 z-20 flex flex-wrap items-center justify-end gap-3 rounded-b-3xl border-t border-slate-200 bg-white px-4 py-4 shadow-[0_-8px_24px_rgba(15,23,42,0.12)] sm:px-6">
+              {!embeddedView && hasAllowanceRequest(selectedJobCard) && (
+                <button
+                  type="button"
+                  onClick={() => handleBulkScheduleAllowances(selectedJobCard)}
+                  disabled={bulkScheduling}
+                  className="rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {bulkScheduling ? "Pushing..." : "Push for review"}
+                </button>
+              )}
               <button
-                onClick={closeViewModal}
-                className="px-4 py-2.5 bg-slate-800 text-slate-300 rounded-lg text-sm hover:bg-slate-700 transition-colors"
+                type="button"
+                onClick={() => embeddedView ? window.parent.postMessage({ type: "close-jobcard-view" }, window.location.origin) : closeViewModal()}
+                className="rounded-xl border border-slate-700 bg-slate-700 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-600"
               >
                 Close
               </button>

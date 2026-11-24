@@ -5,6 +5,8 @@ import {
   ArrowUpRight,
   CalendarDays,
   CarFront,
+  FileSpreadsheet,
+  FileText,
   Loader2,
   Phone,
   UserRound,
@@ -79,14 +81,30 @@ const getAllocationDetails = (card, allocations) => {
   );
 
   if (matching.length === 0) {
+    const vehicle = card.vehicle || card.leaseAllocation?.vehicle || {};
+    const driver = card.leaseAllocation?.driver || {};
+    const leaseContract = card.leaseContract || card.leaseAllocation?.contract || {};
+    const vehicleNo =
+      vehicle.vehicle_no ||
+      vehicle.vehicleNo ||
+      card.vehicle_no ||
+      card.vehicleNo ||
+      "Vehicle details unavailable";
+    const plateNo = vehicle.plate_no || vehicle.plateNo || card.plate_no || card.plateNo || "";
     return [
       {
-        vehicle:
-          card.vehicle_no || card.vehicleNo || card.plate_no || card.plateNo || "Vehicle details unavailable",
-        driver: card.driver_details || card.driverDetails || "Driver details unavailable",
-        contact: card.driver_phone || card.driverPhone || card.driver_contact || card.driverContact || "",
-        group: groupName,
-        client: clientName,
+        vehicle: plateNo ? `${vehicleNo} (${plateNo})` : vehicleNo,
+        driver: driver.name || card.driver_details || card.driverDetails || "Driver details unavailable",
+        contact:
+          card.driver_phone ||
+          card.driverPhone ||
+          card.driver_contact ||
+          card.driverContact ||
+          card.contact_number ||
+          card.contactNumber ||
+          "",
+        group: card.leaseAllocation?.groupName || card.leaseAllocation?.group_name || leaseContract.groupName || groupName,
+        client: leaseContract.clientName || leaseContract.client_name || clientName,
       },
     ];
   }
@@ -148,6 +166,54 @@ const getAllocationDetails = (card, allocations) => {
     };
   });
 };
+
+const getJobCardDetails = (card, allocations) => {
+  if (!isSafari(card.type || card.job_type || card.jobType)) {
+    return getAllocationDetails(card, []);
+  }
+  const leadId = card.leadId ?? card.lead_id;
+  const vehicleId = card.vehicleId ?? card.vehicle_id;
+  const matching = allocations.filter((allocation) => {
+    if (String(allocation.leadId ?? allocation.lead_id) !== String(leadId)) return false;
+    if (vehicleId == null || vehicleId === "") return true;
+    return String(allocation.vehicleId ?? allocation.vehicle_id) === String(vehicleId);
+  });
+  return getAllocationDetails(card, matching);
+};
+
+const getSingleAllocationDetails = (allocation) => {
+  const vehicle = allocation.vehicle || {};
+  const driver = allocation.driver || {};
+  const lead = allocation.lead || {};
+  const vehicleNo =
+    vehicle.vehicleNo ||
+    vehicle.vehicle_no ||
+    allocation.vehicleNo ||
+    allocation.vehicle_no ||
+    "Vehicle details unavailable";
+  const plateNo = vehicle.plateNo || vehicle.plate_no || allocation.plateNo || allocation.plate_no || "";
+
+  return {
+    vehicle: plateNo ? `${vehicleNo} (${plateNo})` : vehicleNo,
+    driver: driver.name || allocation.driverName || allocation.driver_name || "Driver details unavailable",
+    contact:
+      driver.phone ||
+      driver.phoneNumber ||
+      driver.phone_number ||
+      allocation.driverPhone ||
+      allocation.driver_phone ||
+      allocation.driverContact ||
+      allocation.driver_contact ||
+      "",
+    group: allocation.groupName || allocation.group_name || lead.groupName || lead.group_name || "Group unavailable",
+    client: allocation.clientName || allocation.client_name || lead.clientCompany || lead.client_company || "Client unavailable",
+  };
+};
+
+const allocationDates = (allocation) => ({
+  start: dateKey(allocation.startDate || allocation.start_date || allocation.lead?.startDate || allocation.lead?.start_date),
+  end: dateKey(allocation.endDate || allocation.end_date || allocation.lead?.endDate || allocation.lead?.end_date),
+});
 
 const itineraryDates = (card) => {
   let itinerary = card.route_itinerary || card.routeItinerary || [];
@@ -255,6 +321,7 @@ export default function DepartureArrivalReport() {
   const [fromDate, setFromDate] = useState(today);
   const [toDate, setToDate] = useState(today);
   const [isLoading, setIsLoading] = useState(true);
+  const [exporting, setExporting] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
 
   useEffect(() => {
@@ -282,26 +349,50 @@ export default function DepartureArrivalReport() {
 
   const rows = useMemo(() => {
     const events = new Map();
-    jobCards.filter((card) => isSafari(card.type || card.job_type || card.jobType)).forEach((card) => {
-      const startEnd = itineraryDates(card);
-      const details = getAllocationDetails(card, allocations);
-      const vehicleCount = details.length;
-      ["start", "end"].forEach((eventType) => {
-        const date = startEnd[eventType];
-        if (!date) return;
-        const isDeparture = eventType === "start";
-        const event = events.get(date) || {
-          date,
-          departures: 0,
-          arrivals: 0,
-          departureDetails: [],
-          arrivalDetails: [],
-        };
-        event[isDeparture ? "departures" : "arrivals"] += vehicleCount;
-        event[isDeparture ? "departureDetails" : "arrivalDetails"].push(...details);
-        events.set(date, event);
-      });
+    const addMovement = (date, departure, details) => {
+      if (!date || details.length === 0) return;
+      const event = events.get(date) || {
+        date,
+        departures: 0,
+        arrivals: 0,
+        departureDetails: [],
+        arrivalDetails: [],
+      };
+      event[departure ? "departures" : "arrivals"] += details.length;
+      event[departure ? "departureDetails" : "arrivalDetails"].push(...details);
+      events.set(date, event);
+    };
+
+    const movementCards = jobCards.filter((card) => {
+      const dates = itineraryDates(card);
+      return Boolean(dates.start || dates.end);
     });
+    // Each job card represents its assigned vehicle(s). Its itinerary defines the
+    // departure (first day) and arrival (last day), even when allocation dates
+    // are stale or a lead has several job cards.
+    movementCards.forEach((card) => {
+      const dates = itineraryDates(card);
+      const details = getJobCardDetails(card, allocations);
+      addMovement(dates.start, true, details);
+      addMovement(dates.end, false, details);
+    });
+
+    // Preserve allocation-only safari records when no job card exists for the
+    // lead yet. Once a lead has job cards, those cards are the source of truth.
+    const cardLeadIds = new Set(
+      movementCards
+        .map((card) => card.leadId ?? card.lead_id)
+        .filter((leadId) => leadId != null)
+        .map(String),
+    );
+    allocations
+      .filter((allocation) => !cardLeadIds.has(String(allocation.leadId ?? allocation.lead_id)))
+      .forEach((allocation) => {
+        const dates = allocationDates(allocation);
+        const details = [getSingleAllocationDetails(allocation)];
+        addMovement(dates.start, true, details);
+        addMovement(dates.end, false, details);
+      });
 
     const eventRows = Array.from(events.values()).sort((a, b) => a.date.localeCompare(b.date));
     if (eventRows.length === 0 && (!fromDate || !toDate)) return [];
@@ -334,16 +425,53 @@ export default function DepartureArrivalReport() {
     { departures: 0, arrivals: 0 },
   );
 
+  const downloadReport = async (format) => {
+    setExporting(format);
+    setErrorMessage("");
+    try {
+      const params = new URLSearchParams();
+      if (fromDate) params.set("dateFrom", fromDate);
+      if (toDate) params.set("dateTo", toDate);
+      const response = await apiFetch(`/departure-arrival-report/export/${format}?${params.toString()}`);
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload?.message || `Unable to generate the ${format.toUpperCase()} report.`);
+      }
+      const url = URL.createObjectURL(await response.blob());
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `departure-arrival-report-${fromDate || "all"}-${toDate || "all"}.${format === "excel" ? "xls" : "pdf"}`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      setErrorMessage(error.message || "Unable to export the report.");
+    } finally {
+      setExporting("");
+    }
+  };
+
   return (
     <div className="space-y-6">
       <header className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-teal-900 p-6 text-white shadow-xl sm:p-8">
         <div className="absolute -right-12 -top-16 h-48 w-48 rounded-full bg-amber-400/10 blur-2xl" />
         <div className="relative">
           <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-amber-200">
-            <CalendarDays className="h-4 w-4" /> Safari operations
+            <CalendarDays className="h-4 w-4" /> Fleet operations
           </div>
           <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Departure &amp; Arrival Report</h1>
-          <p className="mt-2 max-w-2xl text-sm text-slate-200">Daily vehicle movements from the first and last days of each safari itinerary.</p>
+          <p className="mt-2 max-w-2xl text-sm text-slate-200">Daily vehicle movements from the first and last days of each job-card itinerary.</p>
+          <div className="mt-5 flex flex-wrap gap-2">
+            <button type="button" onClick={() => downloadReport("pdf")} disabled={isLoading || exporting !== ""} className="inline-flex items-center gap-2 rounded-xl bg-amber-400 px-4 py-2.5 text-sm font-bold text-slate-950 shadow-lg transition hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-50">
+              {exporting === "pdf" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+              Export PDF
+            </button>
+            <button type="button" onClick={() => downloadReport("excel")} disabled={isLoading || exporting !== ""} className="inline-flex items-center gap-2 rounded-xl border border-white/30 bg-white px-4 py-2.5 text-sm font-bold text-slate-900 shadow-lg transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50">
+              {exporting === "excel" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4 text-emerald-700" />}
+              Export Excel
+            </button>
+          </div>
           <div className="mt-6 grid gap-3 sm:grid-cols-2">
             <div className="flex items-center gap-3 rounded-2xl border border-white/15 bg-white/10 p-4 backdrop-blur-sm">
               <span className="rounded-xl bg-amber-400/20 p-2 text-amber-200"><ArrowUpRight className="h-5 w-5" /></span>
@@ -364,6 +492,12 @@ export default function DepartureArrivalReport() {
       )}
 
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5" aria-label="Report date range">
+        <div className="mb-4">
+          <div>
+            <h2 className="font-semibold text-slate-900">Report filters</h2>
+            <p className="mt-1 text-sm text-slate-500">Exports use the selected date range and include all movement details.</p>
+          </div>
+        </div>
         <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
           <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
             From date

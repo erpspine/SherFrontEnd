@@ -1,4 +1,6 @@
 import PerDiems from "./pages/PerDiems";
+import AllowanceApprovals from "./pages/AllowanceApprovals";
+import BankPaymentQueue from "./pages/BankPaymentQueue";
 import FuelReport from "./pages/FuelReport";
 import FuelManagement from "./pages/FuelManagement";
 import {
@@ -246,11 +248,29 @@ function ProtectedRoutes() {
           }
         />
         <Route
+          path="/allowance-approvals"
+          element={
+            <PermissionRoute
+              permission="job-cards.view"
+              element={<AllowanceApprovals />}
+            />
+          }
+        />
+        <Route
           path="/per-diems"
           element={
             <PermissionRoute
               permission="job-cards.view"
               element={<PerDiems />}
+            />
+          }
+        />
+        <Route
+          path="/bank-payment-queue"
+          element={
+            <PermissionRoute
+              permission="job-cards.view"
+              element={<BankPaymentQueue />}
             />
           }
         />

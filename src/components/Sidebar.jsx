@@ -1,4 +1,5 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useState } from "react";
 import {
   LayoutDashboard,
   Car,
@@ -21,6 +22,10 @@ import {
   Route,
   ChevronLeft,
   Package,
+  ChevronDown,
+  ClipboardCheck,
+  Landmark,
+  Wallet,
 } from "lucide-react";
 import {
   clearAuthSession,
@@ -48,14 +53,22 @@ export const menuGroups = [
       {
         path: "/vehicles",
         icon: Car,
-        label: "Internal Vehicles",
+        label: "Vehicles",
         permission: "vehicles.view",
-      },
-      {
-        path: "/subcontracted-vehicles",
-        icon: Car,
-        label: "Subcontracted Vehicles",
-        permission: "vehicles.view",
+        children: [
+          {
+            path: "/vehicles",
+            label: "Internal Vehicles",
+            icon: Car,
+            permission: "vehicles.view",
+          },
+          {
+            path: "/subcontracted-vehicles",
+            label: "Subcontracted Vehicles",
+            icon: Car,
+            permission: "vehicles.view",
+          },
+        ],
       },
       {
         path: "/vehicle-availability",
@@ -64,16 +77,36 @@ export const menuGroups = [
         permission: "vehicles.view",
       },
       {
-        path: "/per-diems",
-        icon: ClipboardList,
-        label: "Per Diems",
-        permission: "job-cards.view",
-      },
-      {
         path: "/job-cards",
         icon: ClipboardList,
         label: "Job Cards",
         permission: "job-cards.view",
+        children: [
+          {
+            path: "/job-cards",
+            label: "All Job Cards",
+            icon: ClipboardList,
+            permission: "job-cards.view",
+          },
+          {
+            path: "/allowance-approvals",
+            label: "Allowance Review",
+            icon: ClipboardCheck,
+            permission: "job-cards.view",
+          },
+          {
+            path: "/bank-payment-queue",
+            label: "Bank Payment Queue",
+            icon: Landmark,
+            permission: "job-cards.view",
+          },
+          {
+            path: "/per-diems",
+            label: "Per Diem Vouchers",
+            icon: Wallet,
+            permission: "job-cards.view",
+          },
+        ],
       },
       {
         path: "/departure-arrival-report",
@@ -269,6 +302,9 @@ export default function Sidebar({
     .join("")
     .slice(0, 2)
     .toUpperCase();
+  const [openMenus, setOpenMenus] = useState(() =>
+    menuGroups.flatMap((group) => group.items).filter((item) => item.children && item.children.some((child) => location.pathname === child.path)).map((item) => item.path),
+  );
 
   const handleLogout = async () => {
     try {
@@ -355,21 +391,35 @@ export default function Sidebar({
                   </p>
                 )}
                 {visibleItems.map((item) => {
-                  const isActive = location.pathname === item.path;
+                  const isChildActive = (child) =>
+                    location.pathname === child.path ||
+                    (child.path === "/job-cards" &&
+                      location.pathname.startsWith("/job-cards/"));
+                  const isActive = location.pathname === item.path || item.children?.some(isChildActive);
+                  const isOpenMenu = openMenus.includes(item.path);
+                  const closeOnMobile = () => {
+                    if (typeof window !== "undefined" && window.innerWidth < 1024) closeMobileSidebar();
+                  };
+                  const handleItemClick = (event) => {
+                    if (item.children && !isCollapsed) {
+                      event.preventDefault();
+                      setOpenMenus((current) =>
+                        current.includes(item.path)
+                          ? current.filter((path) => path !== item.path)
+                          : [...current, item.path],
+                      );
+                      return;
+                    }
+                    closeOnMobile();
+                  };
                   return (
-                    <Link
-                      key={item.path}
-                      to={item.path}
-                      onClick={() => {
-                        if (
-                          typeof window !== "undefined" &&
-                          window.innerWidth < 1024
-                        ) {
-                          closeMobileSidebar();
-                        }
-                      }}
-                      title={item.label}
-                      className={`
+                    <div key={item.path}>
+                      <Link
+                        to={item.path}
+                        onClick={handleItemClick}
+                        title={item.label}
+                        aria-expanded={item.children ? isOpenMenu : undefined}
+                        className={`
                       flex items-center rounded-xl transition-all duration-200
                       group relative overflow-hidden
                       ${isCollapsed ? "justify-center px-3 py-3" : "gap-3 px-4 py-3"}
@@ -379,20 +429,35 @@ export default function Sidebar({
                           : "text-slate-600 hover:text-slate-900 hover:bg-white"
                       }
                     `}
-                    >
-                      {isActive && (
-                        <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-sher-gold to-sher-gold-dark rounded-r" />
+                      >
+                        {isActive && (
+                          <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-sher-gold to-sher-gold-dark rounded-r" />
+                        )}
+                        <item.icon
+                          className={`w-5 h-5 transition-colors ${isActive ? "text-sher-gold-dark" : "group-hover:text-sher-teal"}`}
+                        />
+                        {!isCollapsed && (
+                          <span className="font-medium">{item.label}</span>
+                        )}
+                        {!isCollapsed && item.children && (
+                          <ChevronDown
+                            className={`ml-auto h-4 w-4 transition-transform ${isOpenMenu ? "rotate-180" : ""}`}
+                          />
+                        )}
+                        {!isCollapsed && !item.children && isActive && (
+                          <ChevronRight className="w-4 h-4 ml-auto text-sher-gold-dark" />
+                        )}
+                      </Link>
+                      {!isCollapsed && item.children && isOpenMenu && (
+                        <div className="ml-5 mr-2 mt-1 space-y-1 rounded-xl border border-slate-300 bg-slate-100 p-2 shadow-sm">
+                          {item.children.filter((child) => hasPermission(child.permission)).map((child) => {
+                            const childActive = isChildActive(child);
+                            const ChildIcon = child.icon;
+                            return <Link key={child.path} to={child.path} onClick={closeOnMobile} className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 text-sm transition-colors ${childActive ? "border-amber-700 bg-amber-600 font-bold text-white shadow-md" : "border-transparent font-semibold text-slate-900 hover:border-orange-600 hover:bg-orange-500 hover:text-white focus-visible:border-orange-600 focus-visible:bg-orange-500 focus-visible:text-white"}`}><ChildIcon className={`h-4 w-4 shrink-0 ${childActive ? "text-white" : "text-slate-700 group-hover:text-white group-focus-visible:text-white"}`} />{child.label}</Link>;
+                          })}
+                        </div>
                       )}
-                      <item.icon
-                        className={`w-5 h-5 transition-colors ${isActive ? "text-sher-gold-dark" : "group-hover:text-sher-teal"}`}
-                      />
-                      {!isCollapsed && (
-                        <span className="font-medium">{item.label}</span>
-                      )}
-                      {!isCollapsed && isActive && (
-                        <ChevronRight className="w-4 h-4 ml-auto text-sher-gold-dark" />
-                      )}
-                    </Link>
+                    </div>
                   );
                 })}
               </div>

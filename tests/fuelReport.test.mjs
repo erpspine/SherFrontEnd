@@ -31,6 +31,16 @@ test('monthly prices are applied independently and missing prices remain unset',
   assert.equal(report([entry()], { average: 7, monthlyPrices: {} })[0].deductionAmount, null);
   assert.equal(report([entry()], { average: 7, monthlyPrices: { '2026-09': 0 } })[0].deductionAmount, 0);
 });
+test('monthly target average drives expected litres', () => {
+  const row = report([entry()], {
+    average: 7,
+    monthlyTargets: { '2026-09': 10 },
+    monthlyPrices: { '2026-09': 100 },
+  })[0];
+  assert.equal(row.expected, 50);
+  assert.equal(row.excess, 100);
+  assert.equal(row.deductionAmount, 10000);
+});
 test('pending records do not distort calculated averages', () => {
   const row = report([entry(), entry({ vehicle_average: null, km_done: null, end_km: null })])[0];
   assert.equal(row.trips, 1); assert.equal(row.scoredTrips, 1); assert.equal(row.pendingTrips, 0);
