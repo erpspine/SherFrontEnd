@@ -35,6 +35,7 @@ export default function AllowanceApprovals() {
   const [dateField, setDateField] = useState("requestedForApprovalAt");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [search, setSearch] = useState("");
   const [approvalRows, setApprovalRows] = useState(null);
   const [reviewRows, setReviewRows] = useState(null);
   const [paymentMode, setPaymentMode] = useState("advance");
@@ -77,7 +78,13 @@ export default function AllowanceApprovals() {
 
   const groupedRows = useMemo(() => {
     const groups = new Map();
+    const term = search.trim().toLowerCase();
     rows.filter((row) => matchesTab(row, activeTab)).filter((row) => {
+      if (!term) return true;
+      const searchable = [row.voucher.jobCardNo, row.voucher.clientName, row.voucher.groupName, row.voucher.driverName, row.voucher.number, row.paymentReference, row.stage, row.status]
+        .filter(Boolean).join(" ").toLowerCase();
+      return searchable.includes(term);
+    }).filter((row) => {
       const rawDate = ["paidAt", "approvedAt"].includes(dateField) ? row[dateField] : row.voucher[dateField];
       const value = String(rawDate || "").slice(0, 10);
       return (!dateFrom || value >= dateFrom) && (!dateTo || value <= dateTo);
@@ -87,7 +94,7 @@ export default function AllowanceApprovals() {
       groups.get(key).rows.push(row);
     });
     return [...groups.values()];
-  }, [rows, activeTab, dateField, dateFrom, dateTo]);
+  }, [rows, activeTab, dateField, dateFrom, dateTo, search]);
 
   const openApproval = (group) => {
     setModalError("");
@@ -182,6 +189,7 @@ export default function AllowanceApprovals() {
         <div className="grid gap-2 sm:grid-cols-3" role="tablist" aria-label="Allowance payment status">{[["draft", "Waiting Approval", "Scheduled requests"], ["approved", "Waiting Payment", "Approved · proof pending"], ["paid", "Paid", "Payment proof uploaded"]].map(([status, label, subtitle]) => <button type="button" role="tab" aria-selected={activeTab === status} key={status} onClick={() => { setActiveTab(status); setDateField(status === "paid" ? "paidAt" : status === "approved" ? "approvedAt" : "requestedForApprovalAt"); setDateFrom(""); setDateTo(""); }} className={`rounded-xl border px-4 py-3 text-left transition ${activeTab === status ? "border-amber-500 bg-amber-500 text-white shadow-md shadow-amber-500/20" : "border-slate-200 bg-slate-50 text-slate-800 hover:border-amber-300 hover:bg-amber-50"}`}><span className="flex items-center justify-between gap-2 text-sm font-bold"><span className="inline-flex items-center gap-2">{status === "approved" ? <CreditCard className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}{label}</span><span className={`rounded-full px-2.5 py-0.5 text-xs ${activeTab === status ? "bg-white/20 text-white" : "bg-white text-slate-700"}`}>{rows.filter((row) => matchesTab(row, status)).length}</span></span><span className={`mt-1 block text-xs ${activeTab === status ? "text-amber-50" : "text-slate-500"}`}>{subtitle}</span></button>)}</div>
         <div className="mt-5 grid gap-3 border-t border-slate-100 pt-5 sm:grid-cols-[minmax(170px,1fr)_minmax(140px,1fr)_minmax(140px,1fr)_auto] sm:items-end"><label className="text-xs font-semibold text-slate-600">Filter date by<select value={dateField} onChange={(event) => setDateField(event.target.value)} className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"><option value="requestedForApprovalAt">Scheduled date</option><option value="approvedAt">Approval date</option><option value="generatedAt">Voucher date</option><option value="safariStartDate">Safari start date</option><option value="paidAt">Paid date</option></select></label><label className="text-xs font-semibold text-slate-600">From<input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800" /></label><label className="text-xs font-semibold text-slate-600">To<input type="date" min={dateFrom || undefined} value={dateTo} onChange={(event) => setDateTo(event.target.value)} className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800" /></label><button type="button" onClick={() => { setDateFrom(""); setDateTo(""); }} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Clear dates</button></div>
       </div>
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><label className="block text-xs font-semibold text-slate-600">Search Waiting Payment and Paid lists<input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Jobcard, client, driver, voucher, reference..." className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-800" /></label></div>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3"><div className="rounded-2xl border border-amber-200 bg-amber-50 p-4"><p className="text-xs font-semibold uppercase tracking-wide text-amber-700">{activeTab === "draft" ? "Awaiting approval" : activeTab === "paid" ? "Paid vouchers" : "Awaiting payment"}</p><p className="mt-1 text-2xl font-bold text-amber-800">{groupedRows.length}</p></div><div className="rounded-2xl border border-slate-200 bg-white p-4"><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Payment lines</p><p className="mt-1 text-2xl font-bold text-slate-900">{groupedRows.reduce((sum, group) => sum + group.rows.length, 0)}</p></div><div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4"><p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">{activeTab === "draft" ? "Requested" : activeTab === "paid" ? "Paid" : "Approved"} amount</p><p className="mt-1 text-2xl font-bold text-emerald-800">{money(groupedRows.reduce((total, group) => total + (activeTab === "draft" ? requestedAllowance(group.voucher) : group.rows.reduce((sum, row) => sum + Number(row.amount), 0)), 0))} TZS</p></div></div>
       {error && <div role="alert" className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700"><AlertCircle className="mt-0.5 h-4 w-4" />{error}</div>}
       <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -204,7 +212,7 @@ export default function AllowanceApprovals() {
                 <td className="p-4 text-right font-semibold">{money(requestedAllowance(group.voucher))} TZS</td>
                 <td className="p-4 text-right font-semibold text-blue-700">{activeTab === "draft" ? "—" : `${money(group.rows.reduce((total, row) => total + Number(row.amount), 0))} TZS`}</td>
                 <td className="p-4 text-right font-semibold text-emerald-700">{activeTab === "paid" ? `${money(group.rows.reduce((total, row) => total + Number(row.amount), 0))} TZS` : "—"}</td>
-                <td className="p-4 text-xs text-slate-600">{group.rows.map((row) => <div key={row.id} className="mb-1"><span className={`inline-flex rounded-full px-2 py-1 font-semibold ${row.status === "paid" ? "bg-emerald-50 text-emerald-700" : row.status === "exported" ? "bg-blue-50 text-blue-700" : row.status === "approved" ? "bg-amber-50 text-amber-700" : "bg-slate-100 text-slate-700"}`}>{row.status === "exported" ? "Bank file created" : row.status === "approved" ? "Approved" : row.status === "paid" ? "Paid" : "Scheduled"}</span>{row.paymentReference && <span className="mt-1 block">Ref: {row.paymentReference}</span>}{row.paidAt && <span className="block">Paid: {String(row.paidAt).slice(0, 10)}</span>}{row.paymentProofPath && <span className="block font-semibold text-emerald-700">Proof uploaded</span>}</div>)}</td>
+                <td className="p-4 text-xs text-slate-600">{group.rows.map((row) => <div key={row.id} className="mb-1"><span className={`inline-flex rounded-full px-2 py-1 font-semibold ${row.status === "paid" ? "bg-emerald-50 text-emerald-700" : row.status === "exported" ? "bg-blue-50 text-blue-700" : row.status === "approved" ? "bg-amber-50 text-amber-700" : "bg-slate-100 text-slate-700"}`}>{row.status === "exported" ? "Bank file created" : row.status === "approved" ? "Approved" : row.status === "paid" ? "Paid" : "Scheduled"}</span>{row.paymentReference && <span className="mt-1 block">Ref: {row.paymentReference}</span>}{row.approvalReason && <span className="mt-1 block text-slate-700"><span className="font-semibold">Reason:</span> {row.approvalReason}</span>}{row.paidAt && <span className="block">Paid: {String(row.paidAt).slice(0, 10)}</span>}{row.paymentProofPath && <span className="block font-semibold text-emerald-700">Proof uploaded</span>}</div>)}</td>
                 <td className="p-4">{activeTab === "draft" && canApprove ? <button type="button" onClick={() => openApproval(group)} className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700"><CheckCircle2 className="h-4 w-4" /> Review and approve</button> : activeTab === "approved" ? <Link to="/bank-payment-queue" className="text-sm font-semibold text-blue-700 hover:underline">Payment queue</Link> : null}</td>
               </tr>
             ))}

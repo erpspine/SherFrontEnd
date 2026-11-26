@@ -6,12 +6,16 @@ import Select from "react-select";
 import Swal from "sweetalert2";
 import {
   ArrowUpRight,
+  ArrowRightLeft,
   CalendarDays,
+  CheckCircle2,
   Download,
   Loader2,
   FileSpreadsheet,
   Fuel,
   Gauge,
+  Info,
+  X,
   Pencil,
   Printer,
   Search,
@@ -67,10 +71,15 @@ export default function FuelManagement() {
     allocations: [],
     entries: [],
     profiles: [],
+    transfer_vehicles: [],
   });
   const [selectedSafari, setSelectedSafari] = useState("");
   const [selected, setSelected] = useState("");
   const [form, setForm] = useState(empty);
+  const [transferForm, setTransferForm] = useState(empty);
+  const [selectedTransfer, setSelectedTransfer] = useState(null);
+  const [showTransferModal, setShowTransferModal] = useState(false);
+  const [showSafariModal, setShowSafariModal] = useState(false);
   const [search, setSearch] = useState("");
   const [vehicleId, setVehicleId] = useState("");
   const [driverId, setDriverId] = useState("");
@@ -95,6 +104,22 @@ export default function FuelManagement() {
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, []);
+  useEffect(() => {
+    if (!showTransferModal && !showSafariModal) return undefined;
+    const onKeyDown = (event) => {
+      if (event.key === "Escape" && !saving) {
+        setShowTransferModal(false);
+        setShowSafariModal(false);
+      }
+    };
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [showTransferModal, showSafariModal, saving]);
   const availableAllocations = useMemo(
     () =>
       data.allocations.filter(
@@ -149,6 +174,7 @@ export default function FuelManagement() {
   );
   const existing = data.entries.find((e) => entryKey(e) === selected);
   function selectSafari(id) {
+    setShowSafariModal(true);
     setMessage("");
     const a = data.allocations.find((item) => allocationKey(item) === id);
     const entry = data.entries.find((item) => entryKey(item) === id);
@@ -207,12 +233,40 @@ export default function FuelManagement() {
       setSelected("");
       setSelectedSafari("");
       setForm({ ...empty });
+      setShowSafariModal(false);
       setMessage("Fuel entry saved.");
       try {
         await load();
       } catch {
         window.location.reload();
       }
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      saveLock.current = false;
+      setSaving(false);
+    }
+  }
+  async function saveTransfer(event) {
+    event.preventDefault();
+    const vehicle = data.transfer_vehicles?.[0];
+    if (saveLock.current || !vehicle) return;
+    saveLock.current = true;
+    setSaving(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await apiFetch(selectedTransfer ? `/fuel-management/transfer/${selectedTransfer.id}` : "/fuel-management/transfer", {
+        method: selectedTransfer ? "PUT" : "POST",
+        body: { ...transferForm, end_km: transferForm.end_km === "" ? null : transferForm.end_km, litres_filled_end: transferForm.litres_filled_end === "" ? null : transferForm.litres_filled_end },
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.errors ? Object.values(payload.errors).flat().join(" ") : payload.message);
+      setSelectedTransfer(null);
+      setTransferForm({ ...empty });
+      setShowTransferModal(false);
+      setMessage("Transfer fuel entry saved.");
+      await load();
     } catch (e) {
       setError(e.message);
     } finally {
@@ -414,8 +468,8 @@ export default function FuelManagement() {
       allowEscapeKey: () => !Swal.isLoading(),
       preConfirm: async () => {
         try {
-          const type = entry.lease_allocation_id ? "long-term" : "safari";
-          const id = entry.lease_allocation_id || entry.safari_allocation_id;
+          const type = entry.is_transfer ? "transfer" : (entry.lease_allocation_id ? "long-term" : "safari");
+          const id = entry.is_transfer ? entry.id : (entry.lease_allocation_id || entry.safari_allocation_id);
           const response = await apiFetch(`/fuel-management/${type}/${id}`, {
             method: "DELETE",
           });
@@ -618,23 +672,65 @@ export default function FuelManagement() {
               </div>
             ))}
           </div>
-          <form
-            onSubmit={save}
-            className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4 print:hidden sm:p-6"
-          >
-            <div className="flex items-start gap-3">
-              <div className="rounded-xl bg-sher-teal/10 p-2 text-sher-teal"><CalendarDays className="h-5 w-5" /></div>
-              <div>
-                <h2 className="font-semibold text-lg text-slate-900">
-              {existing ? "Edit safari fuel entry" : "Record safari fuel"}
-                </h2>
-                <p className="mt-1 text-sm text-slate-500">Enter the refill and odometer readings for a safari or lease allocation.</p>
+          <div className="flex flex-wrap gap-3">
+            {data.transfer_vehicles?.length > 0 && (
+              <button type="button" onClick={() => { setSelectedTransfer(null); setTransferForm({ ...empty }); setShowTransferModal(true); }} className="rounded-xl bg-amber-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-amber-700">
+                Record transfer fuel
+              </button>
+            )}
+            <button type="button" onClick={() => { setSelectedSafari(""); setSelected(""); setForm({ ...empty }); setShowSafariModal(true); }} className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700">
+              Record safari fuel
+            </button>
+          </div>
+          {data.transfer_vehicles?.length > 0 && showTransferModal && (<>
+            <div className="fixed inset-0 z-40 bg-slate-950/70 backdrop-blur-sm" onClick={() => !saving && setShowTransferModal(false)} />
+            <form role="dialog" aria-modal="true" aria-labelledby="transfer-fuel-title" onSubmit={saveTransfer} className="fixed left-1/2 top-1/2 z-50 flex max-h-[min(92vh,760px)] w-[min(94vw,860px)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-3xl border border-white/70 bg-white shadow-2xl print:hidden">
+              <div className="relative overflow-hidden bg-gradient-to-br from-amber-600 via-orange-600 to-rose-600 px-5 py-5 text-white sm:px-7 sm:py-6">
+                <div className="absolute -right-10 -top-16 h-44 w-44 rounded-full bg-white/15 blur-2xl" />
+                <div className="relative flex items-start justify-between gap-4">
+                  <div className="flex items-start gap-3">
+                    <div className="rounded-2xl bg-white/15 p-3 ring-1 ring-white/20"><ArrowRightLeft className="h-6 w-6" /></div>
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-100">Fleet operations</p>
+                      <h2 id="transfer-fuel-title" className="mt-1 text-2xl font-bold tracking-tight">{selectedTransfer ? "Edit transfer fuel" : "Record transfer fuel"}</h2>
+                      <p className="mt-1 max-w-xl text-sm text-amber-50">Capture fuel and odometer readings for a transfer vehicle outside a safari job card.</p>
+                    </div>
+                  </div>
+                  <button type="button" aria-label="Close transfer fuel modal" onClick={() => setShowTransferModal(false)} className="rounded-xl p-2 text-white/80 transition hover:bg-white/15 hover:text-white"><X className="h-5 w-5" /></button>
+                </div>
+              </div>
+              <div className="overflow-y-auto p-5 sm:p-7">
+                <div className="grid gap-3 rounded-2xl border border-amber-200 bg-amber-50/70 p-4 text-sm sm:grid-cols-3">
+                  <div><span className="block text-xs font-semibold uppercase tracking-wide text-amber-700">Vehicle</span><strong className="mt-1 block text-slate-900">{vehicleLabel(data.transfer_vehicles[0])}</strong></div>
+                  <div><span className="block text-xs font-semibold uppercase tracking-wide text-amber-700">Driver</span><strong className="mt-1 block text-slate-900">{data.transfer_vehicles[0].assigned_driver?.name || "Unassigned"}</strong></div>
+                  <div><span className="block text-xs font-semibold uppercase tracking-wide text-amber-700">Record type</span><strong className="mt-1 block text-slate-900">Transfer fuel</strong></div>
+                </div>
+                <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {fields.map(([key, label, type]) => (
+                    <label key={key} className="text-sm font-semibold text-slate-700"><span>{label}{!["end_km", "litres_filled_end"].includes(key) && <span className="ml-1 text-rose-500">*</span>}</span>
+                      {type === "date" ? <ReportDateInput required className="mt-1.5 block w-full rounded-xl border border-slate-200 bg-slate-50 p-3 font-normal text-slate-900 outline-none transition focus:border-amber-500 focus:bg-white focus:ring-4 focus:ring-amber-500/10" value={transferForm[key]} onChange={(e) => setTransferForm({ ...transferForm, [key]: e.target.value })} /> : <input type={type} disabled={saving} required={!['end_km', 'litres_filled_end'].includes(key)} min={key === 'end_km' ? transferForm.start_km : '0'} step={key.endsWith('_km') ? '1' : '0.01'} className="mt-1.5 block w-full rounded-xl border border-slate-200 bg-slate-50 p-3 font-normal text-slate-900 outline-none transition focus:border-amber-500 focus:bg-white focus:ring-4 focus:ring-amber-500/10" value={transferForm[key]} onChange={(e) => setTransferForm({ ...transferForm, [key]: e.target.value })} />}
+                    </label>
+                  ))}
+                </div>
+                <div className="mt-5 flex items-start gap-2 rounded-xl bg-slate-50 p-3 text-sm text-slate-600"><Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" /><p>KM done: <strong className="text-slate-900">{isTripComplete(transferForm) && transferForm.start_km !== "" ? fmt(Number(transferForm.end_km) - Number(transferForm.start_km)) : "—"}</strong>. Average is calculated after end KM and end litres are entered.</p></div>
+              </div>
+              <div className="flex flex-col-reverse gap-3 border-t border-slate-100 bg-slate-50/80 px-5 py-4 sm:flex-row sm:items-center sm:justify-end sm:px-7">
+                <button type="button" onClick={() => setShowTransferModal(false)} className="rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-white hover:text-slate-900">Cancel</button>
+                <button disabled={saving || !hasPermission(selectedTransfer ? "odometer-logs.update" : "odometer-logs.create")} className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-amber-600 to-orange-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-orange-600/20 transition hover:-translate-y-0.5 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-50">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}{saving ? "Saving…" : selectedTransfer ? "Update transfer entry" : "Save transfer entry"}</button>
+              </div>
+            </form>
+          </>)}
+          {showSafariModal && <><div className="fixed inset-0 z-40 bg-slate-950/70 backdrop-blur-sm" onClick={() => !saving && setShowSafariModal(false)} /><form role="dialog" aria-modal="true" aria-labelledby="safari-fuel-title" onSubmit={save} className="fixed left-1/2 top-1/2 z-50 flex max-h-[min(92vh,820px)] w-[min(94vw,900px)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-3xl border border-white/70 bg-white shadow-2xl print:hidden">
+            <div className="relative overflow-hidden bg-gradient-to-br from-slate-950 via-slate-900 to-sher-teal px-5 py-5 text-white sm:px-7 sm:py-6">
+              <div className="absolute -right-8 -top-16 h-48 w-48 rounded-full bg-sher-gold/20 blur-2xl" />
+              <div className="relative flex items-start justify-between gap-4">
+                <div className="flex items-start gap-3"><div className="rounded-2xl bg-white/10 p-3 ring-1 ring-white/15"><CalendarDays className="h-6 w-6 text-sher-gold" /></div><div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-sher-gold">Safari operations</p><h2 id="safari-fuel-title" className="mt-1 text-2xl font-bold tracking-tight">{existing ? "Edit safari fuel" : "Record safari fuel"}</h2><p className="mt-1 max-w-xl text-sm text-slate-300">Log the refill and odometer readings for a safari or lease allocation.</p></div></div>
+                <button type="button" aria-label="Close safari fuel modal" onClick={() => setShowSafariModal(false)} className="rounded-xl p-2 text-white/70 transition hover:bg-white/10 hover:text-white"><X className="h-5 w-5" /></button>
               </div>
             </div>
+            <div className="overflow-y-auto p-5 sm:p-7">
             <div className="text-sm">
-              <label htmlFor="fuel-safari" className="block mb-1">
-                Safari
-              </label>
+              <label htmlFor="fuel-safari" className="mb-1.5 block text-sm font-semibold text-slate-700">Safari or allocation <span className="text-rose-500">*</span></label>
               <Select
                 inputId="fuel-safari"
                 name="safari_allocation_id"
@@ -657,8 +753,10 @@ export default function FuelManagement() {
                 styles={{
                   control: (base) => ({
                     ...base,
-                    minHeight: 42,
-                    borderRadius: 8,
+                    minHeight: 48,
+                    borderRadius: 12,
+                    borderColor: "#e2e8f0",
+                    boxShadow: "none",
                   }),
                   menu: (base) => ({ ...base, zIndex: 20 }),
                 }}
@@ -666,9 +764,7 @@ export default function FuelManagement() {
             </div>
             {selectedSafari && safariVehicleOptions.length > 1 && (
               <div className="text-sm">
-                <label htmlFor="fuel-vehicle" className="block mb-1">
-                  Vehicle
-                </label>
+                  <label htmlFor="fuel-vehicle" className="mb-1.5 block text-sm font-semibold text-slate-700">Vehicle <span className="text-rose-500">*</span></label>
                 <Select
                   inputId="fuel-vehicle"
                   name="vehicle_allocation_id"
@@ -691,8 +787,10 @@ export default function FuelManagement() {
                   styles={{
                     control: (base) => ({
                       ...base,
-                      minHeight: 42,
-                      borderRadius: 8,
+                      minHeight: 48,
+                      borderRadius: 12,
+                      borderColor: "#e2e8f0",
+                      boxShadow: "none",
                     }),
                     menu: (base) => ({ ...base, zIndex: 20 }),
                   }}
@@ -701,7 +799,7 @@ export default function FuelManagement() {
             )}
             {allocation && (
               <>
-                <div className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm md:grid-cols-3">
+                <div className="mt-5 grid gap-3 rounded-2xl border border-teal-100 bg-teal-50/70 p-4 text-sm md:grid-cols-3">
                   <p>
                     {allocation.allocation_type === "long_term"
                       ? "Lease"
@@ -723,12 +821,12 @@ export default function FuelManagement() {
                     <strong>{allocation.driver?.name || "Unassigned"}</strong>
                   </p>
                 </div>
-                <div className="grid md:grid-cols-3 gap-4">
+                <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   {fields.map(([key, label, type]) => (
-                    <label key={key} className="text-sm">
-                      {label}
+                    <label key={key} className="text-sm font-semibold text-slate-700">
+                      {label}{!["end_km", "litres_filled_end"].includes(key) && <span className="ml-1 text-rose-500">*</span>}
                       {type === "date" ? <ReportDateInput
-                        required className="block w-full border rounded-lg p-2 mt-1"
+                        required className="mt-1.5 block w-full rounded-xl border border-slate-200 bg-slate-50 p-3 font-normal text-slate-900 outline-none transition focus:border-sher-teal focus:bg-white focus:ring-4 focus:ring-sher-teal/10"
                         value={form[key]} onChange={(e) => setForm({ ...form, [key]: e.target.value })}
                       /> : <input
                         type={type}
@@ -736,7 +834,7 @@ export default function FuelManagement() {
                         required={!["end_km", "litres_filled_end"].includes(key)}
                         min={key === "end_km" ? form.start_km : "0"}
                         step={key.endsWith("_km") ? "1" : "0.01"}
-                        className="block w-full border rounded-lg p-2 mt-1"
+                        className="mt-1.5 block w-full rounded-xl border border-slate-200 bg-slate-50 p-3 font-normal text-slate-900 outline-none transition focus:border-sher-teal focus:bg-white focus:ring-4 focus:ring-sher-teal/10"
                         value={form[key]}
                         onChange={(e) =>
                           setForm({ ...form, [key]: e.target.value })
@@ -745,7 +843,8 @@ export default function FuelManagement() {
                     </label>
                   ))}
                 </div>
-                <p className="text-sm text-gray-600">
+                <div className="mt-5 flex items-start gap-2 rounded-xl bg-slate-50 p-3 text-sm text-slate-600">
+                  <Info className="mt-0.5 h-4 w-4 shrink-0 text-sher-teal" /><p>
                   KM done:{" "}
                   <strong>
                     {isTripComplete(form) && form.start_km !== ""
@@ -753,8 +852,13 @@ export default function FuelManagement() {
                       : "—"}
                   </strong>
                   . You can save beginning readings now. Average is calculated only after end KM and end litres are entered.
-                </p>
-                <button
+                </p></div>
+              </>
+            )}
+            </div>
+            <div className="flex flex-col-reverse gap-3 border-t border-slate-100 bg-slate-50/80 px-5 py-4 sm:flex-row sm:items-center sm:justify-end sm:px-7">
+              <button type="button" onClick={() => setShowSafariModal(false)} className="rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-white hover:text-slate-900">Cancel</button>
+              {allocation && <button
                   disabled={
                     saving ||
                     !hasPermission(
@@ -763,17 +867,16 @@ export default function FuelManagement() {
                         : "odometer-logs.create",
                     )
                   }
-                  className="bg-blue-600 text-white rounded-lg px-5 py-2 disabled:opacity-50"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-slate-950 to-sher-teal px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-slate-900/15 transition hover:-translate-y-0.5 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {saving
+                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}{saving
                     ? "Saving…"
                     : existing
                       ? "Update entry"
                       : "Save entry"}
-                </button>
-              </>
-            )}
-          </form>
+                </button>}
+            </div>
+          </form></>}
           <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm print:border-0">
             <div className="flex items-center justify-between gap-3 border-b border-slate-100 p-4 sm:p-5">
               <div>
@@ -823,14 +926,16 @@ export default function FuelManagement() {
                   {rows.map((e) => (
                     <tr key={e.id} className="border-t">
                       <td className="px-4 py-3">
-                        {e.lease_allocation_id
+                        {e.is_transfer ? "Transfer"
+                        : e.lease_allocation_id
                           ? e.lease_allocation?.group_name ||
                             e.lease_allocation?.lease_contract?.group_name ||
                             e.lease_allocation?.lease_contract?.client_name ||
                             "Long-term lease"
                           : e.safari_allocation?.lead?.group_name || "Safari"}
                         <div className="text-xs text-gray-500">
-                          {e.lease_allocation_id
+                          {e.is_transfer ? "Transfer fuel · no job card"
+                          : e.lease_allocation_id
                             ? `Long term #${e.lease_allocation_id}${e.lease_allocation?.lease_contract?.client_name ? ` · ${e.lease_allocation.lease_contract.client_name}` : ""}`
                             : [
                                 e.safari_allocation_id ? `#${e.safari_allocation_id}` : null,
@@ -863,6 +968,13 @@ export default function FuelManagement() {
                             className="inline-flex items-center gap-1 text-blue-600"
                             title="Edit fuel entry"
                             onClick={() => {
+                              if (e.is_transfer) {
+                                setSelectedTransfer(e);
+                                setTransferForm(Object.fromEntries(fields.map(([key]) => [key, e[key] ?? ""])));
+                                setShowTransferModal(true);
+                                window.scrollTo({ top: 0, behavior: "smooth" });
+                                return;
+                              }
                               selectSafari(entryKey(e));
                               window.scrollTo({ top: 0, behavior: "smooth" });
                             }}
