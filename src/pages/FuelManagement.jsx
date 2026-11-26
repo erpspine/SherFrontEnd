@@ -750,6 +750,8 @@ export default function FuelManagement() {
                 placeholder="Search safari, booking, vehicle or driver…"
                 noOptionsMessage={() => "No matching safaris"}
                 classNamePrefix="safari-select"
+                  menuPortalTarget={document.body}
+                  menuPosition="fixed"
                 styles={{
                   control: (base) => ({
                     ...base,
@@ -758,7 +760,8 @@ export default function FuelManagement() {
                     borderColor: "#e2e8f0",
                     boxShadow: "none",
                   }),
-                  menu: (base) => ({ ...base, zIndex: 20 }),
+                  menu: (base) => ({ ...base, zIndex: 60 }),
+                  menuPortal: (base) => ({ ...base, zIndex: 60 }),
                 }}
               />
             </div>
@@ -784,6 +787,8 @@ export default function FuelManagement() {
                   placeholder="Select the vehicle for this safari…"
                   noOptionsMessage={() => "No available vehicles"}
                   classNamePrefix="safari-vehicle-select"
+                  menuPortalTarget={document.body}
+                  menuPosition="fixed"
                   styles={{
                     control: (base) => ({
                       ...base,
@@ -792,7 +797,8 @@ export default function FuelManagement() {
                       borderColor: "#e2e8f0",
                       boxShadow: "none",
                     }),
-                    menu: (base) => ({ ...base, zIndex: 20 }),
+                    menu: (base) => ({ ...base, zIndex: 60 }),
+                    menuPortal: (base) => ({ ...base, zIndex: 60 }),
                   }}
                 />
               </div>
