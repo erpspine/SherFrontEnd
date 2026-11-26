@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildFuelReport, validateFuelReportParameters, fuelReportCsvCell } from '../src/utils/fuelReport.js';
+import { buildFuelReport, summarizeFuelReport, validateFuelReportParameters, fuelReportCsvCell } from '../src/utils/fuelReport.js';
 const p = { average: 7, good: 10, warning: 20, deduction: 50, price: 3000, monthlyPrices: { '2026-09': 3000 }, deductionMode: 'all' };
 const entry = (extra = {}) => ({ vehicle_id: 1, driver_id: 1, end_km: 1500, litres_filled_end: 100, filled_at: '2026-09-01', vehicle: { plate_no: 'A' }, driver: { name: 'Driver' }, km_done: 500, litres_consumed: 150, vehicle_average: 3.33, ...extra });
 const report = (entries, params = p) => buildFuelReport(entries, '2026-09-01', '2026-09-30', params);
@@ -66,4 +66,13 @@ test('missing trip dates do not produce a misleading partial day total', () => {
   assert.equal(row.totalDays, null);
   assert.equal(row.averageKmPerTrip, null);
   assert.equal(report([entry({ trip_days: 0 })])[0].averageKmPerTrip, null);
+});
+test('monthly summary keeps daily average when another row has no day metadata', () => {
+  const rows = report([
+    entry({ trip_days: 4, km_done: 400 }),
+    entry({ vehicle_id: 2, vehicle: { plate_no: 'B' }, trip_days: null, km_done: 200 }),
+  ]);
+  const summary = summarizeFuelReport(rows);
+  assert.equal(summary.totalDays, 4);
+  assert.equal(summary.dailyAverage, 100);
 });

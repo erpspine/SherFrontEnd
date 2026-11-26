@@ -64,6 +64,24 @@ export function buildFuelReport(entries, from, to, parameters) {
   }).sort((a, b) => a.vehicle.localeCompare(b.vehicle) || a.month.localeCompare(b.month));
 }
 
+// A report can contain transfer/unassigned rows without trip-day metadata.
+// Keep those rows out of the denominator, but do not hide the monthly
+// average for the rows that do have reliable day counts.
+export function summarizeFuelReport(report) {
+  const litres = report.reduce((sum, row) => sum + (row.litres || 0), 0);
+  const km = report.reduce((sum, row) => sum + (row.km || 0), 0);
+  const rowsWithDays = report.filter(row => row.totalDays !== null && row.totalDays !== undefined && row.totalDays > 0);
+  const totalDays = rowsWithDays.reduce((sum, row) => sum + row.totalDays, 0);
+  const kmWithDays = rowsWithDays.reduce((sum, row) => sum + (row.km || 0), 0);
+  return {
+    trips: report.reduce((sum, row) => sum + row.trips, 0),
+    totalDays,
+    litres,
+    km,
+    dailyAverage: totalDays > 0 ? round(kmWithDays / totalDays) : null,
+  };
+}
+
 export function fuelReportCsvCell(value) {
   let text = String(value ?? '');
   if (/^[\s]*[=+@-]/.test(text)) text = `'${text}`;

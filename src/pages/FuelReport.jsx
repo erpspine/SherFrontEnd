@@ -6,7 +6,7 @@ import Swal from "sweetalert2";
 import { ArrowUpRight, BarChart3, CalendarDays, Download, Fuel, Pencil, Printer, SlidersHorizontal, Trash2, X } from "lucide-react";
 import { isTripComplete } from "../utils/fuelTrip";
 import { apiFetch } from "../utils/api";
-import { buildFuelReport, fuelReportCsvCell } from "../utils/fuelReport";
+import { buildFuelReport, fuelReportCsvCell, summarizeFuelReport } from "../utils/fuelReport";
 
 const localDate = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 const fmt = (value) => value === null || value === undefined ? "—" : Number.isFinite(Number(value)) ? Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 }) : String(value);
@@ -41,17 +41,14 @@ export default function FuelReport() {
   const expandedTrips=useMemo(()=>filteredEntries.filter(entry=>{const date=String(entry.filled_at||"").slice(0,10);return expandedRow===String(entry.vehicle_id)+":"+date.slice(0,7)&&date&&(!from||date>=from)&&(!to||date<=to)}).sort((a,b)=>String(a.filled_at).localeCompare(String(b.filled_at))||a.id-b.id),[filteredEntries,expandedRow,from,to]);
   const toggleTrips=key=>setExpandedRow(current=>current===key?null:key);
   const summary=useMemo(()=>{
-    const litres=report.reduce((s,r)=>s+(r.litres||0),0);
-    const km=report.reduce((s,r)=>s+(r.km||0),0);
-    const rowsWithDays=report.filter(r=>r.totalDays!==null && r.totalDays!==undefined);
-    const totalDays=rowsWithDays.reduce((s,r)=>s+r.totalDays,0);
+    const fuelSummary=summarizeFuelReport(report);
     return {
-      trips:report.reduce((s,r)=>s+r.trips,0),
-      totalDays:rowsWithDays.length===report.length?fmt(totalDays):"—",
-      litres:fmt(litres),
-      km:fmt(km),
-      dailyAverage:rowsWithDays.length===report.length && totalDays>0?`${fmt(km/totalDays)} km/day`:"—",
-      average:litres>0?`${fmt(km/litres)} km/L`:"—",
+      trips:fuelSummary.trips,
+      totalDays:fuelSummary.totalDays>0?fmt(fuelSummary.totalDays):"—",
+      litres:fmt(fuelSummary.litres),
+      km:fmt(fuelSummary.km),
+      dailyAverage:fuelSummary.dailyAverage===null?"—":`${fmt(fuelSummary.dailyAverage)} km/day`,
+      average:fuelSummary.litres>0?`${fmt(fuelSummary.km/fuelSummary.litres)} km/L`:"—",
       deductions:reportWithDeductions.some(r=>r.status==="Target not set")?"Target not set":reportWithDeductions.some(r=>r.deductionAmount===null)?"Price not set":fmt(reportWithDeductions.reduce((s,r)=>s+(r.deductionAmount||0),0)),
     };
   },[reportWithDeductions]);
